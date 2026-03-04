@@ -4,8 +4,10 @@ import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
+import { Input } from '@/components/ui/input'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 
@@ -51,7 +53,11 @@ onMounted(() => {
     <AppLayout>
         <div class="space-y-6 p-6">
             <!-- En-tête -->
-            <PageHeader title="Dashboard" description="Vue d'ensemble">
+            <PageHeader
+                :breadcrumbs="[
+                    { title: 'Dashboard', href: '/' }
+                ]"
+            >
                 <template #actions>
                     <!-- Boutons d'action ici -->
                 </template>
@@ -68,20 +74,23 @@ onMounted(() => {
             <!-- Table -->
             <div class="rounded-lg border border-gray-100 bg-white">
                 <FilterBar :has-active-filters="hasFilters" @reset="reset">
-                    <input
-                        v-model="filters.search"
-                        type="text"
-                        placeholder="Rechercher..."
-                        class="h-8 rounded border border-gray-200 px-3 text-sm focus:border-gray-400 focus:outline-none"
-                    />
-                    <select
-                        v-model="filters.status"
-                        class="h-8 rounded border border-gray-200 px-3 text-sm focus:border-gray-400 focus:outline-none"
-                    >
-                        <option value="">Tous les statuts</option>
-                        <option value="active">Actif</option>
-                        <option value="inactive">Inactif</option>
-                    </select>
+                    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                        <Input
+                            v-model="filters.search"
+                            type="text"
+                            placeholder="Rechercher..."
+                            class="h-8"
+                        />
+                        <FilterSelect
+                            v-model="filters.status"
+                            :options="[
+                                { value: 'active', label: 'Actif' },
+                                { value: 'inactive', label: 'Inactif' },
+                            ]"
+                            placeholder="Tous les statuts"
+                            :searchable="false"
+                        />
+                    </div>
                 </FilterBar>
 
                 <DataTable

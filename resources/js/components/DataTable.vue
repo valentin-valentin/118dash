@@ -2,12 +2,13 @@
 import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 
 /**
- * @prop {Array}   columns      [{ key, label, sortable?, class?, headerClass? }]
- * @prop {Array}   rows         Données
- * @prop {Boolean} loading      Affiche le skeleton
- * @prop {String}  sortKey      Colonne triée actuellement
- * @prop {String}  sortDir      'asc' | 'desc'
- * @prop {String}  emptyMessage Message si pas de résultat
+ * @prop {Array}    columns      [{ key, label, sortable?, class?, headerClass? }]
+ * @prop {Array}    rows         Données
+ * @prop {Boolean}  loading      Affiche le skeleton
+ * @prop {String}   sortKey      Colonne triée actuellement
+ * @prop {String}   sortDir      'asc' | 'desc'
+ * @prop {String}   emptyMessage Message si pas de résultat
+ * @prop {Function} rowClass     Fonction qui prend une row et retourne une classe CSS
  *
  * Slots nommés par clé de colonne : #nom-de-colonne="{ row, value }"
  */
@@ -18,6 +19,7 @@ defineProps({
     sortKey: String,
     sortDir: String,
     emptyMessage: String,
+    rowClass: Function,
 })
 
 const emit = defineEmits(['sort'])
@@ -72,6 +74,7 @@ const emit = defineEmits(['sort'])
                         v-for="(row, i) in rows"
                         :key="i"
                         class="border-b border-gray-50 transition-colors hover:bg-gray-50/60"
+                        :class="rowClass ? rowClass(row) : ''"
                     >
                         <td
                             v-for="col in columns"

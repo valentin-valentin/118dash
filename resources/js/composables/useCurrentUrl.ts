@@ -31,13 +31,31 @@ export function useCurrentUrl(): UseCurrentUrlReturn {
         const urlString = toUrl(urlToCheck);
 
         if (!urlString.startsWith('http')) {
-            return urlString === urlToCompare;
+            // Correspondance exacte
+            if (urlString === urlToCompare) {
+                return true;
+            }
+            // Correspondance pour les sous-pages (ex: /blacklists correspond à /blacklists/create)
+            // Ne pas activer pour le dashboard sur toutes les pages
+            if (urlString !== '/' && urlToCompare.startsWith(urlString + '/')) {
+                return true;
+            }
+            return false;
         }
 
         try {
             const absoluteUrl = new URL(urlString);
+            const pathname = absoluteUrl.pathname;
 
-            return absoluteUrl.pathname === urlToCompare;
+            // Correspondance exacte
+            if (pathname === urlToCompare) {
+                return true;
+            }
+            // Correspondance pour les sous-pages
+            if (pathname !== '/' && urlToCompare.startsWith(pathname + '/')) {
+                return true;
+            }
+            return false;
         } catch {
             return false;
         }
