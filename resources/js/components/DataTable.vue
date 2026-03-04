@@ -73,7 +73,7 @@ const emit = defineEmits(['sort'])
                     <tr
                         v-for="(row, i) in rows"
                         :key="i"
-                        class="border-b border-gray-50 transition-colors hover:bg-gray-50/60"
+                        class="border-b border-gray-50 transition-colors hover:bg-gray-100/80"
                         :class="rowClass ? rowClass(row) : ''"
                     >
                         <td
