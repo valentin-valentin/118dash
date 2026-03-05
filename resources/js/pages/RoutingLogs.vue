@@ -18,7 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { X } from 'lucide-vue-next'
+import { X, ChevronRight, ChevronDown } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/routing-logs/stats')
@@ -66,6 +66,7 @@ function toggleSort(key) {
 const columns = [
     { key: 'id', label: 'ID', sortable: true },
     { key: 'status', label: 'Status' },
+    { key: 'attempt', label: 'Tentative' },
     { key: 'job_id', label: 'Job ID' },
     { key: 'phonenumber', label: 'Numéro' },
     { key: 'source', label: 'Source' },
@@ -116,6 +117,64 @@ function closeDetails() {
 function formatJSON(obj) {
     return JSON.stringify(obj, null, 2)
 }
+
+// ─── Grouping by job_id ───────────────────────────────────────────────────────
+const expandedJobIds = ref(new Set())
+
+function toggleJobGroup(jobId) {
+    if (expandedJobIds.value.has(jobId)) {
+        expandedJobIds.value.delete(jobId)
+    } else {
+        expandedJobIds.value.add(jobId)
+    }
+}
+
+// Group rows by job_id and mark retry attempts
+const groupedRows = computed(() => {
+    const items = table.data?.items ?? []
+
+    // Group by job_id
+    const groups = items.reduce((acc, row) => {
+        const jobId = row.job_id || `single_${row.id}`
+        if (!acc[jobId]) {
+            acc[jobId] = []
+        }
+        acc[jobId].push(row)
+        return acc
+    }, {})
+
+    // Flatten groups with metadata
+    const result = []
+    Object.entries(groups).forEach(([jobId, rows]) => {
+        // Sort by attempt within each group
+        const sortedRows = rows.sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
+
+        if (sortedRows.length === 1) {
+            // Single attempt - no grouping needed
+            result.push({ ...sortedRows[0], _isParent: false, _hasRetries: false })
+        } else {
+            // Multiple attempts - show first as parent
+            const [firstAttempt, ...retries] = sortedRows
+            result.push({
+                ...firstAttempt,
+                _isParent: true,
+                _hasRetries: true,
+                _retryCount: retries.length,
+                _jobId: jobId,
+                _expanded: expandedJobIds.value.has(jobId)
+            })
+
+            // Only show retries if expanded
+            if (expandedJobIds.value.has(jobId)) {
+                retries.forEach(retry => {
+                    result.push({ ...retry, _isRetry: true, _jobId: jobId })
+                })
+            }
+        }
+    })
+
+    return result
+})
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
@@ -208,12 +267,45 @@ onMounted(() => {
             <div class="rounded-lg border border-gray-100 bg-white">
                 <DataTable
                     :columns="columns"
-                    :rows="table.data?.items ?? []"
+                    :rows="groupedRows"
                     :loading="table.loading"
                     :sort-key="filters.sort"
                     :sort-dir="filters.dir"
                     @sort="toggleSort"
                 >
+                    <template #id="{ row, value }">
+                        <div class="flex items-center gap-2">
+                            <!-- Expand/collapse button for grouped attempts -->
+                            <button
+                                v-if="row._hasRetries"
+                                type="button"
+                                class="text-gray-400 hover:text-gray-600"
+                                @click="toggleJobGroup(row._jobId)"
+                            >
+                                <ChevronDown v-if="row._expanded" class="h-4 w-4" />
+                                <ChevronRight v-else class="h-4 w-4" />
+                            </button>
+                            <span
+                                class="font-mono text-xs text-gray-500"
+                                :class="{ 'ml-6': row._isRetry }"
+                            >
+                                #{{ value }}
+                            </span>
+                        </div>
+                    </template>
+
+                    <template #attempt="{ row, value }">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm">{{ value || '-' }}</span>
+                            <span
+                                v-if="row._hasRetries"
+                                class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                            >
+                                +{{ row._retryCount }}
+                            </span>
+                        </div>
+                    </template>
+
                     <template #status="{ row, value }">
                         <Badge
                             :variant="row.is_error ? 'destructive' : 'default'"
