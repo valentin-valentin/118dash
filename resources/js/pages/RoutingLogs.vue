@@ -119,62 +119,71 @@ function formatJSON(obj) {
 }
 
 // ─── Grouping by job_id ───────────────────────────────────────────────────────
-const expandedJobIds = ref(new Set())
-
-function toggleJobGroup(jobId) {
-    if (expandedJobIds.value.has(jobId)) {
-        expandedJobIds.value.delete(jobId)
-    } else {
-        expandedJobIds.value.add(jobId)
-    }
-}
-
-// Group rows by job_id and mark retry attempts
+// Group rows by job_id and display retries below attempt 1, keeping DESC order
 const groupedRows = computed(() => {
     const items = table.data?.items ?? []
+    if (items.length === 0) return []
 
     // Group by job_id
-    const groups = items.reduce((acc, row) => {
+    const groups = {}
+    items.forEach(row => {
         const jobId = row.job_id || `single_${row.id}`
-        if (!acc[jobId]) {
-            acc[jobId] = []
+        if (!groups[jobId]) {
+            groups[jobId] = []
         }
-        acc[jobId].push(row)
-        return acc
-    }, {})
+        groups[jobId].push(row)
+    })
 
-    // Flatten groups with metadata
+    // Pour chaque groupe, trier par tentative
+    Object.keys(groups).forEach(jobId => {
+        groups[jobId].sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
+    })
+
+    // Trouver l'ordre d'affichage des groupes basé sur la date de created_at de la première tentative
+    // (pour garder l'ordre descendant général)
+    const groupOrder = Object.keys(groups).sort((a, b) => {
+        const firstA = groups[a][0]
+        const firstB = groups[b][0]
+        // Trier par created_at DESC
+        return new Date(firstB.created_at) - new Date(firstA.created_at)
+    })
+
+    // Construire le résultat final
     const result = []
-    Object.entries(groups).forEach(([jobId, rows]) => {
-        // Sort by attempt within each group
-        const sortedRows = rows.sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
+    groupOrder.forEach(jobId => {
+        const rows = groups[jobId]
 
-        if (sortedRows.length === 1) {
-            // Single attempt - no grouping needed
-            result.push({ ...sortedRows[0], _isParent: false, _hasRetries: false })
+        if (rows.length === 1) {
+            // Une seule tentative
+            result.push({ ...rows[0], _isRetry: false, _retryCount: 0 })
         } else {
-            // Multiple attempts - show first as parent
-            const [firstAttempt, ...retries] = sortedRows
+            // Plusieurs tentatives
+            const [firstAttempt, ...retries] = rows
+
+            // Tentative 1
             result.push({
                 ...firstAttempt,
-                _isParent: true,
-                _hasRetries: true,
+                _isRetry: false,
                 _retryCount: retries.length,
-                _jobId: jobId,
-                _expanded: expandedJobIds.value.has(jobId)
             })
 
-            // Only show retries if expanded
-            if (expandedJobIds.value.has(jobId)) {
-                retries.forEach(retry => {
-                    result.push({ ...retry, _isRetry: true, _jobId: jobId })
-                })
-            }
+            // Tentatives 2, 3, 4...
+            retries.forEach(retry => {
+                result.push({ ...retry, _isRetry: true, _retryCount: 0 })
+            })
         }
     })
 
     return result
 })
+
+// Style conditionnel pour les lignes retry
+function getRowClass(row) {
+    if (row._isRetry) {
+        return 'bg-gray-50/80 border-l-4 border-l-blue-400 hover:bg-gray-100/80'
+    }
+    return ''
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
@@ -271,37 +280,25 @@ onMounted(() => {
                     :loading="table.loading"
                     :sort-key="filters.sort"
                     :sort-dir="filters.dir"
+                    :row-class="getRowClass"
                     @sort="toggleSort"
                 >
                     <template #id="{ row, value }">
-                        <div class="flex items-center gap-2">
-                            <!-- Expand/collapse button for grouped attempts -->
-                            <button
-                                v-if="row._hasRetries"
-                                type="button"
-                                class="text-gray-400 hover:text-gray-600"
-                                @click="toggleJobGroup(row._jobId)"
-                            >
-                                <ChevronDown v-if="row._expanded" class="h-4 w-4" />
-                                <ChevronRight v-else class="h-4 w-4" />
-                            </button>
-                            <span
-                                class="font-mono text-xs text-gray-500"
-                                :class="{ 'ml-6': row._isRetry }"
-                            >
-                                #{{ value }}
-                            </span>
-                        </div>
+                        <span class="font-mono text-xs text-gray-500" :class="{ 'ml-6': row._isRetry }">
+                            #{{ value }}
+                        </span>
                     </template>
 
                     <template #attempt="{ row, value }">
                         <div class="flex items-center gap-2">
-                            <span class="text-sm">{{ value || '-' }}</span>
+                            <span class="text-sm font-medium" :class="row._isRetry ? 'text-blue-700' : ''">
+                                {{ value || '-' }}
+                            </span>
                             <span
-                                v-if="row._hasRetries"
-                                class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                                v-if="row._retryCount > 0"
+                                class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
                             >
-                                +{{ row._retryCount }}
+                                +{{ row._retryCount }} retry{{ row._retryCount > 1 ? 's' : '' }}
                             </span>
                         </div>
                     </template>
@@ -366,7 +363,7 @@ onMounted(() => {
 
         <!-- Details Modal -->
         <Dialog :open="showDetails" @update:open="closeDetails">
-            <DialogContent class="max-w-7xl w-[90vw] max-h-[90vh] overflow-y-auto">
+            <DialogContent class="w-[90vw] max-w-7xl sm:max-w-7xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle class="flex items-center justify-between">
                         <span>Détails du Log #{{ selectedLog?.id }}</span>
