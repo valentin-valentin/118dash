@@ -248,6 +248,25 @@ class PhonenumberController extends Controller
         ]);
     }
 
+    public function bulkUpdateSource(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'required|exists:phonenumbers,id',
+            'source_id' => 'nullable|exists:sources,id',
+        ]);
+
+        $count = Phonenumber::whereIn('id', $validated['ids'])->update([
+            'only_source_id' => $validated['source_id'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$count} numéro(s) modifié(s) avec succès.",
+            'count' => $count,
+        ]);
+    }
+
     public function bulkImport(Request $request): JsonResponse
     {
         $validated = $request->validate([

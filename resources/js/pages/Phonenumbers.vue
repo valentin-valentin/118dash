@@ -12,6 +12,13 @@ import { Button } from '@/components/ui/button'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3 } from 'lucide-vue-next'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/phonenumbers/stats')
@@ -111,6 +118,55 @@ watch(() => table.data?.items, () => {
 
 // ─── Actions en Masse ─────────────────────────────────────────────────────────
 const isProcessing = ref(false)
+const showSourceModal = ref(false)
+const selectedSourceId = ref(null)
+
+function openSourceModal() {
+    showSourceModal.value = true
+    selectedSourceId.value = null
+}
+
+function closeSourceModal() {
+    showSourceModal.value = false
+    selectedSourceId.value = null
+}
+
+async function bulkUpdateSource() {
+    if (!selectedSourceId.value && selectedSourceId.value !== '') {
+        alert('Veuillez sélectionner une source')
+        return
+    }
+
+    isProcessing.value = true
+    try {
+        const response = await fetch('/data/phonenumbers/bulk-update-source', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+            body: JSON.stringify({
+                ids: selectedIds.value,
+                source_id: selectedSourceId.value === '' ? null : selectedSourceId.value
+            }),
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+            selectedIds.value = []
+            closeSourceModal()
+            table.load(filters)
+            stats.load()
+        } else {
+            alert(data.message || 'Erreur lors de la modification')
+        }
+    } catch (error) {
+        alert('Erreur lors de la modification')
+    } finally {
+        isProcessing.value = false
+    }
+}
 
 async function bulkDelete() {
     if (!confirm(`Voulez-vous vraiment supprimer ${selectedIds.value.length} numéro(s) ?`)) return
@@ -476,6 +532,17 @@ onMounted(() => {
                         <Button
                             variant="outline"
                             size="sm"
+                            @click="openSourceModal"
+                            :disabled="isProcessing"
+                            v-if="filters.only_deleted !== 'yes'"
+                        >
+                            <Edit3 class="mr-2 h-4 w-4" />
+                            Modifier source dédiée
+                        </Button>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
                             @click="bulkRestore"
                             :disabled="isProcessing"
                             v-if="filters.only_deleted === 'yes'"
@@ -499,5 +566,55 @@ onMounted(() => {
                 </div>
             </div>
         </Transition>
+
+        <!-- Modal de modification de source dédiée -->
+        <Dialog :open="showSourceModal" @update:open="closeSourceModal">
+            <DialogContent class="max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Modifier la source dédiée</DialogTitle>
+                </DialogHeader>
+
+                <div class="space-y-4 py-4">
+                    <p class="text-sm text-gray-600">
+                        Modifier la source dédiée pour {{ selectedIds.length }} numéro{{ selectedIds.length > 1 ? 's' : '' }}
+                    </p>
+
+                    <div class="space-y-2">
+                        <label class="text-sm font-medium text-gray-700">
+                            Nouvelle source dédiée
+                        </label>
+                        <select
+                            v-model="selectedSourceId"
+                            class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                            <option value="">Aucune source (retirer la source dédiée)</option>
+                            <option
+                                v-for="source in filterOptions.data?.sources || []"
+                                :key="source.value"
+                                :value="source.value"
+                            >
+                                {{ source.label }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+
+                <DialogFooter>
+                    <Button
+                        variant="outline"
+                        @click="closeSourceModal"
+                        :disabled="isProcessing"
+                    >
+                        Annuler
+                    </Button>
+                    <Button
+                        @click="bulkUpdateSource"
+                        :disabled="isProcessing"
+                    >
+                        {{ isProcessing ? 'Modification...' : 'Modifier' }}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </AppLayout>
 </template>

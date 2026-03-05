@@ -84,6 +84,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/bulk-delete', [PhonenumberController::class, 'bulkDelete']);
         Route::post('/phonenumbers/bulk-restore', [PhonenumberController::class, 'bulkRestore']);
         Route::post('/phonenumbers/bulk-update', [PhonenumberController::class, 'bulkUpdate']);
+        Route::post('/phonenumbers/bulk-update-source', [PhonenumberController::class, 'bulkUpdateSource']);
         Route::post('/phonenumbers/bulk-assign', [PhonenumberController::class, 'bulkAssign']);
         Route::post('/phonenumbers/bulk-import', [PhonenumberController::class, 'bulkImport']);
 
