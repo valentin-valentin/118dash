@@ -274,7 +274,7 @@ onMounted(() => {
 
         <!-- Details Modal -->
         <Dialog :open="showDetails" @update:open="closeDetails">
-            <DialogContent class="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogContent class="max-w-6xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle class="flex items-center justify-between">
                         <span>Détails du Log #{{ selectedLog?.id }}</span>
