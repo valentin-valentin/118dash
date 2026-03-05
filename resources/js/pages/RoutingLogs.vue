@@ -118,8 +118,17 @@ function formatJSON(obj) {
     return JSON.stringify(obj, null, 2)
 }
 
-// ─── Grouping by job_id ───────────────────────────────────────────────────────
-// Group rows by job_id and display retries below attempt 1, keeping DESC order
+// ─── Grouping by job_id avec collapse/expand ─────────────────────────────────
+const expandedGroups = ref(new Set())
+
+function toggleGroup(jobId) {
+    if (expandedGroups.value.has(jobId)) {
+        expandedGroups.value.delete(jobId)
+    } else {
+        expandedGroups.value.add(jobId)
+    }
+}
+
 const groupedRows = computed(() => {
     const items = table.data?.items ?? []
     if (items.length === 0) return []
@@ -134,17 +143,15 @@ const groupedRows = computed(() => {
         groups[jobId].push(row)
     })
 
-    // Pour chaque groupe, trier par tentative
+    // Pour chaque groupe, trier par tentative ASC (1, 2, 3...)
     Object.keys(groups).forEach(jobId => {
         groups[jobId].sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
     })
 
-    // Trouver l'ordre d'affichage des groupes basé sur la date de created_at de la première tentative
-    // (pour garder l'ordre descendant général)
+    // Ordre d'affichage des groupes basé sur created_at DESC de la première tentative
     const groupOrder = Object.keys(groups).sort((a, b) => {
         const firstA = groups[a][0]
         const firstB = groups[b][0]
-        // Trier par created_at DESC
         return new Date(firstB.created_at) - new Date(firstA.created_at)
     })
 
@@ -154,33 +161,55 @@ const groupedRows = computed(() => {
         const rows = groups[jobId]
 
         if (rows.length === 1) {
-            // Une seule tentative
-            result.push({ ...rows[0], _isRetry: false, _retryCount: 0 })
+            // Une seule tentative - affichage normal
+            result.push({
+                ...rows[0],
+                _groupId: jobId,
+                _isFirstAttempt: true,
+                _hasRetries: false,
+                _retryCount: 0,
+                _isExpanded: false,
+            })
         } else {
             // Plusieurs tentatives
             const [firstAttempt, ...retries] = rows
+            const isExpanded = expandedGroups.value.has(jobId)
 
-            // Tentative 1
+            // Tentative 1 - toujours visible
             result.push({
                 ...firstAttempt,
-                _isRetry: false,
+                _groupId: jobId,
+                _isFirstAttempt: true,
+                _hasRetries: true,
                 _retryCount: retries.length,
+                _isExpanded: isExpanded,
+                _allRetriesSuccess: retries.every(r => !r.is_error),
             })
 
-            // Tentatives 2, 3, 4...
-            retries.forEach(retry => {
-                result.push({ ...retry, _isRetry: true, _retryCount: 0 })
-            })
+            // Tentatives 2, 3, 4... - visible seulement si expanded
+            if (isExpanded) {
+                retries.forEach(retry => {
+                    result.push({
+                        ...retry,
+                        _groupId: jobId,
+                        _isFirstAttempt: false,
+                        _hasRetries: false,
+                        _retryCount: 0,
+                        _isExpanded: false,
+                    })
+                })
+            }
         }
     })
 
     return result
 })
 
-// Style conditionnel pour les lignes retry
+// Style conditionnel pour les lignes
 function getRowClass(row) {
-    if (row._isRetry) {
-        return 'bg-gray-50/80 border-l-4 border-l-blue-400 hover:bg-gray-100/80'
+    if (!row._isFirstAttempt) {
+        // Ligne de retry - fond bleu clair avec bordure gauche épaisse
+        return 'bg-blue-50/60 border-l-[6px] border-l-blue-500 hover:bg-blue-100/60'
     }
     return ''
 }
@@ -284,21 +313,71 @@ onMounted(() => {
                     @sort="toggleSort"
                 >
                     <template #id="{ row, value }">
-                        <span class="font-mono text-xs text-gray-500" :class="{ 'ml-6': row._isRetry }">
-                            #{{ value }}
-                        </span>
+                        <div class="flex items-center gap-2">
+                            <!-- Expand/Collapse button pour les groupes -->
+                            <button
+                                v-if="row._hasRetries"
+                                type="button"
+                                class="flex-shrink-0 rounded p-1 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
+                                @click.stop="toggleGroup(row._groupId)"
+                                :title="row._isExpanded ? 'Masquer les retries' : 'Afficher les retries'"
+                            >
+                                <ChevronDown v-if="row._isExpanded" class="h-4 w-4" />
+                                <ChevronRight v-else class="h-4 w-4" />
+                            </button>
+
+                            <!-- Indicateur visuel pour retry -->
+                            <div
+                                v-if="!row._isFirstAttempt"
+                                class="flex items-center gap-1.5 pl-1"
+                            >
+                                <svg class="h-3 w-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                                <span class="text-xs font-medium text-blue-600">RETRY</span>
+                            </div>
+
+                            <span
+                                class="font-mono text-xs"
+                                :class="!row._isFirstAttempt ? 'text-blue-600 font-semibold' : 'text-gray-500'"
+                            >
+                                #{{ value }}
+                            </span>
+                        </div>
                     </template>
 
                     <template #attempt="{ row, value }">
                         <div class="flex items-center gap-2">
-                            <span class="text-sm font-medium" :class="row._isRetry ? 'text-blue-700' : ''">
-                                {{ value || '-' }}
-                            </span>
+                            <!-- Numéro de tentative -->
                             <span
-                                v-if="row._retryCount > 0"
-                                class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+                                class="flex h-6 w-6 items-center justify-center rounded text-sm font-semibold"
+                                :class="!row._isFirstAttempt
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'text-gray-700'"
                             >
-                                +{{ row._retryCount }} retry{{ row._retryCount > 1 ? 's' : '' }}
+                                {{ value || '1' }}
+                            </span>
+
+                            <!-- Badge pour montrer les retries avec animation -->
+                            <span
+                                v-if="row._hasRetries"
+                                class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold shadow-sm ring-1"
+                                :class="row._allRetriesSuccess
+                                    ? 'bg-green-50 text-green-700 ring-green-600/20'
+                                    : 'bg-red-50 text-red-700 ring-red-600/20'"
+                            >
+                                <span class="relative flex h-2 w-2">
+                                    <span
+                                        v-if="!row._allRetriesSuccess"
+                                        class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+                                        :class="row._allRetriesSuccess ? 'bg-green-400' : 'bg-red-400'"
+                                    ></span>
+                                    <span
+                                        class="relative inline-flex h-2 w-2 rounded-full"
+                                        :class="row._allRetriesSuccess ? 'bg-green-500' : 'bg-red-500'"
+                                    ></span>
+                                </span>
+                                +{{ row._retryCount }} {{ row._retryCount > 1 ? 'retries' : 'retry' }}
                             </span>
                         </div>
                     </template>
@@ -312,45 +391,85 @@ onMounted(() => {
                         </Badge>
                     </template>
 
-                    <template #job_id="{ value }">
-                        <span class="font-mono text-xs text-gray-600">{{ value || '-' }}</span>
+                    <template #job_id="{ row, value }">
+                        <span
+                            class="font-mono text-xs"
+                            :class="!row._isFirstAttempt ? 'text-blue-600' : 'text-gray-600'"
+                        >
+                            {{ value || '-' }}
+                        </span>
                     </template>
 
-                    <template #phonenumber="{ value }">
-                        <span class="font-mono text-sm">{{ value || '-' }}</span>
+                    <template #phonenumber="{ row, value }">
+                        <span
+                            class="font-mono text-sm"
+                            :class="!row._isFirstAttempt ? 'text-gray-500' : ''"
+                        >
+                            {{ value || '-' }}
+                        </span>
                     </template>
 
-                    <template #source="{ value }">
-                        <span class="text-sm">{{ value || '-' }}</span>
+                    <template #source="{ row, value }">
+                        <span
+                            class="text-sm"
+                            :class="!row._isFirstAttempt ? 'text-gray-500 text-xs' : ''"
+                        >
+                            {{ value || '-' }}
+                        </span>
                     </template>
 
-                    <template #company="{ value }">
-                        <span class="text-sm">{{ value || '-' }}</span>
+                    <template #company="{ row, value }">
+                        <span
+                            class="text-sm"
+                            :class="!row._isFirstAttempt ? 'text-gray-500 text-xs' : ''"
+                        >
+                            {{ value || '-' }}
+                        </span>
                     </template>
 
-                    <template #provider="{ value }">
-                        <span class="text-sm">{{ value || '-' }}</span>
+                    <template #provider="{ row, value }">
+                        <span
+                            class="text-sm"
+                            :class="!row._isFirstAttempt ? 'text-gray-500 text-xs' : ''"
+                        >
+                            {{ value || '-' }}
+                        </span>
                     </template>
 
-                    <template #endpoint="{ value }">
-                        <span class="font-mono text-xs text-gray-500">{{ value || '-' }}</span>
+                    <template #endpoint="{ row, value }">
+                        <span
+                            class="font-mono text-xs"
+                            :class="!row._isFirstAttempt ? 'text-blue-500' : 'text-gray-500'"
+                        >
+                            {{ value || '-' }}
+                        </span>
                     </template>
 
-                    <template #duration_ms="{ value }">
-                        <span class="text-sm">{{ value !== null ? value + 'ms' : '-' }}</span>
+                    <template #duration_ms="{ row, value }">
+                        <span
+                            class="text-sm font-medium"
+                            :class="!row._isFirstAttempt ? 'text-blue-600' : ''"
+                        >
+                            {{ value !== null ? value + 'ms' : '-' }}
+                        </span>
                     </template>
 
-                    <template #created_at="{ value }">
-                        <span class="text-sm">{{ formatDate(value) }}</span>
+                    <template #created_at="{ row, value }">
+                        <span
+                            class="text-sm"
+                            :class="!row._isFirstAttempt ? 'text-xs text-gray-500' : ''"
+                        >
+                            {{ formatDate(value) }}
+                        </span>
                     </template>
 
                     <template #actions="{ row }">
                         <Button
                             variant="ghost"
-                            size="sm"
+                            :size="!row._isFirstAttempt ? 'sm' : 'sm'"
                             @click="openDetails(row.id)"
                         >
-                            Détails
+                            {{ !row._isFirstAttempt ? 'Voir' : 'Détails' }}
                         </Button>
                     </template>
                 </DataTable>
@@ -363,7 +482,7 @@ onMounted(() => {
 
         <!-- Details Modal -->
         <Dialog :open="showDetails" @update:open="closeDetails">
-            <DialogContent class="w-[90vw] max-w-7xl sm:max-w-7xl max-h-[90vh] overflow-y-auto">
+            <DialogContent class="w-[95vw] max-w-5xl sm:max-w-5xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle class="flex items-center justify-between">
                         <span>Détails du Log #{{ selectedLog?.id }}</span>
