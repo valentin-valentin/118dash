@@ -281,7 +281,7 @@ onMounted(() => {
 
         <!-- Details Modal -->
         <Dialog :open="showDetails" @update:open="closeDetails">
-            <DialogContent class="w-[90vw] max-w-3xl sm:max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogContent class="w-[90vw] max-w-3xl sm:max-w-3xl">
                 <DialogHeader>
                     <DialogTitle class="flex items-center justify-between">
                         <span>Détails du Log #{{ selectedLog?.id }}</span>
@@ -295,7 +295,7 @@ onMounted(() => {
                     <div class="text-sm text-gray-500">Chargement...</div>
                 </div>
 
-                <div v-else-if="selectedLog" class="space-y-4">
+                <div v-else-if="selectedLog" class="max-h-[70vh] space-y-4 overflow-y-auto pr-2">
                     <!-- Status & Info -->
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -370,13 +370,13 @@ onMounted(() => {
                     <!-- Request Data -->
                     <div v-if="selectedLog.request_data" class="space-y-2">
                         <p class="text-xs font-medium text-gray-500">Request Data</p>
-                        <pre class="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100"><code>{{ formatJSON(selectedLog.request_data) }}</code></pre>
+                        <pre class="max-h-64 overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100"><code>{{ formatJSON(selectedLog.request_data) }}</code></pre>
                     </div>
 
                     <!-- Response Data -->
                     <div v-if="selectedLog.response_data" class="space-y-2">
                         <p class="text-xs font-medium text-gray-500">Response Data</p>
-                        <pre class="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100"><code>{{ formatJSON(selectedLog.response_data) }}</code></pre>
+                        <pre class="max-h-64 overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100"><code>{{ formatJSON(selectedLog.response_data) }}</code></pre>
                     </div>
                 </div>
             </DialogContent>
