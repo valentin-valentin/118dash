@@ -118,7 +118,7 @@ function formatJSON(obj) {
     return JSON.stringify(obj, null, 2)
 }
 
-// ─── Grouping by job_id avec collapse/expand ─────────────────────────────────
+// ─── Grouping Logic - Une ligne de résumé par job ────────────────────────────
 const expandedGroups = ref(new Set())
 
 function toggleGroup(jobId) {
@@ -133,72 +133,93 @@ const groupedRows = computed(() => {
     const items = table.data?.items ?? []
     if (items.length === 0) return []
 
-    // Group by job_id
-    const groups = {}
-    items.forEach(row => {
-        const jobId = row.job_id || `single_${row.id}`
-        if (!groups[jobId]) {
-            groups[jobId] = []
+    // 1. Grouper par job_id
+    const groups = new Map()
+    items.forEach(item => {
+        const jobId = item.job_id || `single_${item.id}`
+        if (!groups.has(jobId)) {
+            groups.set(jobId, [])
         }
-        groups[jobId].push(row)
+        groups.get(jobId).push(item)
     })
 
-    // Pour chaque groupe, trier par tentative ASC (1, 2, 3...)
-    Object.keys(groups).forEach(jobId => {
-        groups[jobId].sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
-    })
+    // 2. Créer les données de chaque groupe
+    const groupsData = []
+    groups.forEach((attempts, jobId) => {
+        // Trier les tentatives par numéro
+        attempts.sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
 
-    // Ordre d'affichage des groupes basé sur created_at DESC de la première tentative
-    const groupOrder = Object.keys(groups).sort((a, b) => {
-        const firstA = groups[a][0]
-        const firstB = groups[b][0]
-        return new Date(firstB.created_at) - new Date(firstA.created_at)
-    })
+        // Trouver la dernière tentative (la plus récente)
+        const lastAttempt = attempts[attempts.length - 1]
+        const firstAttempt = attempts[0]
 
-    // Construire le résultat final
-    const result = []
-    groupOrder.forEach(jobId => {
-        const rows = groups[jobId]
+        // Calculer le statut global
+        const totalAttempts = attempts.length
+        const finalSuccess = !lastAttempt.is_error
+        const successAttempt = finalSuccess ? lastAttempt.attempt : null
+        const allFailed = attempts.every(a => a.is_error)
 
-        if (rows.length === 1) {
-            // Une seule tentative - affichage normal
-            result.push({
-                ...rows[0],
-                _groupId: jobId,
-                _isFirstAttempt: true,
-                _hasRetries: false,
-                _retryCount: 0,
-                _isExpanded: false,
-            })
-        } else {
-            // Plusieurs tentatives
-            const [firstAttempt, ...retries] = rows
-            const isExpanded = expandedGroups.value.has(jobId)
-
-            // Tentative 1 - toujours visible
-            result.push({
-                ...firstAttempt,
-                _groupId: jobId,
-                _isFirstAttempt: true,
-                _hasRetries: true,
-                _retryCount: retries.length,
-                _isExpanded: isExpanded,
-                _allRetriesSuccess: retries.every(r => !r.is_error),
-            })
-
-            // Tentatives 2, 3, 4... - visible seulement si expanded
-            if (isExpanded) {
-                retries.forEach(retry => {
-                    result.push({
-                        ...retry,
-                        _groupId: jobId,
-                        _isFirstAttempt: false,
-                        _hasRetries: false,
-                        _retryCount: 0,
-                        _isExpanded: false,
-                    })
-                })
+        groupsData.push({
+            jobId,
+            attempts,
+            latestDate: new Date(lastAttempt.created_at),
+            summary: {
+                // Données pour la ligne de résumé
+                id: lastAttempt.id, // ID de la dernière tentative pour les détails
+                job_id: jobId,
+                phonenumber: firstAttempt.phonenumber,
+                source: firstAttempt.source,
+                company: firstAttempt.company,
+                provider: lastAttempt.provider, // Provider qui a finalement géré
+                endpoint: lastAttempt.endpoint,
+                status: lastAttempt.status,
+                is_error: lastAttempt.is_error,
+                created_at: lastAttempt.created_at,
+                duration_ms: lastAttempt.duration_ms,
+                // Métadonnées du groupe
+                totalAttempts,
+                finalSuccess,
+                successAttempt,
+                allFailed,
+                firstAttemptDate: firstAttempt.created_at,
             }
+        })
+    })
+
+    // 3. Trier les groupes par date de dernière tentative DESC
+    groupsData.sort((a, b) => b.latestDate - a.latestDate)
+
+    // 4. Construire le tableau d'affichage
+    const result = []
+    groupsData.forEach(({ jobId, attempts, summary }) => {
+        const isExpanded = expandedGroups.value.has(jobId)
+        const hasRetries = attempts.length > 1
+
+        // Ligne de résumé (toujours affichée)
+        result.push({
+            ...summary,
+            _meta: {
+                type: 'summary',
+                groupId: jobId,
+                hasRetries,
+                isExpanded,
+                attemptsCount: attempts.length,
+            }
+        })
+
+        // Lignes de détail (affichées si expanded)
+        if (isExpanded && hasRetries) {
+            attempts.forEach((attempt, index) => {
+                result.push({
+                    ...attempt,
+                    _meta: {
+                        type: 'detail',
+                        groupId: jobId,
+                        attemptIndex: index + 1,
+                        totalAttempts: attempts.length,
+                    }
+                })
+            })
         }
     })
 
@@ -207,10 +228,31 @@ const groupedRows = computed(() => {
 
 // Style conditionnel pour les lignes
 function getRowClass(row) {
-    if (!row._isFirstAttempt) {
-        // Ligne de retry - fond bleu clair avec bordure gauche épaisse
-        return 'bg-blue-50/60 border-l-[6px] border-l-blue-500 hover:bg-blue-100/60'
+    if (!row._meta) return ''
+
+    if (row._meta.type === 'summary') {
+        // Ligne de résumé
+        if (row._meta.hasRetries) {
+            if (row.finalSuccess) {
+                // A réussi après retries
+                return 'bg-green-50/30 hover:bg-green-50/50'
+            } else if (row.allFailed) {
+                // Tous les retries ont échoué
+                return 'bg-red-50/40 hover:bg-red-50/60'
+            }
+        }
+        return ''
     }
+
+    if (row._meta.type === 'detail') {
+        // Ligne de détail d'une tentative
+        if (row.is_error) {
+            return 'bg-red-50/20 border-l-4 border-l-red-400'
+        } else {
+            return 'bg-green-50/20 border-l-4 border-l-green-400'
+        }
+    }
+
     return ''
 }
 
@@ -314,32 +356,37 @@ onMounted(() => {
                 >
                     <template #id="{ row, value }">
                         <div class="flex items-center gap-2">
-                            <!-- Expand/Collapse button pour les groupes -->
+                            <!-- Chevron pour expand/collapse (seulement sur summary avec retries) -->
                             <button
-                                v-if="row._hasRetries"
+                                v-if="row._meta?.type === 'summary' && row._meta.hasRetries"
                                 type="button"
-                                class="flex-shrink-0 rounded p-1 text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-700"
-                                @click.stop="toggleGroup(row._groupId)"
-                                :title="row._isExpanded ? 'Masquer les retries' : 'Afficher les retries'"
+                                class="flex-shrink-0 rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-800"
+                                @click.stop="toggleGroup(row._meta.groupId)"
+                                :title="row._meta.isExpanded ? 'Masquer les détails' : 'Voir toutes les tentatives'"
                             >
-                                <ChevronDown v-if="row._isExpanded" class="h-4 w-4" />
+                                <ChevronDown v-if="row._meta.isExpanded" class="h-4 w-4" />
                                 <ChevronRight v-else class="h-4 w-4" />
                             </button>
 
-                            <!-- Indicateur visuel pour retry -->
+                            <!-- Espaceur pour aligner les lignes sans chevron -->
+                            <span v-else-if="row._meta?.type === 'summary'" class="w-5"></span>
+
+                            <!-- Indicateur visuel pour les lignes de détail -->
                             <div
-                                v-if="!row._isFirstAttempt"
+                                v-if="row._meta?.type === 'detail'"
                                 class="flex items-center gap-1.5 pl-1"
                             >
-                                <svg class="h-3 w-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                </svg>
-                                <span class="text-xs font-medium text-blue-600">RETRY</span>
+                                <div class="flex h-4 items-center">
+                                    <div class="h-px w-4 bg-gray-300"></div>
+                                </div>
+                                <span class="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                                    #{{ row._meta.attemptIndex }}
+                                </span>
                             </div>
 
                             <span
                                 class="font-mono text-xs"
-                                :class="!row._isFirstAttempt ? 'text-blue-600 font-semibold' : 'text-gray-500'"
+                                :class="row._meta?.type === 'detail' ? 'text-gray-500 ml-2' : 'text-gray-700 font-medium'"
                             >
                                 #{{ value }}
                             </span>
@@ -347,37 +394,37 @@ onMounted(() => {
                     </template>
 
                     <template #attempt="{ row, value }">
-                        <div class="flex items-center gap-2">
-                            <!-- Numéro de tentative -->
-                            <span
-                                class="flex h-6 w-6 items-center justify-center rounded text-sm font-semibold"
-                                :class="!row._isFirstAttempt
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'text-gray-700'"
+                        <!-- Ligne de résumé : afficher "X/Y tentatives" avec statut -->
+                        <div v-if="row._meta?.type === 'summary'" class="flex items-center gap-2">
+                            <!-- Badge résultat -->
+                            <div
+                                class="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-bold"
+                                :class="row.finalSuccess
+                                    ? 'bg-green-500 text-white'
+                                    : 'bg-red-500 text-white'"
                             >
-                                {{ value || '1' }}
-                            </span>
-
-                            <!-- Badge pour montrer les retries avec animation -->
-                            <span
-                                v-if="row._hasRetries"
-                                class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold shadow-sm ring-1"
-                                :class="row._allRetriesSuccess
-                                    ? 'bg-green-50 text-green-700 ring-green-600/20'
-                                    : 'bg-red-50 text-red-700 ring-red-600/20'"
-                            >
-                                <span class="relative flex h-2 w-2">
-                                    <span
-                                        v-if="!row._allRetriesSuccess"
-                                        class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
-                                        :class="row._allRetriesSuccess ? 'bg-green-400' : 'bg-red-400'"
-                                    ></span>
-                                    <span
-                                        class="relative inline-flex h-2 w-2 rounded-full"
-                                        :class="row._allRetriesSuccess ? 'bg-green-500' : 'bg-red-500'"
-                                    ></span>
+                                <span class="text-base">{{ row.finalSuccess ? '✓' : '✗' }}</span>
+                                <span v-if="row.finalSuccess">
+                                    {{ row.successAttempt }}/{{ row.totalAttempts }}
                                 </span>
-                                +{{ row._retryCount }} {{ row._retryCount > 1 ? 'retries' : 'retry' }}
+                                <span v-else>
+                                    {{ row.totalAttempts }} {{ row.totalAttempts > 1 ? 'échecs' : 'échec' }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Ligne de détail : numéro de tentative simple -->
+                        <div v-else-if="row._meta?.type === 'detail'" class="flex items-center gap-2">
+                            <div
+                                class="flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold"
+                                :class="row.is_error
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-green-100 text-green-700'"
+                            >
+                                {{ value || row._meta.attemptIndex }}
+                            </div>
+                            <span class="text-xs text-gray-500">
+                                / {{ row._meta.totalAttempts }}
                             </span>
                         </div>
                     </template>
@@ -394,7 +441,7 @@ onMounted(() => {
                     <template #job_id="{ row, value }">
                         <span
                             class="font-mono text-xs"
-                            :class="!row._isFirstAttempt ? 'text-blue-600' : 'text-gray-600'"
+                            :class="row._meta?.type === 'detail' ? 'text-gray-500' : 'text-gray-700'"
                         >
                             {{ value || '-' }}
                         </span>
@@ -402,8 +449,8 @@ onMounted(() => {
 
                     <template #phonenumber="{ row, value }">
                         <span
-                            class="font-mono text-sm"
-                            :class="!row._isFirstAttempt ? 'text-gray-500' : ''"
+                            class="font-mono"
+                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm font-medium'"
                         >
                             {{ value || '-' }}
                         </span>
@@ -411,8 +458,7 @@ onMounted(() => {
 
                     <template #source="{ row, value }">
                         <span
-                            class="text-sm"
-                            :class="!row._isFirstAttempt ? 'text-gray-500 text-xs' : ''"
+                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm'"
                         >
                             {{ value || '-' }}
                         </span>
@@ -420,8 +466,7 @@ onMounted(() => {
 
                     <template #company="{ row, value }">
                         <span
-                            class="text-sm"
-                            :class="!row._isFirstAttempt ? 'text-gray-500 text-xs' : ''"
+                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm'"
                         >
                             {{ value || '-' }}
                         </span>
@@ -429,8 +474,7 @@ onMounted(() => {
 
                     <template #provider="{ row, value }">
                         <span
-                            class="text-sm"
-                            :class="!row._isFirstAttempt ? 'text-gray-500 text-xs' : ''"
+                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm'"
                         >
                             {{ value || '-' }}
                         </span>
@@ -439,25 +483,21 @@ onMounted(() => {
                     <template #endpoint="{ row, value }">
                         <span
                             class="font-mono text-xs"
-                            :class="!row._isFirstAttempt ? 'text-blue-500' : 'text-gray-500'"
+                            :class="row._meta?.type === 'detail' ? 'text-gray-500' : 'text-gray-600'"
                         >
                             {{ value || '-' }}
                         </span>
                     </template>
 
                     <template #duration_ms="{ row, value }">
-                        <span
-                            class="text-sm font-medium"
-                            :class="!row._isFirstAttempt ? 'text-blue-600' : ''"
-                        >
+                        <span class="text-sm tabular-nums">
                             {{ value !== null ? value + 'ms' : '-' }}
                         </span>
                     </template>
 
                     <template #created_at="{ row, value }">
                         <span
-                            class="text-sm"
-                            :class="!row._isFirstAttempt ? 'text-xs text-gray-500' : ''"
+                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-500' : 'text-sm'"
                         >
                             {{ formatDate(value) }}
                         </span>
@@ -466,10 +506,10 @@ onMounted(() => {
                     <template #actions="{ row }">
                         <Button
                             variant="ghost"
-                            :size="!row._isFirstAttempt ? 'sm' : 'sm'"
+                            size="sm"
                             @click="openDetails(row.id)"
                         >
-                            {{ !row._isFirstAttempt ? 'Voir' : 'Détails' }}
+                            Détails
                         </Button>
                     </template>
                 </DataTable>
@@ -482,7 +522,7 @@ onMounted(() => {
 
         <!-- Details Modal -->
         <Dialog :open="showDetails" @update:open="closeDetails">
-            <DialogContent class="w-[95vw] max-w-5xl sm:max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogContent class="w-[92vw] max-w-4xl sm:max-w-4xl max-h-[88vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle class="flex items-center justify-between">
                         <span>Détails du Log #{{ selectedLog?.id }}</span>
