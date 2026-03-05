@@ -18,7 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { X, ChevronRight, ChevronDown } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/routing-logs/stats')
@@ -38,7 +38,7 @@ const { filters, reset } = useFilters(
         source_id: '',
         company_id: '',
         provider_id: '',
-        sort: 'created_at',
+        sort: 'id',
         dir: 'desc',
     },
     (f) => table.load(f),
@@ -66,8 +66,8 @@ function toggleSort(key) {
 const columns = [
     { key: 'id', label: 'ID', sortable: true },
     { key: 'status', label: 'Status' },
-    { key: 'attempt', label: 'Tentative' },
     { key: 'job_id', label: 'Job ID' },
+    { key: 'attempt', label: 'Attempt' },
     { key: 'phonenumber', label: 'Numéro' },
     { key: 'source', label: 'Source' },
     { key: 'company', label: 'Company' },
@@ -118,143 +118,7 @@ function formatJSON(obj) {
     return JSON.stringify(obj, null, 2)
 }
 
-// ─── Grouping Logic - Une ligne de résumé par job ────────────────────────────
-const expandedGroups = ref(new Set())
-
-function toggleGroup(jobId) {
-    if (expandedGroups.value.has(jobId)) {
-        expandedGroups.value.delete(jobId)
-    } else {
-        expandedGroups.value.add(jobId)
-    }
-}
-
-const groupedRows = computed(() => {
-    const items = table.data?.items ?? []
-    if (items.length === 0) return []
-
-    // 1. Grouper par job_id
-    const groups = new Map()
-    items.forEach(item => {
-        const jobId = item.job_id || `single_${item.id}`
-        if (!groups.has(jobId)) {
-            groups.set(jobId, [])
-        }
-        groups.get(jobId).push(item)
-    })
-
-    // 2. Créer les données de chaque groupe
-    const groupsData = []
-    groups.forEach((attempts, jobId) => {
-        // Trier les tentatives par numéro
-        attempts.sort((a, b) => (a.attempt || 0) - (b.attempt || 0))
-
-        // Trouver la dernière tentative (la plus récente)
-        const lastAttempt = attempts[attempts.length - 1]
-        const firstAttempt = attempts[0]
-
-        // Calculer le statut global
-        const totalAttempts = attempts.length
-        const finalSuccess = !lastAttempt.is_error
-        const successAttempt = finalSuccess ? lastAttempt.attempt : null
-        const allFailed = attempts.every(a => a.is_error)
-
-        groupsData.push({
-            jobId,
-            attempts,
-            latestDate: new Date(lastAttempt.created_at),
-            summary: {
-                // Données pour la ligne de résumé
-                id: lastAttempt.id, // ID de la dernière tentative pour les détails
-                job_id: jobId,
-                phonenumber: firstAttempt.phonenumber,
-                source: firstAttempt.source,
-                company: firstAttempt.company,
-                provider: lastAttempt.provider, // Provider qui a finalement géré
-                endpoint: lastAttempt.endpoint,
-                status: lastAttempt.status,
-                is_error: lastAttempt.is_error,
-                created_at: lastAttempt.created_at,
-                duration_ms: lastAttempt.duration_ms,
-                // Métadonnées du groupe
-                totalAttempts,
-                finalSuccess,
-                successAttempt,
-                allFailed,
-                firstAttemptDate: firstAttempt.created_at,
-            }
-        })
-    })
-
-    // 3. Trier les groupes par date de dernière tentative DESC
-    groupsData.sort((a, b) => b.latestDate - a.latestDate)
-
-    // 4. Construire le tableau d'affichage
-    const result = []
-    groupsData.forEach(({ jobId, attempts, summary }) => {
-        const isExpanded = expandedGroups.value.has(jobId)
-        const hasRetries = attempts.length > 1
-
-        // Ligne de résumé (toujours affichée)
-        result.push({
-            ...summary,
-            _meta: {
-                type: 'summary',
-                groupId: jobId,
-                hasRetries,
-                isExpanded,
-                attemptsCount: attempts.length,
-            }
-        })
-
-        // Lignes de détail (affichées si expanded)
-        if (isExpanded && hasRetries) {
-            attempts.forEach((attempt, index) => {
-                result.push({
-                    ...attempt,
-                    _meta: {
-                        type: 'detail',
-                        groupId: jobId,
-                        attemptIndex: index + 1,
-                        totalAttempts: attempts.length,
-                    }
-                })
-            })
-        }
-    })
-
-    return result
-})
-
-// Style conditionnel pour les lignes
-function getRowClass(row) {
-    if (!row._meta) return ''
-
-    if (row._meta.type === 'summary') {
-        // Ligne de résumé
-        if (row._meta.hasRetries) {
-            if (row.finalSuccess) {
-                // A réussi après retries
-                return 'bg-green-50/30 hover:bg-green-50/50'
-            } else if (row.allFailed) {
-                // Tous les retries ont échoué
-                return 'bg-red-50/40 hover:bg-red-50/60'
-            }
-        }
-        return ''
-    }
-
-    if (row._meta.type === 'detail') {
-        // Ligne de détail d'une tentative
-        if (row.is_error) {
-            return 'bg-red-50/20 border-l-4 border-l-red-400'
-        } else {
-            return 'bg-green-50/20 border-l-4 border-l-green-400'
-        }
-    }
-
-    return ''
-}
+// Pas de groupement - juste les données brutes
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
@@ -347,88 +211,12 @@ onMounted(() => {
             <div class="rounded-lg border border-gray-100 bg-white">
                 <DataTable
                     :columns="columns"
-                    :rows="groupedRows"
+                    :rows="table.data?.items ?? []"
                     :loading="table.loading"
                     :sort-key="filters.sort"
                     :sort-dir="filters.dir"
-                    :row-class="getRowClass"
                     @sort="toggleSort"
                 >
-                    <template #id="{ row, value }">
-                        <div class="flex items-center gap-2">
-                            <!-- Chevron pour expand/collapse (seulement sur summary avec retries) -->
-                            <button
-                                v-if="row._meta?.type === 'summary' && row._meta.hasRetries"
-                                type="button"
-                                class="flex-shrink-0 rounded p-0.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-800"
-                                @click.stop="toggleGroup(row._meta.groupId)"
-                                :title="row._meta.isExpanded ? 'Masquer les détails' : 'Voir toutes les tentatives'"
-                            >
-                                <ChevronDown v-if="row._meta.isExpanded" class="h-4 w-4" />
-                                <ChevronRight v-else class="h-4 w-4" />
-                            </button>
-
-                            <!-- Espaceur pour aligner les lignes sans chevron -->
-                            <span v-else-if="row._meta?.type === 'summary'" class="w-5"></span>
-
-                            <!-- Indicateur visuel pour les lignes de détail -->
-                            <div
-                                v-if="row._meta?.type === 'detail'"
-                                class="flex items-center gap-1.5 pl-1"
-                            >
-                                <div class="flex h-4 items-center">
-                                    <div class="h-px w-4 bg-gray-300"></div>
-                                </div>
-                                <span class="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-                                    #{{ row._meta.attemptIndex }}
-                                </span>
-                            </div>
-
-                            <span
-                                class="font-mono text-xs"
-                                :class="row._meta?.type === 'detail' ? 'text-gray-500 ml-2' : 'text-gray-700 font-medium'"
-                            >
-                                #{{ value }}
-                            </span>
-                        </div>
-                    </template>
-
-                    <template #attempt="{ row, value }">
-                        <!-- Ligne de résumé : afficher "X/Y tentatives" avec statut -->
-                        <div v-if="row._meta?.type === 'summary'" class="flex items-center gap-2">
-                            <!-- Badge résultat -->
-                            <div
-                                class="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-bold"
-                                :class="row.finalSuccess
-                                    ? 'bg-green-500 text-white'
-                                    : 'bg-red-500 text-white'"
-                            >
-                                <span class="text-base">{{ row.finalSuccess ? '✓' : '✗' }}</span>
-                                <span v-if="row.finalSuccess">
-                                    {{ row.successAttempt }}/{{ row.totalAttempts }}
-                                </span>
-                                <span v-else>
-                                    {{ row.totalAttempts }} {{ row.totalAttempts > 1 ? 'échecs' : 'échec' }}
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Ligne de détail : numéro de tentative simple -->
-                        <div v-else-if="row._meta?.type === 'detail'" class="flex items-center gap-2">
-                            <div
-                                class="flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold"
-                                :class="row.is_error
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-green-100 text-green-700'"
-                            >
-                                {{ value || row._meta.attemptIndex }}
-                            </div>
-                            <span class="text-xs text-gray-500">
-                                / {{ row._meta.totalAttempts }}
-                            </span>
-                        </div>
-                    </template>
-
                     <template #status="{ row, value }">
                         <Badge
                             :variant="row.is_error ? 'destructive' : 'default'"
@@ -438,69 +226,40 @@ onMounted(() => {
                         </Badge>
                     </template>
 
-                    <template #job_id="{ row, value }">
-                        <span
-                            class="font-mono text-xs"
-                            :class="row._meta?.type === 'detail' ? 'text-gray-500' : 'text-gray-700'"
-                        >
-                            {{ value || '-' }}
-                        </span>
+                    <template #job_id="{ value }">
+                        <span class="font-mono text-xs text-gray-600">{{ value || '-' }}</span>
                     </template>
 
-                    <template #phonenumber="{ row, value }">
-                        <span
-                            class="font-mono"
-                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm font-medium'"
-                        >
-                            {{ value || '-' }}
-                        </span>
+                    <template #attempt="{ value }">
+                        <span class="text-sm text-gray-700">{{ value || '-' }}</span>
                     </template>
 
-                    <template #source="{ row, value }">
-                        <span
-                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm'"
-                        >
-                            {{ value || '-' }}
-                        </span>
+                    <template #phonenumber="{ value }">
+                        <span class="font-mono text-sm">{{ value || '-' }}</span>
                     </template>
 
-                    <template #company="{ row, value }">
-                        <span
-                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm'"
-                        >
-                            {{ value || '-' }}
-                        </span>
+                    <template #source="{ value }">
+                        <span class="text-sm">{{ value || '-' }}</span>
                     </template>
 
-                    <template #provider="{ row, value }">
-                        <span
-                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-600' : 'text-sm'"
-                        >
-                            {{ value || '-' }}
-                        </span>
+                    <template #company="{ value }">
+                        <span class="text-sm">{{ value || '-' }}</span>
                     </template>
 
-                    <template #endpoint="{ row, value }">
-                        <span
-                            class="font-mono text-xs"
-                            :class="row._meta?.type === 'detail' ? 'text-gray-500' : 'text-gray-600'"
-                        >
-                            {{ value || '-' }}
-                        </span>
+                    <template #provider="{ value }">
+                        <span class="text-sm">{{ value || '-' }}</span>
                     </template>
 
-                    <template #duration_ms="{ row, value }">
-                        <span class="text-sm tabular-nums">
-                            {{ value !== null ? value + 'ms' : '-' }}
-                        </span>
+                    <template #endpoint="{ value }">
+                        <span class="font-mono text-xs text-gray-500">{{ value || '-' }}</span>
                     </template>
 
-                    <template #created_at="{ row, value }">
-                        <span
-                            :class="row._meta?.type === 'detail' ? 'text-xs text-gray-500' : 'text-sm'"
-                        >
-                            {{ formatDate(value) }}
-                        </span>
+                    <template #duration_ms="{ value }">
+                        <span class="text-sm">{{ value !== null ? value + 'ms' : '-' }}</span>
+                    </template>
+
+                    <template #created_at="{ value }">
+                        <span class="text-sm">{{ formatDate(value) }}</span>
                     </template>
 
                     <template #actions="{ row }">
@@ -522,7 +281,7 @@ onMounted(() => {
 
         <!-- Details Modal -->
         <Dialog :open="showDetails" @update:open="closeDetails">
-            <DialogContent class="w-[92vw] max-w-4xl sm:max-w-4xl max-h-[88vh] overflow-y-auto">
+            <DialogContent class="w-[90vw] max-w-3xl sm:max-w-3xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle class="flex items-center justify-between">
                         <span>Détails du Log #{{ selectedLog?.id }}</span>
