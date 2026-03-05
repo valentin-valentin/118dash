@@ -31,6 +31,7 @@ class CompanyController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'enabled' => 'boolean',
+            'color' => 'nullable|string|max:50',
             'providers' => 'nullable|array',
             'providers.*.provider_id' => 'required|exists:providers,id',
             'providers.*.payout' => 'nullable|numeric',
@@ -40,6 +41,7 @@ class CompanyController extends Controller
             $company = Company::create([
                 'name' => $validated['name'],
                 'enabled' => $validated['enabled'] ?? true,
+                'color' => $validated['color'] ?? 'green',
             ]);
 
             if (!empty($validated['providers'])) {
@@ -72,6 +74,7 @@ class CompanyController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'enabled' => 'boolean',
+            'color' => 'nullable|string|max:50',
             'providers' => 'nullable|array',
             'providers.*.provider_id' => 'required|exists:providers,id',
             'providers.*.payout' => 'nullable|numeric',
@@ -81,21 +84,33 @@ class CompanyController extends Controller
             $company->update([
                 'name' => $validated['name'],
                 'enabled' => $validated['enabled'] ?? true,
+                'color' => $validated['color'] ?? 'green',
             ]);
 
-            // Supprimer les anciennes associations
-            $company->providerCompanies()->delete();
+            // Récupérer les IDs des providers soumis
+            $submittedProviderIds = collect($validated['providers'] ?? [])->pluck('provider_id')->toArray();
 
-            // Recréer les associations
+            // Mettre à jour ou créer les associations
             if (!empty($validated['providers'])) {
                 foreach ($validated['providers'] as $provider) {
-                    ProviderCompany::create([
-                        'company_id' => $company->id,
-                        'provider_id' => $provider['provider_id'],
-                        'payout' => $provider['payout'] ?? null,
-                    ]);
+                    ProviderCompany::updateOrCreate(
+                        [
+                            'company_id' => $company->id,
+                            'provider_id' => $provider['provider_id'],
+                        ],
+                        [
+                            'payout' => $provider['payout'] ?? null,
+                        ]
+                    );
                 }
             }
+
+            // Supprimer les associations qui ne sont plus dans la liste
+            // ET qui ne sont pas utilisées par des sources
+            $company->providerCompanies()
+                ->whereNotIn('provider_id', $submittedProviderIds)
+                ->whereDoesntHave('sourceProviderCompanies')
+                ->delete();
         });
 
         return redirect()->route('companies.index')

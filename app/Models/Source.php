@@ -15,6 +15,7 @@ class Source extends Model
         'api_key',
         'fingerprint',
         'only_dedicated_phonenumber',
+        'color',
     ];
 
     protected $casts = [

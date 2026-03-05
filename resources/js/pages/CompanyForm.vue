@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ColorPicker from '@/components/ColorPicker.vue'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,6 +33,7 @@ const initialProviders = props.company?.provider_companies?.map(pc => ({
 const form = useForm({
     name: props.company?.name || '',
     enabled: props.company?.enabled ?? true,
+    color: props.company?.color || 'green',
     providers: initialProviders.length > 0 ? initialProviders : [],
 })
 
@@ -110,6 +112,11 @@ function submit() {
                                 v-model:checked="form.enabled"
                             />
                             <Label for="enabled">Company active</Label>
+                        </div>
+
+                        <div class="space-y-2">
+                            <Label>Couleur</Label>
+                            <ColorPicker v-model="form.color" />
                         </div>
                     </CardContent>
                 </Card>

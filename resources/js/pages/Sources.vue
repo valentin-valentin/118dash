@@ -2,6 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import ColorBadge from '@/components/ColorBadge.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -143,8 +144,8 @@ onMounted(() => {
                         <span class="font-mono text-xs text-gray-500">#{{ value }}</span>
                     </template>
 
-                    <template #name="{ value }">
-                        <span class="font-medium text-gray-900">{{ value }}</span>
+                    <template #name="{ row }">
+                        <ColorBadge :color="row.color" :label="row.name" />
                     </template>
 
                     <template #api_key="{ value }">

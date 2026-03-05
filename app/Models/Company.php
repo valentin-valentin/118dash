@@ -13,6 +13,7 @@ class Company extends Model
     protected $fillable = [
         'enabled',
         'name',
+        'color',
     ];
 
     protected $casts = [

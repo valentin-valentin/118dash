@@ -33,6 +33,7 @@ class SourceController extends Controller
             'api_key' => 'required|string|max:255|unique:sources,api_key',
             'fingerprint' => 'boolean',
             'only_dedicated_phonenumber' => 'boolean',
+            'color' => 'nullable|string|max:50',
             'associations' => 'nullable|array',
             'associations.*.providers_companies_id' => 'required|exists:providers_companies,id',
             'associations.*.weight' => 'required|integer|min:1',
@@ -45,6 +46,7 @@ class SourceController extends Controller
                 'api_key' => $validated['api_key'],
                 'fingerprint' => $validated['fingerprint'] ?? false,
                 'only_dedicated_phonenumber' => $validated['only_dedicated_phonenumber'] ?? false,
+                'color' => $validated['color'] ?? 'cyan',
             ]);
 
             if (!empty($validated['associations'])) {
@@ -80,6 +82,7 @@ class SourceController extends Controller
             'api_key' => 'required|string|max:255|unique:sources,api_key,' . $source->id,
             'fingerprint' => 'boolean',
             'only_dedicated_phonenumber' => 'boolean',
+            'color' => 'nullable|string|max:50',
             'associations' => 'nullable|array',
             'associations.*.providers_companies_id' => 'required|exists:providers_companies,id',
             'associations.*.weight' => 'required|integer|min:1',
@@ -92,6 +95,7 @@ class SourceController extends Controller
                 'api_key' => $validated['api_key'],
                 'fingerprint' => $validated['fingerprint'] ?? false,
                 'only_dedicated_phonenumber' => $validated['only_dedicated_phonenumber'] ?? false,
+                'color' => $validated['color'] ?? 'cyan',
             ]);
 
             // Supprimer les anciennes associations

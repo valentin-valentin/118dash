@@ -30,6 +30,7 @@ class ProviderController extends Controller
             'enabled' => 'boolean',
             'config' => 'nullable|array',
             'payout' => 'nullable|numeric',
+            'color' => 'nullable|string|max:50',
         ]);
 
         Provider::create($validated);
@@ -53,6 +54,7 @@ class ProviderController extends Controller
             'enabled' => 'boolean',
             'config' => 'nullable|array',
             'payout' => 'nullable|numeric',
+            'color' => 'nullable|string|max:50',
         ]);
 
         $provider->update($validated);

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ColorPicker from '@/components/ColorPicker.vue'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,6 +36,7 @@ const form = useForm({
     api_key: props.source?.api_key || '',
     fingerprint: props.source?.fingerprint ?? false,
     only_dedicated_phonenumber: props.source?.only_dedicated_phonenumber ?? false,
+    color: props.source?.color || 'cyan',
     associations: initialAssociations.length > 0 ? initialAssociations : [],
 })
 
@@ -167,6 +169,11 @@ function submit() {
                                 />
                                 <Label for="only_dedicated_phonenumber">Numéro dédié uniquement</Label>
                             </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <Label>Couleur</Label>
+                            <ColorPicker v-model="form.color" />
                         </div>
                     </CardContent>
                 </Card>

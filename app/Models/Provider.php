@@ -15,6 +15,7 @@ class Provider extends Model
         'driver',
         'config',
         'payout',
+        'color',
     ];
 
     protected $casts = [
