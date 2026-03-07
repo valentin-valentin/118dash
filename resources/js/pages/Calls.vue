@@ -417,14 +417,14 @@ onMounted(() => {
                         <button
                             v-if="table.data.current_page > 1"
                             @click="filters.page = (filters.page || 1) - 1"
-                            class="rounded border px-3 py-1 text-sm hover:bg-gray-50"
+                            class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
                         >
                             Précédent
                         </button>
                         <button
                             v-if="table.data.current_page < table.data.last_page"
                             @click="filters.page = (filters.page || 1) + 1"
-                            class="rounded border px-3 py-1 text-sm hover:bg-gray-50"
+                            class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
                         >
                             Suivant
                         </button>

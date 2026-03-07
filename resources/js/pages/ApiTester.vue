@@ -489,7 +489,7 @@ onMounted(() => {
                                 <button
                                     v-for="(entry, index) in history"
                                     :key="index"
-                                    class="w-full rounded-lg border border-gray-200 p-3 text-left text-sm hover:bg-gray-50"
+                                    class="w-full cursor-pointer rounded-lg border border-gray-200 p-3 text-left text-sm hover:bg-gray-50"
                                     @click="loadFromHistory(entry)"
                                 >
                                     <div class="flex items-center justify-between">
