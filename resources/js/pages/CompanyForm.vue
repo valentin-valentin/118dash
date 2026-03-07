@@ -59,13 +59,6 @@ function removeProvider(index) {
     form.providers.splice(index, 1)
 }
 
-const tippyInstances = ref([])
-
-// Re-initialiser les tooltips quand la liste des providers change
-watch(() => form.providers, () => {
-    initTooltips()
-}, { deep: true })
-
 function getProviderRemovalInfo(providerId) {
     if (!isEdit.value || !providerId) {
         return { canRemove: true, tooltip: '' }
@@ -87,35 +80,26 @@ function getProviderRemovalInfo(providerId) {
     }
 }
 
-function initTooltips() {
-    // Destroy existing instances
-    tippyInstances.value.forEach(instance => instance.destroy())
-    tippyInstances.value = []
+function setupTooltip(el) {
+    if (!el) return
 
-    // Initialize tooltips for disabled buttons
     nextTick(() => {
-        const disabledButtons = document.querySelectorAll('[data-tooltip-disabled]')
-        disabledButtons.forEach(button => {
-            const message = button.getAttribute('data-tooltip-message')
-            if (message) {
-                const instance = tippy(button, {
-                    content: message,
-                    theme: 'light',
-                    placement: 'left',
-                    arrow: true,
-                    animation: 'scale',
-                    duration: [200, 150],
-                    maxWidth: 350,
-                })
-                tippyInstances.value.push(instance)
-            }
-        })
+        const message = el.getAttribute('data-tooltip-message')
+        if (message) {
+            tippy(el, {
+                content: message,
+                theme: 'light',
+                placement: 'left',
+                arrow: true,
+                animation: 'scale',
+                duration: [200, 150],
+                maxWidth: 350,
+                interactive: false,
+                appendTo: () => document.body,
+            })
+        }
     })
 }
-
-onMounted(() => {
-    initTooltips()
-})
 
 function submit() {
     if (isEdit.value) {
@@ -266,18 +250,16 @@ function submit() {
                                     </div>
                                 </div>
 
-                                <Button
+                                <button
                                     v-if="!getProviderRemovalInfo(provider.provider_id).canRemove"
                                     type="button"
-                                    variant="ghost"
-                                    size="sm"
                                     disabled
-                                    class="mt-7 cursor-not-allowed text-gray-400"
-                                    data-tooltip-disabled
+                                    :ref="el => { if (el) setupTooltip(el) }"
                                     :data-tooltip-message="getProviderRemovalInfo(provider.provider_id).tooltip"
+                                    class="mt-7 inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-md text-sm font-medium text-gray-400 transition-colors hover:bg-transparent"
                                 >
                                     <Trash2 class="h-4 w-4" />
-                                </Button>
+                                </button>
                                 <Button
                                     v-else
                                     type="button"
