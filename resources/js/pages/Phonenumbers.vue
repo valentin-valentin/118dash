@@ -81,7 +81,6 @@ const columns = [
     { key: 'provider', label: 'Provider' },
     { key: 'only_source', label: 'Source dédiée' },
     { key: 'source', label: 'Source actuelle' },
-    { key: 'status', label: 'Statut' },
     { key: 'assigned_status', label: 'Assignation' },
     { key: 'routing', label: 'Routing' },
     { key: 'stats', label: 'Statistiques' },
@@ -573,15 +572,6 @@ onUnmounted(() => {
                             {{ row.source.name }}
                         </span>
                         <span v-else class="text-xs text-gray-400">Non assigné</span>
-                    </template>
-
-                    <template #status="{ row }">
-                        <span
-                            class="inline-flex rounded-full px-2 py-1 text-xs font-medium"
-                            :class="!row.deleted_at ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
-                        >
-                            {{ !row.deleted_at ? 'Actif' : 'Supprimé' }}
-                        </span>
                     </template>
 
                     <template #assigned_status="{ row }">
