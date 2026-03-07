@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -11,9 +11,6 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-vue-next'
-import tippy from 'tippy.js'
-import 'tippy.js/dist/tippy.css'
-import 'tippy.js/themes/light.css'
 
 const props = defineProps({
     company: {
@@ -78,27 +75,6 @@ function getProviderRemovalInfo(providerId) {
         canRemove: false,
         tooltip: `Ce provider ne peut pas être supprimé car il est lié aux sources : ${sourceNames}`
     }
-}
-
-function setupTooltip(el) {
-    if (!el) return
-
-    nextTick(() => {
-        const message = el.getAttribute('data-tooltip-message')
-        if (message) {
-            tippy(el, {
-                content: message,
-                theme: 'light',
-                placement: 'left',
-                arrow: true,
-                animation: 'scale',
-                duration: [200, 150],
-                maxWidth: 350,
-                interactive: false,
-                appendTo: () => document.body,
-            })
-        }
-    })
 }
 
 function submit() {
@@ -250,16 +226,19 @@ function submit() {
                                     </div>
                                 </div>
 
-                                <button
-                                    v-if="!getProviderRemovalInfo(provider.provider_id).canRemove"
-                                    type="button"
-                                    disabled
-                                    :ref="el => { if (el) setupTooltip(el) }"
-                                    :data-tooltip-message="getProviderRemovalInfo(provider.provider_id).tooltip"
-                                    class="mt-7 inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-md text-sm font-medium text-gray-400 transition-colors hover:bg-transparent"
-                                >
-                                    <Trash2 class="h-4 w-4" />
-                                </button>
+                                <div v-if="!getProviderRemovalInfo(provider.provider_id).canRemove" class="group relative mt-7">
+                                    <button
+                                        type="button"
+                                        disabled
+                                        class="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-md text-sm font-medium text-gray-400 transition-colors hover:bg-transparent"
+                                    >
+                                        <Trash2 class="h-4 w-4" />
+                                    </button>
+                                    <div class="pointer-events-none absolute right-full top-1/2 z-50 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-3 py-2 text-sm text-white shadow-lg group-hover:block">
+                                        <div class="max-w-xs">{{ getProviderRemovalInfo(provider.provider_id).tooltip }}</div>
+                                        <div class="absolute right-0 top-1/2 -mr-1 h-2 w-2 -translate-y-1/2 rotate-45 bg-gray-900"></div>
+                                    </div>
+                                </div>
                                 <Button
                                     v-else
                                     type="button"
