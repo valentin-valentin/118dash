@@ -174,6 +174,37 @@ function formatDuration(seconds) {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
+function hasInvalidRouting(row) {
+    // Si le numéro a une erreur de routing explicite
+    if (row.routing_error) return true
+
+    // Si le numéro est expiré (real_expires_at dépassé depuis plus de 2 minutes)
+    if (row.real_expires_at) {
+        const expires = new Date(row.real_expires_at)
+        const diffMs = now.value - expires
+        const diffMinutes = Math.floor(diffMs / 1000 / 60)
+
+        // Si expiré depuis plus de 2 minutes et toujours assigné
+        if (diffMinutes > 2 && row.assigned_at) {
+            return true
+        }
+    }
+
+    return false
+}
+
+const invalidRoutingCount = computed(() => {
+    if (!table.data?.items) return 0
+    return table.data.items.filter(row => hasInvalidRouting(row)).length
+})
+
+function getRowClass(row) {
+    if (hasInvalidRouting(row)) {
+        return 'bg-red-50 hover:bg-red-100/80'
+    }
+    return ''
+}
+
 // Réinitialiser la sélection quand on change de page
 watch(() => table.data?.items, () => {
     selectedIds.value = []
@@ -483,6 +514,7 @@ onUnmounted(() => {
                     :loading="table.loading"
                     :sort-key="filters.sort"
                     :sort-dir="filters.dir"
+                    :row-class="getRowClass"
                     @sort="toggleSort"
                 >
                     <template #select="{ row }">
@@ -582,10 +614,13 @@ onUnmounted(() => {
                     </template>
 
                     <template #routing="{ row }">
-                        <div v-if="row.routing_error" class="space-y-0.5">
+                        <div v-if="hasInvalidRouting(row)" class="space-y-0.5">
                             <div class="flex items-center gap-1 text-red-600">
                                 <AlertTriangle class="h-4 w-4" />
                                 <span class="text-xs">Erreur</span>
+                            </div>
+                            <div v-if="row.current_endpoint" class="text-[11px] text-red-500">
+                                {{ row.current_endpoint }}
                             </div>
                         </div>
                         <div v-else class="space-y-0.5">

@@ -174,6 +174,25 @@ class PhonenumberController extends Controller
         ]);
     }
 
+    public function hasInvalidRouting(): JsonResponse
+    {
+        // Check for numbers with explicit routing errors
+        $hasErrors = Phonenumber::whereNotNull('routing_error')->exists();
+
+        if (!$hasErrors) {
+            // Check for numbers expired for more than 2 minutes but still assigned
+            $twoMinutesAgo = now()->subMinutes(2);
+            $hasErrors = Phonenumber::whereNotNull('real_expires_at')
+                ->where('real_expires_at', '<', $twoMinutesAgo)
+                ->whereNotNull('assigned_at')
+                ->exists();
+        }
+
+        return response()->json([
+            'has_invalid_routing' => $hasErrors,
+        ]);
+    }
+
     // Actions en masse
     public function bulkDelete(Request $request): JsonResponse
     {

@@ -18,6 +18,7 @@ import { dashboard } from '@/routes'
 // ─── Navigation ──────────────────────────────────────────────────────────────
 // Check for routing log errors
 const hasRoutingErrors = ref(false)
+const hasInvalidRouting = ref(false)
 
 async function checkRoutingErrors() {
     try {
@@ -29,10 +30,22 @@ async function checkRoutingErrors() {
     }
 }
 
+async function checkInvalidRouting() {
+    try {
+        const res = await fetch('/data/phonenumbers/has-invalid-routing')
+        const data = await res.json()
+        hasInvalidRouting.value = data.has_invalid_routing
+    } catch (error) {
+        console.error('Error checking invalid routing:', error)
+    }
+}
+
 onMounted(() => {
     checkRoutingErrors()
+    checkInvalidRouting()
     // Check every 60 seconds
     setInterval(checkRoutingErrors, 60000)
+    setInterval(checkInvalidRouting, 60000)
 })
 
 // Ajouter les items de nav ici. Chaque item correspond à une page dans resources/js/pages/.
@@ -42,7 +55,7 @@ const navItems = [
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
     { title: 'Sources', href: '/sources', icon: Workflow },
-    { title: 'Numéros', href: '/phonenumbers', icon: Hash },
+    { title: 'Numéros', href: '/phonenumbers', icon: Hash, badge: () => hasInvalidRouting.value ? 'error' : null },
     { title: 'Blacklists', href: '/blacklists', icon: ShieldAlert },
     { title: 'Assignment History', href: '/assignment-history', icon: Clock },
     { title: 'Routing Logs', href: '/routing-logs', icon: FileText, badge: () => hasRoutingErrors.value ? 'error' : null },

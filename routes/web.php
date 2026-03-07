@@ -80,6 +80,7 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/phonenumbers/stats', [PhonenumberController::class, 'stats']);
         Route::get('/phonenumbers/filter-options', [PhonenumberController::class, 'filterOptions']);
+        Route::get('/phonenumbers/has-invalid-routing', [PhonenumberController::class, 'hasInvalidRouting']);
         Route::get('/phonenumbers', [PhonenumberController::class, 'data']);
         Route::post('/phonenumbers/bulk-delete', [PhonenumberController::class, 'bulkDelete']);
         Route::post('/phonenumbers/bulk-restore', [PhonenumberController::class, 'bulkRestore']);
