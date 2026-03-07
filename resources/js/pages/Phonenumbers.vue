@@ -111,14 +111,16 @@ function isSelected(id) {
     return selectedIds.value.includes(id)
 }
 
-function formatDate(dateString) {
-    if (!dateString) return null
-    const date = new Date(dateString)
-    return date.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-    })
+function getTimeRemaining(expiresAt) {
+    if (!expiresAt) return null
+    const now = new Date()
+    const expires = new Date(expiresAt)
+    const diffMs = expires - now
+    const diffMinutes = Math.floor(diffMs / 1000 / 60)
+
+    if (diffMinutes < 0) return 'Expiré'
+    if (diffMinutes === 0) return '< 1 min'
+    return `${diffMinutes} min`
 }
 
 // Réinitialiser la sélection quand on change de page
@@ -497,12 +499,12 @@ onMounted(() => {
                                     {{ row.assigned_at ? 'Assigné' : 'Libre' }}
                                 </span>
                             </div>
-                            <div v-if="row.display_expires_at || row.real_expires_at" class="space-y-0.5 text-[11px] text-gray-500">
-                                <div v-if="row.display_expires_at">
-                                    <span class="font-medium">Affichage:</span> {{ formatDate(row.display_expires_at) }}
+                            <div v-if="row.display_expires_at || row.real_expires_at" class="space-y-0.5 text-[11px]">
+                                <div v-if="row.display_expires_at" :class="getTimeRemaining(row.display_expires_at) === 'Expiré' ? 'text-red-600' : 'text-gray-600'">
+                                    <span class="font-medium">Affichage:</span> {{ getTimeRemaining(row.display_expires_at) }}
                                 </div>
-                                <div v-if="row.real_expires_at">
-                                    <span class="font-medium">Réel:</span> {{ formatDate(row.real_expires_at) }}
+                                <div v-if="row.real_expires_at" :class="getTimeRemaining(row.real_expires_at) === 'Expiré' ? 'text-red-600' : 'text-gray-600'">
+                                    <span class="font-medium">Réel:</span> {{ getTimeRemaining(row.real_expires_at) }}
                                 </div>
                             </div>
                         </div>
