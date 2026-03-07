@@ -582,13 +582,20 @@ onUnmounted(() => {
                     </template>
 
                     <template #routing="{ row }">
-                        <div v-if="row.routing_error" class="flex items-center gap-1 text-red-600">
-                            <AlertTriangle class="h-4 w-4" />
-                            <span class="text-xs">Erreur</span>
+                        <div v-if="row.routing_error" class="space-y-0.5">
+                            <div class="flex items-center gap-1 text-red-600">
+                                <AlertTriangle class="h-4 w-4" />
+                                <span class="text-xs">Erreur</span>
+                            </div>
                         </div>
-                        <div v-else class="flex items-center gap-1 text-green-600">
-                            <Check class="h-4 w-4" />
-                            <span class="text-xs">OK</span>
+                        <div v-else class="space-y-0.5">
+                            <div class="flex items-center gap-1 text-green-600">
+                                <Check class="h-4 w-4" />
+                                <span class="text-xs">OK</span>
+                            </div>
+                            <div v-if="row.current_endpoint" class="text-[11px] text-gray-500">
+                                {{ row.current_endpoint }}
+                            </div>
                         </div>
                     </template>
 
