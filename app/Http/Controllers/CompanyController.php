@@ -83,7 +83,9 @@ class CompanyController extends Controller
             'providers.*.config' => 'nullable|json',
         ]);
 
-        DB::transaction(function () use ($validated, $company) {
+        $keptProviders = [];
+
+        DB::transaction(function () use ($validated, $company, &$keptProviders) {
             $company->update([
                 'name' => $validated['name'],
                 'enabled' => $validated['enabled'] ?? true,
@@ -109,6 +111,15 @@ class CompanyController extends Controller
                 }
             }
 
+            // Identifier les providers qui ne peuvent pas être supprimés car liés à des sources
+            $keptProviders = $company->providerCompanies()
+                ->whereNotIn('provider_id', $submittedProviderIds)
+                ->whereHas('sourceProviderCompanies')
+                ->with('provider')
+                ->get()
+                ->pluck('provider.name')
+                ->toArray();
+
             // Supprimer les associations qui ne sont plus dans la liste
             // ET qui ne sont pas utilisées par des sources
             $company->providerCompanies()
@@ -117,8 +128,13 @@ class CompanyController extends Controller
                 ->delete();
         });
 
+        $message = 'Company modifiée avec succès.';
+        if (!empty($keptProviders)) {
+            $message .= ' Attention : ' . count($keptProviders) . ' provider(s) n\'ont pas pu être supprimé(s) car lié(s) à des sources : ' . implode(', ', $keptProviders);
+        }
+
         return redirect()->route('companies.index')
-            ->with('success', 'Company modifiée avec succès.');
+            ->with('success', $message);
     }
 
     public function data(Request $request): JsonResponse
