@@ -138,14 +138,30 @@ function getExpirationTime(expiresAt) {
 function getTooltipText(displayExpiresAt, realExpiresAt) {
     const lines = []
     if (displayExpiresAt) {
-        const timeRemaining = getTimeRemaining(displayExpiresAt)
+        const expires = new Date(displayExpiresAt)
+        const diffMs = expires - now.value
+        const diffMinutes = Math.floor(diffMs / 1000 / 60)
         const time = getExpirationTime(displayExpiresAt)
-        lines.push(`Affichage expire dans ${timeRemaining} à ${time}`)
+
+        if (diffMinutes < 0) {
+            lines.push(`Affichage a expiré à ${time}`)
+        } else {
+            const timeRemaining = diffMinutes === 0 ? '< 1mn' : `${diffMinutes}mn`
+            lines.push(`Affichage expire dans ${timeRemaining} (à ${time})`)
+        }
     }
     if (realExpiresAt) {
-        const timeRemaining = getTimeRemaining(realExpiresAt)
+        const expires = new Date(realExpiresAt)
+        const diffMs = expires - now.value
+        const diffMinutes = Math.floor(diffMs / 1000 / 60)
         const time = getExpirationTime(realExpiresAt)
-        lines.push(`Expiration réelle dans ${timeRemaining} à ${time}`)
+
+        if (diffMinutes < 0) {
+            lines.push(`Expiration réelle à ${time}`)
+        } else {
+            const timeRemaining = diffMinutes === 0 ? '< 1mn' : `${diffMinutes}mn`
+            lines.push(`Expiration réelle dans ${timeRemaining} (à ${time})`)
+        }
     }
     return lines.join('\n')
 }
@@ -577,8 +593,13 @@ onUnmounted(() => {
                     </template>
 
                     <template #stats="{ row }">
-                        <div class="text-xs text-gray-600">
-                            {{ row.total_assignments || 0 }} assignations · {{ formatDuration(row.total_duration || 0) }}
+                        <div class="group relative text-xs text-gray-600">
+                            {{ row.total_assignments || 0 }} · {{ formatDuration(row.total_duration || 0) }}
+                            <div class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-48 rounded-lg bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white shadow-xl opacity-0 scale-95 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100">
+                                <div>{{ row.total_assignments || 0 }} assignations</div>
+                                <div>Durée totale : {{ formatDuration(row.total_duration || 0) }}</div>
+                                <div class="absolute left-4 top-full -mt-1 h-2 w-2 rotate-45 bg-gray-900"></div>
+                            </div>
                         </div>
                     </template>
 
