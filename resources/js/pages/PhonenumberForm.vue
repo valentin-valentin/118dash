@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw } from 'lucide-vue-next'
 
 const props = defineProps({
     phonenumber: {
@@ -89,6 +89,40 @@ const availableSources = computed(() => {
 
 const isProcessing = ref(false)
 const importErrors = ref([])
+const isRouting = ref(false)
+
+// Fonction de routing manuel
+async function manualRoute() {
+    if (!props.phonenumber?.id) return
+
+    if (!confirm('Voulez-vous forcer le routing de ce numéro maintenant ?')) return
+
+    isRouting.value = true
+    try {
+        const response = await fetch('/data/phonenumbers/manual-route', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+            },
+            body: JSON.stringify({ ids: [props.phonenumber.id] }),
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+            alert(data.message || 'Routing effectué avec succès')
+            router.reload()
+        } else {
+            alert(data.message || 'Erreur lors du routing')
+        }
+    } catch (error) {
+        alert('Erreur lors du routing')
+        console.error(error)
+    } finally {
+        isRouting.value = false
+    }
+}
 
 // Réinitialiser provider_id quand company_id change
 watch(() => form.company_id, (newCompanyId, oldCompanyId) => {
@@ -203,6 +237,16 @@ async function submit() {
                 ]"
             >
                 <template #actions>
+                    <Button
+                        v-if="isEdit"
+                        variant="outline"
+                        size="sm"
+                        @click="manualRoute"
+                        :disabled="isRouting"
+                    >
+                        <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': isRouting }" />
+                        {{ isRouting ? 'Routing...' : 'Router manuellement' }}
+                    </Button>
                     <Button variant="outline" size="sm" as-child>
                         <Link href="/phonenumbers">
                             <ArrowLeft class="mr-2 h-4 w-4" />

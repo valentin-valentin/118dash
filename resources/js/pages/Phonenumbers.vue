@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3 } from 'lucide-vue-next'
+import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3, Zap } from 'lucide-vue-next'
 import {
     Dialog,
     DialogContent,
@@ -224,6 +224,37 @@ async function bulkRestore() {
     }
 }
 
+async function bulkRoute() {
+    if (!confirm(`Voulez-vous vraiment router ${selectedIds.value.length} numéro(s) maintenant ?`)) return
+
+    isProcessing.value = true
+    try {
+        const response = await fetch('/data/phonenumbers/manual-route', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+            body: JSON.stringify({ ids: selectedIds.value }),
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+            alert(data.message || 'Routing effectué avec succès')
+            selectedIds.value = []
+            table.load(filters)
+            stats.load()
+        } else {
+            alert(data.message || 'Erreur lors du routing')
+        }
+    } catch (error) {
+        alert('Erreur lors du routing')
+    } finally {
+        isProcessing.value = false
+    }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     stats.load()
@@ -272,6 +303,19 @@ onMounted(() => {
                 :loading-results="table.loading"
                 @reset="reset"
             >
+                <div class="mb-3 flex items-center justify-between">
+                    <span class="text-sm text-gray-600">Résultats par page :</span>
+                    <select
+                        v-model.number="filters.per_page"
+                        class="rounded-md border border-gray-300 px-3 py-1 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                        <option :value="50">50</option>
+                        <option :value="100">100</option>
+                        <option :value="250">250</option>
+                        <option :value="500">500</option>
+                        <option :value="1000">1000</option>
+                    </select>
+                </div>
                 <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                     <!-- Recherche -->
                     <Input
@@ -529,6 +573,18 @@ onMounted(() => {
                     </div>
 
                     <div class="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            @click="bulkRoute"
+                            :disabled="isProcessing"
+                            v-if="filters.only_deleted !== 'yes'"
+                            class="text-blue-600 hover:text-blue-700"
+                        >
+                            <Zap class="mr-2 h-4 w-4" />
+                            Router
+                        </Button>
+
                         <Button
                             variant="outline"
                             size="sm"

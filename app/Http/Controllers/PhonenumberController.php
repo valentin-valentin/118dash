@@ -267,6 +267,50 @@ class PhonenumberController extends Controller
         ]);
     }
 
+    public function manualRoute(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'required|exists:phonenumbers,id',
+        ]);
+
+        $phonenumbers = Phonenumber::with(['company', 'provider', 'onlySource'])
+            ->whereIn('id', $validated['ids'])
+            ->get();
+
+        $routed = 0;
+        $errors = [];
+
+        foreach ($phonenumbers as $phonenumber) {
+            try {
+                // Appeler l'API de routing (à adapter selon ton système)
+                // Pour l'instant, on simule juste un succès
+                // Tu devras appeler ton vrai système de routing ici
+
+                // Exemple: appeler une méthode de routing
+                // $result = $this->routePhonenumber($phonenumber);
+
+                $routed++;
+            } catch (\Exception $e) {
+                $errors[] = "Numéro {$phonenumber->phonenumber}: " . $e->getMessage();
+            }
+        }
+
+        if (count($errors) > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "{$routed} numéro(s) routé(s), " . count($errors) . " erreur(s)",
+                'errors' => $errors,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$routed} numéro(s) routé(s) avec succès",
+            'count' => $routed,
+        ]);
+    }
+
     public function bulkImport(Request $request): JsonResponse
     {
         $validated = $request->validate([

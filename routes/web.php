@@ -87,6 +87,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/bulk-update-source', [PhonenumberController::class, 'bulkUpdateSource']);
         Route::post('/phonenumbers/bulk-assign', [PhonenumberController::class, 'bulkAssign']);
         Route::post('/phonenumbers/bulk-import', [PhonenumberController::class, 'bulkImport']);
+        Route::post('/phonenumbers/manual-route', [PhonenumberController::class, 'manualRoute']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
         Route::get('/blacklists', [BlacklistController::class, 'data']);
