@@ -61,7 +61,7 @@ async function sendRequest() {
     loading.value = true
     response.value = null
 
-    const url = `${apiUrl.value}/api/v1/assign`
+    const url = `${apiUrl.value}/api/phonenumber`
     const startTime = Date.now()
 
     try {
@@ -234,7 +234,7 @@ onMounted(() => {
                                     />
                                 </div>
                                 <p class="text-xs text-gray-500">
-                                    Endpoint: <code class="rounded bg-gray-100 px-1 py-0.5">/api/v1/assign</code>
+                                    Endpoint: <code class="rounded bg-gray-100 px-1 py-0.5">/api/phonenumber</code>
                                 </p>
                             </div>
                         </CardContent>
@@ -517,7 +517,7 @@ onMounted(() => {
                         </CardHeader>
                         <CardContent class="space-y-3 text-sm">
                             <div>
-                                <p class="font-medium">POST /api/v1/assign</p>
+                                <p class="font-medium">POST /api/phonenumber</p>
                                 <p class="text-xs text-gray-500">Assigner un numéro à une source</p>
                             </div>
 

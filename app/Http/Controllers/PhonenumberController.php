@@ -277,49 +277,17 @@ class PhonenumberController extends Controller
             'ids.*' => 'required|exists:phonenumbers,id',
         ]);
 
-        $routed = 0;
-        $errors = [];
-        $apiUrl = 'http://api.118.ae';
-
+        // Dispatcher les jobs de routing pour tous les numéros
         foreach ($validated['ids'] as $phonenumberId) {
-            try {
-                // Appeler l'API de force-route sur api.118.ae
-                $response = \Http::timeout(30)
-                    ->withOptions(['verify' => false]) // Désactiver la vérification SSL
-                    ->post("{$apiUrl}/api/phonenumber/{$phonenumberId}/force-route");
-
-                if ($response->successful()) {
-                    $routed++;
-                } else {
-                    $phonenumber = Phonenumber::find($phonenumberId);
-                    $errorMessage = $response->json()['message'] ?? $response->body();
-                    $numberDisplay = $phonenumber?->phonenumber ?? $phonenumberId;
-                    $errors[] = "Numéro {$numberDisplay}: HTTP {$response->status()} - {$errorMessage}";
-                }
-            } catch (\Illuminate\Http\Client\ConnectionException $e) {
-                $phonenumber = Phonenumber::find($phonenumberId);
-                $numberDisplay = $phonenumber?->phonenumber ?? $phonenumberId;
-                $errors[] = "Numéro {$numberDisplay}: Impossible de joindre l'API - " . $e->getMessage();
-            } catch (\Exception $e) {
-                $phonenumber = Phonenumber::find($phonenumberId);
-                $numberDisplay = $phonenumber?->phonenumber ?? $phonenumberId;
-                $errors[] = "Numéro {$numberDisplay}: " . $e->getMessage();
-            }
+            \App\Jobs\RoutePhoneNumber::dispatch($phonenumberId);
         }
 
-        if (count($errors) > 0) {
-            return response()->json([
-                'success' => $routed > 0,
-                'message' => "{$routed} numéro(s) routé(s)" . (count($errors) > 0 ? ", " . count($errors) . " erreur(s)" : ""),
-                'errors' => $errors,
-                'count' => $routed,
-            ]);
-        }
+        $count = count($validated['ids']);
 
         return response()->json([
             'success' => true,
-            'message' => "{$routed} numéro(s) routé(s) avec succès",
-            'count' => $routed,
+            'message' => "{$count} numéro(s) en cours de routing. Le processus se fait en arrière-plan.",
+            'count' => $count,
         ]);
     }
 
