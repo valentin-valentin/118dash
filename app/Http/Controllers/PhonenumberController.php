@@ -290,14 +290,17 @@ class PhonenumberController extends Controller
                 } else {
                     $phonenumber = Phonenumber::find($phonenumberId);
                     $errorMessage = $response->json()['message'] ?? $response->body();
-                    $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: HTTP {$response->status()} - {$errorMessage}";
+                    $numberDisplay = $phonenumber?->phonenumber ?? $phonenumberId;
+                    $errors[] = "Numéro {$numberDisplay}: HTTP {$response->status()} - {$errorMessage}";
                 }
             } catch (\Illuminate\Http\Client\ConnectionException $e) {
                 $phonenumber = Phonenumber::find($phonenumberId);
-                $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: Impossible de joindre l'API - " . $e->getMessage();
+                $numberDisplay = $phonenumber?->phonenumber ?? $phonenumberId;
+                $errors[] = "Numéro {$numberDisplay}: Impossible de joindre l'API - " . $e->getMessage();
             } catch (\Exception $e) {
                 $phonenumber = Phonenumber::find($phonenumberId);
-                $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: " . $e->getMessage();
+                $numberDisplay = $phonenumber?->phonenumber ?? $phonenumberId;
+                $errors[] = "Numéro {$numberDisplay}: " . $e->getMessage();
             }
         }
 
