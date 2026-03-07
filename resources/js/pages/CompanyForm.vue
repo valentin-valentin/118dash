@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -10,8 +10,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-vue-next'
+import tippy from 'tippy.js'
+import 'tippy.js/dist/tippy.css'
+import 'tippy.js/themes/light.css'
 
 const props = defineProps({
     company: {
@@ -57,6 +59,13 @@ function removeProvider(index) {
     form.providers.splice(index, 1)
 }
 
+const tippyInstances = ref([])
+
+// Re-initialiser les tooltips quand la liste des providers change
+watch(() => form.providers, () => {
+    initTooltips()
+}, { deep: true })
+
 function getProviderRemovalInfo(providerId) {
     if (!isEdit.value || !providerId) {
         return { canRemove: true, tooltip: '' }
@@ -77,6 +86,36 @@ function getProviderRemovalInfo(providerId) {
         tooltip: `Ce provider ne peut pas être supprimé car il est lié aux sources : ${sourceNames}`
     }
 }
+
+function initTooltips() {
+    // Destroy existing instances
+    tippyInstances.value.forEach(instance => instance.destroy())
+    tippyInstances.value = []
+
+    // Initialize tooltips for disabled buttons
+    nextTick(() => {
+        const disabledButtons = document.querySelectorAll('[data-tooltip-disabled]')
+        disabledButtons.forEach(button => {
+            const message = button.getAttribute('data-tooltip-message')
+            if (message) {
+                const instance = tippy(button, {
+                    content: message,
+                    theme: 'light',
+                    placement: 'left',
+                    arrow: true,
+                    animation: 'scale',
+                    duration: [200, 150],
+                    maxWidth: 350,
+                })
+                tippyInstances.value.push(instance)
+            }
+        })
+    })
+}
+
+onMounted(() => {
+    initTooltips()
+})
 
 function submit() {
     if (isEdit.value) {
@@ -227,24 +266,18 @@ function submit() {
                                     </div>
                                 </div>
 
-                                <TooltipProvider v-if="!getProviderRemovalInfo(provider.provider_id).canRemove">
-                                    <Tooltip>
-                                        <TooltipTrigger as-child>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled
-                                                class="mt-7 cursor-not-allowed text-gray-400"
-                                            >
-                                                <Trash2 class="h-4 w-4" />
-                                            </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p class="max-w-xs">{{ getProviderRemovalInfo(provider.provider_id).tooltip }}</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
+                                <Button
+                                    v-if="!getProviderRemovalInfo(provider.provider_id).canRemove"
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled
+                                    class="mt-7 cursor-not-allowed text-gray-400"
+                                    data-tooltip-disabled
+                                    :data-tooltip-message="getProviderRemovalInfo(provider.provider_id).tooltip"
+                                >
+                                    <Trash2 class="h-4 w-4" />
+                                </Button>
                                 <Button
                                     v-else
                                     type="button"
