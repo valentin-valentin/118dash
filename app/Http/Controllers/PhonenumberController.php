@@ -276,21 +276,25 @@ class PhonenumberController extends Controller
 
         $routed = 0;
         $errors = [];
+        $apiUrl = 'http://api.118.ae';
 
         foreach ($validated['ids'] as $phonenumberId) {
             try {
-                // Appeler l'API de force-route
-                $response = \Http::timeout(10)->post(
-                    config('app.url') . "/api/phonenumber/{$phonenumberId}/force-route"
-                );
+                // Appeler l'API de force-route sur api.118.ae
+                $response = \Http::timeout(30)
+                    ->withOptions(['verify' => false]) // Désactiver la vérification SSL
+                    ->post("{$apiUrl}/api/phonenumber/{$phonenumberId}/force-route");
 
                 if ($response->successful()) {
                     $routed++;
                 } else {
                     $phonenumber = Phonenumber::find($phonenumberId);
-                    $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: " .
-                                ($response->json()['message'] ?? "Erreur HTTP {$response->status()}");
+                    $errorMessage = $response->json()['message'] ?? $response->body();
+                    $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: HTTP {$response->status()} - {$errorMessage}";
                 }
+            } catch (\Illuminate\Http\Client\ConnectionException $e) {
+                $phonenumber = Phonenumber::find($phonenumberId);
+                $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: Impossible de joindre l'API - " . $e->getMessage();
             } catch (\Exception $e) {
                 $phonenumber = Phonenumber::find($phonenumberId);
                 $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: " . $e->getMessage();
