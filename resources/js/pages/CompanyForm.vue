@@ -234,8 +234,8 @@ function submit() {
                                     >
                                         <Trash2 class="h-4 w-4" />
                                     </button>
-                                    <div class="pointer-events-none absolute right-full top-1/2 z-50 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-3 py-2 text-sm text-white shadow-lg group-hover:block">
-                                        <div class="max-w-xs">{{ getProviderRemovalInfo(provider.provider_id).tooltip }}</div>
+                                    <div class="pointer-events-none absolute right-full top-1/2 z-50 mr-2 w-80 -translate-y-1/2 rounded-lg bg-gray-900 px-3 py-2 text-sm leading-relaxed text-white shadow-xl opacity-0 scale-95 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100">
+                                        {{ getProviderRemovalInfo(provider.provider_id).tooltip }}
                                         <div class="absolute right-0 top-1/2 -mr-1 h-2 w-2 -translate-y-1/2 rotate-45 bg-gray-900"></div>
                                     </div>
                                 </div>
