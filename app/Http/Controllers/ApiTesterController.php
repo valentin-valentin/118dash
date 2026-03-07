@@ -63,7 +63,7 @@ class ApiTesterController extends Controller
             $body['ip'] = $validated['ip'];
         }
 
-        $url = rtrim($validated['api_url'], '/') . '/api/v1/assign';
+        $url = rtrim($validated['api_url'], '/') . '/api/phonenumber';
         $startTime = microtime(true);
 
         // Debug logs
