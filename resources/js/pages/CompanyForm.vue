@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -54,6 +55,27 @@ function addProvider() {
 
 function removeProvider(index) {
     form.providers.splice(index, 1)
+}
+
+function getProviderRemovalInfo(providerId) {
+    if (!isEdit.value || !providerId) {
+        return { canRemove: true, tooltip: '' }
+    }
+
+    const providerCompany = props.company?.provider_companies?.find(pc => pc.provider_id === providerId)
+    if (!providerCompany || !providerCompany.source_provider_companies || providerCompany.source_provider_companies.length === 0) {
+        return { canRemove: true, tooltip: '' }
+    }
+
+    const sourceNames = providerCompany.source_provider_companies
+        .map(spc => spc.source?.name)
+        .filter(name => name)
+        .join(', ')
+
+    return {
+        canRemove: false,
+        tooltip: `Ce provider ne peut pas être supprimé car il est lié aux sources : ${sourceNames}`
+    }
 }
 
 function submit() {
@@ -205,7 +227,26 @@ function submit() {
                                     </div>
                                 </div>
 
+                                <TooltipProvider v-if="!getProviderRemovalInfo(provider.provider_id).canRemove">
+                                    <Tooltip>
+                                        <TooltipTrigger as-child>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled
+                                                class="mt-7 cursor-not-allowed text-gray-400"
+                                            >
+                                                <Trash2 class="h-4 w-4" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            <p class="max-w-xs">{{ getProviderRemovalInfo(provider.provider_id).tooltip }}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                                 <Button
+                                    v-else
                                     type="button"
                                     variant="ghost"
                                     size="sm"

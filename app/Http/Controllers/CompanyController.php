@@ -63,7 +63,10 @@ class CompanyController extends Controller
 
     public function edit(Company $company): Response
     {
-        $company->load(['providerCompanies.provider']);
+        $company->load([
+            'providerCompanies.provider',
+            'providerCompanies.sourceProviderCompanies.source'
+        ]);
 
         return Inertia::render('CompanyForm', [
             'company' => $company,
@@ -83,9 +86,7 @@ class CompanyController extends Controller
             'providers.*.config' => 'nullable|json',
         ]);
 
-        $keptProviders = [];
-
-        DB::transaction(function () use ($validated, $company, &$keptProviders) {
+        DB::transaction(function () use ($validated, $company) {
             $company->update([
                 'name' => $validated['name'],
                 'enabled' => $validated['enabled'] ?? true,
@@ -111,15 +112,6 @@ class CompanyController extends Controller
                 }
             }
 
-            // Identifier les providers qui ne peuvent pas être supprimés car liés à des sources
-            $keptProviders = $company->providerCompanies()
-                ->whereNotIn('provider_id', $submittedProviderIds)
-                ->whereHas('sourceProviderCompanies')
-                ->with('provider')
-                ->get()
-                ->pluck('provider.name')
-                ->toArray();
-
             // Supprimer les associations qui ne sont plus dans la liste
             // ET qui ne sont pas utilisées par des sources
             $company->providerCompanies()
@@ -128,13 +120,8 @@ class CompanyController extends Controller
                 ->delete();
         });
 
-        $message = 'Company modifiée avec succès.';
-        if (!empty($keptProviders)) {
-            $message .= ' Attention : ' . count($keptProviders) . ' provider(s) n\'ont pas pu être supprimé(s) car lié(s) à des sources : ' . implode(', ', $keptProviders);
-        }
-
         return redirect()->route('companies.index')
-            ->with('success', $message);
+            ->with('success', 'Company modifiée avec succès.');
     }
 
     public function data(Request $request): JsonResponse
