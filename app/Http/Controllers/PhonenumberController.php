@@ -274,33 +274,35 @@ class PhonenumberController extends Controller
             'ids.*' => 'required|exists:phonenumbers,id',
         ]);
 
-        $phonenumbers = Phonenumber::with(['company', 'provider', 'onlySource'])
-            ->whereIn('id', $validated['ids'])
-            ->get();
-
         $routed = 0;
         $errors = [];
 
-        foreach ($phonenumbers as $phonenumber) {
+        foreach ($validated['ids'] as $phonenumberId) {
             try {
-                // Appeler l'API de routing (à adapter selon ton système)
-                // Pour l'instant, on simule juste un succès
-                // Tu devras appeler ton vrai système de routing ici
+                // Appeler l'API de force-route
+                $response = \Http::timeout(10)->post(
+                    config('app.url') . "/api/phonenumber/{$phonenumberId}/force-route"
+                );
 
-                // Exemple: appeler une méthode de routing
-                // $result = $this->routePhonenumber($phonenumber);
-
-                $routed++;
+                if ($response->successful()) {
+                    $routed++;
+                } else {
+                    $phonenumber = Phonenumber::find($phonenumberId);
+                    $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: " .
+                                ($response->json()['message'] ?? "Erreur HTTP {$response->status()}");
+                }
             } catch (\Exception $e) {
-                $errors[] = "Numéro {$phonenumber->phonenumber}: " . $e->getMessage();
+                $phonenumber = Phonenumber::find($phonenumberId);
+                $errors[] = "Numéro {$phonenumber?->phonenumber ?? $phonenumberId}: " . $e->getMessage();
             }
         }
 
         if (count($errors) > 0) {
             return response()->json([
-                'success' => false,
-                'message' => "{$routed} numéro(s) routé(s), " . count($errors) . " erreur(s)",
+                'success' => $routed > 0,
+                'message' => "{$routed} numéro(s) routé(s)" . (count($errors) > 0 ? ", " . count($errors) . " erreur(s)" : ""),
                 'errors' => $errors,
+                'count' => $routed,
             ]);
         }
 
