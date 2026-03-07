@@ -16,6 +16,7 @@ class Provider extends Model
         'config',
         'payout',
         'color',
+        'sip_number_format',
     ];
 
     protected $casts = [

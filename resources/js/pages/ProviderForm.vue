@@ -34,6 +34,7 @@ const form = useForm({
     config: props.provider?.config || null,
     payout: props.provider?.payout || '',
     color: props.provider?.color || 'blue',
+    sip_number_format: props.provider?.sip_number_format || 'e164',
 })
 
 function submit() {
@@ -127,6 +128,23 @@ function submit() {
                             />
                             <p v-if="form.errors.payout" class="text-sm text-red-600">
                                 {{ form.errors.payout }}
+                            </p>
+                        </div>
+
+                        <div class="space-y-2">
+                            <Label for="sip_number_format">Format SIP *</Label>
+                            <select
+                                id="sip_number_format"
+                                v-model="form.sip_number_format"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                :class="{ 'border-red-500': form.errors.sip_number_format }"
+                            >
+                                <option value="e164_no_plus">E.164 sans plus (3389XXXXXXX)</option>
+                                <option value="e164">E.164 (+3389XXXXXXX)</option>
+                                <option value="local">Local (089XXXXXXX)</option>
+                            </select>
+                            <p v-if="form.errors.sip_number_format" class="text-sm text-red-600">
+                                {{ form.errors.sip_number_format }}
                             </p>
                         </div>
 

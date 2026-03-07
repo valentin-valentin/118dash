@@ -31,6 +31,7 @@ class ProviderController extends Controller
             'config' => 'nullable|array',
             'payout' => 'nullable|numeric',
             'color' => 'nullable|string|max:50',
+            'sip_number_format' => 'required|in:e164_no_plus,e164,local',
         ]);
 
         Provider::create($validated);
@@ -55,6 +56,7 @@ class ProviderController extends Controller
             'config' => 'nullable|array',
             'payout' => 'nullable|numeric',
             'color' => 'nullable|string|max:50',
+            'sip_number_format' => 'required|in:e164_no_plus,e164,local',
         ]);
 
         $provider->update($validated);
