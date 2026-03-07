@@ -177,14 +177,14 @@ function hasInvalidRouting(row) {
     // Si le numéro a une erreur de routing explicite
     if (row.routing_error) return true
 
-    // Si le numéro est expiré (real_expires_at dépassé depuis plus de 2 minutes)
+    // Si le numéro est expiré depuis plus de 2 minutes
     if (row.real_expires_at) {
         const expires = new Date(row.real_expires_at)
         const diffMs = now.value - expires
         const diffMinutes = Math.floor(diffMs / 1000 / 60)
 
-        // Si expiré depuis plus de 2 minutes et toujours assigné
-        if (diffMinutes > 2 && row.assigned_at) {
+        // Si expiré depuis plus de 2 minutes et ne pointe PAS vers scr.sip.twilio.com
+        if (diffMinutes > 2 && row.current_endpoint !== 'scr.sip.twilio.com') {
             return true
         }
     }
