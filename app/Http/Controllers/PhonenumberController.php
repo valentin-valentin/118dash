@@ -46,10 +46,13 @@ class PhonenumberController extends Controller
             'real_expires_at' => 'nullable|date',
         ]);
 
-        Phonenumber::create($validated);
+        $phonenumber = Phonenumber::create($validated);
+
+        // Dispatcher le job de routing
+        \App\Jobs\RoutePhoneNumber::dispatch($phonenumber->id);
 
         return redirect()->route('phonenumbers.index')
-            ->with('success', 'Numéro créé avec succès.');
+            ->with('success', 'Numéro créé avec succès. Le routing est en cours.');
     }
 
     public function edit(Phonenumber $phonenumber): Response
@@ -334,11 +337,12 @@ class PhonenumberController extends Controller
         $skipped = 0;
         $errors = [];
         $processedNumbers = [];
+        $createdIds = [];
 
         // Regex pour valider le format E.164 français uniquement
         $e164Regex = '/^\+33[1-9]\d{8}$/';
 
-        DB::transaction(function () use ($validated, &$created, &$skipped, &$errors, &$processedNumbers, $e164Regex) {
+        DB::transaction(function () use ($validated, &$created, &$skipped, &$errors, &$processedNumbers, &$createdIds, $e164Regex) {
             foreach ($validated['numbers'] as $index => $number) {
                 $phonenumber = $number['phonenumber'];
 
@@ -361,8 +365,9 @@ class PhonenumberController extends Controller
                 }
 
                 try {
-                    Phonenumber::create($number);
+                    $phonenumberModel = Phonenumber::create($number);
                     $processedNumbers[] = $phonenumber;
+                    $createdIds[] = $phonenumberModel->id;
                     $created++;
                 } catch (\Exception $e) {
                     $errors[] = "Ligne " . ($index + 1) . ": " . $e->getMessage();
@@ -370,9 +375,14 @@ class PhonenumberController extends Controller
             }
         });
 
+        // Dispatcher les jobs de routing pour tous les numéros créés
+        foreach ($createdIds as $phonenumberId) {
+            \App\Jobs\RoutePhoneNumber::dispatch($phonenumberId);
+        }
+
         return response()->json([
             'success' => count($errors) === 0,
-            'message' => "{$created} numéro(s) importé(s) avec succès" . ($skipped > 0 ? ", {$skipped} ignoré(s) (doublons ou format invalide)" : "") . ".",
+            'message' => "{$created} numéro(s) importé(s) avec succès" . ($skipped > 0 ? ", {$skipped} ignoré(s) (doublons ou format invalide)" : "") . ". Le routing est en cours.",
             'created' => $created,
             'skipped' => $skipped,
             'errors' => $errors,

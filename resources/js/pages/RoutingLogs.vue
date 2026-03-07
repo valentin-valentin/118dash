@@ -18,7 +18,6 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { X } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/routing-logs/stats')
@@ -283,12 +282,7 @@ onMounted(() => {
         <Dialog :open="showDetails" @update:open="closeDetails">
             <DialogContent class="w-[90vw] max-w-3xl sm:max-w-3xl">
                 <DialogHeader>
-                    <DialogTitle class="flex items-center justify-between">
-                        <span>Détails du Log #{{ selectedLog?.id }}</span>
-                        <Button variant="ghost" size="sm" @click="closeDetails">
-                            <X class="h-4 w-4" />
-                        </Button>
-                    </DialogTitle>
+                    <DialogTitle>Détails du Log #{{ selectedLog?.id }}</DialogTitle>
                 </DialogHeader>
 
                 <div v-if="loadingDetails" class="flex items-center justify-center py-8">
