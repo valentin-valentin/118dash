@@ -35,6 +35,7 @@ class CompanyController extends Controller
             'providers' => 'nullable|array',
             'providers.*.provider_id' => 'required|exists:providers,id',
             'providers.*.payout' => 'nullable|numeric',
+            'providers.*.config' => 'nullable|json',
         ]);
 
         DB::transaction(function () use ($validated) {
@@ -50,6 +51,7 @@ class CompanyController extends Controller
                         'company_id' => $company->id,
                         'provider_id' => $provider['provider_id'],
                         'payout' => $provider['payout'] ?? null,
+                        'config' => !empty($provider['config']) ? json_decode($provider['config'], true) : null,
                     ]);
                 }
             }
@@ -78,6 +80,7 @@ class CompanyController extends Controller
             'providers' => 'nullable|array',
             'providers.*.provider_id' => 'required|exists:providers,id',
             'providers.*.payout' => 'nullable|numeric',
+            'providers.*.config' => 'nullable|json',
         ]);
 
         DB::transaction(function () use ($validated, $company) {
@@ -100,6 +103,7 @@ class CompanyController extends Controller
                         ],
                         [
                             'payout' => $provider['payout'] ?? null,
+                            'config' => !empty($provider['config']) ? json_decode($provider['config'], true) : null,
                         ]
                     );
                 }

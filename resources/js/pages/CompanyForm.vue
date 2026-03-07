@@ -6,6 +6,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import ColorPicker from '@/components/ColorPicker.vue'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -28,6 +29,7 @@ const isEdit = computed(() => !!props.company)
 const initialProviders = props.company?.provider_companies?.map(pc => ({
     provider_id: pc.provider_id,
     payout: pc.payout || '',
+    config: pc.config ? JSON.stringify(pc.config, null, 2) : '',
 })) || []
 
 const form = useForm({
@@ -46,6 +48,7 @@ function addProvider() {
     form.providers.push({
         provider_id: null,
         payout: '',
+        config: '',
     })
 }
 
@@ -142,42 +145,62 @@ function submit() {
                                 :key="index"
                                 class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3"
                             >
-                                <div class="grid flex-1 gap-3 md:grid-cols-2">
-                                    <div class="space-y-2">
-                                        <Label :for="`provider_${index}`">Provider *</Label>
-                                        <select
-                                            :id="`provider_${index}`"
-                                            v-model="provider.provider_id"
-                                            required
-                                            class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                                            :class="{ 'border-red-500': form.errors[`providers.${index}.provider_id`] }"
-                                        >
-                                            <option :value="null" disabled>Sélectionnez...</option>
-                                            <option
-                                                v-for="p in availableProviders"
-                                                :key="p.id"
-                                                :value="p.id"
+                                <div class="flex-1 space-y-3">
+                                    <div class="grid gap-3 md:grid-cols-2">
+                                        <div class="space-y-2">
+                                            <Label :for="`provider_${index}`">Provider *</Label>
+                                            <select
+                                                :id="`provider_${index}`"
+                                                v-model="provider.provider_id"
+                                                required
+                                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                                                :class="{ 'border-red-500': form.errors[`providers.${index}.provider_id`] }"
                                             >
-                                                {{ p.name }}
-                                            </option>
-                                        </select>
-                                        <p v-if="form.errors[`providers.${index}.provider_id`]" class="text-sm text-red-600">
-                                            {{ form.errors[`providers.${index}.provider_id`] }}
-                                        </p>
+                                                <option :value="null" disabled>Sélectionnez...</option>
+                                                <option
+                                                    v-for="p in availableProviders"
+                                                    :key="p.id"
+                                                    :value="p.id"
+                                                >
+                                                    {{ p.name }}
+                                                </option>
+                                            </select>
+                                            <p v-if="form.errors[`providers.${index}.provider_id`]" class="text-sm text-red-600">
+                                                {{ form.errors[`providers.${index}.provider_id`] }}
+                                            </p>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            <Label :for="`payout_${index}`">Payout (optionnel)</Label>
+                                            <Input
+                                                :id="`payout_${index}`"
+                                                v-model="provider.payout"
+                                                type="number"
+                                                step="0.01"
+                                                placeholder="0.00"
+                                                :class="{ 'border-red-500': form.errors[`providers.${index}.payout`] }"
+                                            />
+                                            <p v-if="form.errors[`providers.${index}.payout`]" class="text-sm text-red-600">
+                                                {{ form.errors[`providers.${index}.payout`] }}
+                                            </p>
+                                        </div>
                                     </div>
 
                                     <div class="space-y-2">
-                                        <Label :for="`payout_${index}`">Payout (optionnel)</Label>
-                                        <Input
-                                            :id="`payout_${index}`"
-                                            v-model="provider.payout"
-                                            type="number"
-                                            step="0.01"
-                                            placeholder="0.00"
-                                            :class="{ 'border-red-500': form.errors[`providers.${index}.payout`] }"
+                                        <Label :for="`config_${index}`">Configuration spécifique (optionnel)</Label>
+                                        <Textarea
+                                            :id="`config_${index}`"
+                                            v-model="provider.config"
+                                            placeholder='{"api_token": "cle_specifique", "base_url": "https://..."}'
+                                            rows="3"
+                                            class="font-mono text-xs"
+                                            :class="{ 'border-red-500': form.errors[`providers.${index}.config`] }"
                                         />
-                                        <p v-if="form.errors[`providers.${index}.payout`]" class="text-sm text-red-600">
-                                            {{ form.errors[`providers.${index}.payout`] }}
+                                        <p class="text-xs text-gray-500">
+                                            JSON pour override la config du provider (ex: clé API spécifique pour cette company)
+                                        </p>
+                                        <p v-if="form.errors[`providers.${index}.config`]" class="text-sm text-red-600">
+                                            {{ form.errors[`providers.${index}.config`] }}
                                         </p>
                                     </div>
                                 </div>

@@ -17,10 +17,12 @@ class ProviderCompany extends Model
         'provider_id',
         'company_id',
         'payout',
+        'config',
     ];
 
     protected $casts = [
         'payout' => 'decimal:2',
+        'config' => 'array',
     ];
 
     public function provider(): BelongsTo
