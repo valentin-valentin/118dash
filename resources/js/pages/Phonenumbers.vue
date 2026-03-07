@@ -111,6 +111,16 @@ function isSelected(id) {
     return selectedIds.value.includes(id)
 }
 
+function formatDate(dateString) {
+    if (!dateString) return null
+    const date = new Date(dateString)
+    return date.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    })
+}
+
 // Réinitialiser la sélection quand on change de page
 watch(() => table.data?.items, () => {
     selectedIds.value = []
@@ -479,12 +489,22 @@ onMounted(() => {
                     </template>
 
                     <template #assigned_status="{ row }">
-                        <div class="flex items-center gap-1">
-                            <Check v-if="row.assigned_at" class="h-4 w-4 text-green-600" />
-                            <X v-else class="h-4 w-4 text-gray-400" />
-                            <span class="text-xs text-gray-600">
-                                {{ row.assigned_at ? 'Assigné' : 'Libre' }}
-                            </span>
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-1">
+                                <Check v-if="row.assigned_at" class="h-4 w-4 text-green-600" />
+                                <X v-else class="h-4 w-4 text-gray-400" />
+                                <span class="text-xs text-gray-600">
+                                    {{ row.assigned_at ? 'Assigné' : 'Libre' }}
+                                </span>
+                            </div>
+                            <div v-if="row.display_expires_at || row.real_expires_at" class="space-y-0.5 text-[11px] text-gray-500">
+                                <div v-if="row.display_expires_at">
+                                    <span class="font-medium">Affichage:</span> {{ formatDate(row.display_expires_at) }}
+                                </div>
+                                <div v-if="row.real_expires_at">
+                                    <span class="font-medium">Réel:</span> {{ formatDate(row.real_expires_at) }}
+                                </div>
+                            </div>
                         </div>
                     </template>
 
