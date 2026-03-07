@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -22,6 +22,10 @@ import {
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/phonenumbers/stats')
+
+// ─── Refresh temps réel ────────────────────────────────────────────────────────
+const now = ref(Date.now())
+let refreshInterval = null
 
 // ─── Table + Filtres ──────────────────────────────────────────────────────────
 const table = useApi('/data/phonenumbers')
@@ -113,14 +117,45 @@ function isSelected(id) {
 
 function getTimeRemaining(expiresAt) {
     if (!expiresAt) return null
-    const now = new Date()
     const expires = new Date(expiresAt)
-    const diffMs = expires - now
+    const diffMs = expires - now.value
     const diffMinutes = Math.floor(diffMs / 1000 / 60)
 
     if (diffMinutes < 0) return 'Expiré'
-    if (diffMinutes === 0) return '< 1 min'
-    return `${diffMinutes} min`
+    if (diffMinutes === 0) return '< 1mn'
+    return `${diffMinutes}mn`
+}
+
+function getExpirationTime(expiresAt) {
+    if (!expiresAt) return null
+    const expires = new Date(expiresAt)
+    return expires.toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit'
+    })
+}
+
+function getTooltipText(displayExpiresAt, realExpiresAt) {
+    const lines = []
+    if (displayExpiresAt) {
+        const timeRemaining = getTimeRemaining(displayExpiresAt)
+        const time = getExpirationTime(displayExpiresAt)
+        lines.push(`Affichage expire dans ${timeRemaining} à ${time}`)
+    }
+    if (realExpiresAt) {
+        const timeRemaining = getTimeRemaining(realExpiresAt)
+        const time = getExpirationTime(realExpiresAt)
+        lines.push(`Expiration réelle dans ${timeRemaining} à ${time}`)
+    }
+    return lines.join('\n')
+}
+
+function formatDuration(seconds) {
+    if (!seconds || seconds === 0) return '00:00:00'
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
 // Réinitialiser la sélection quand on change de page
@@ -272,6 +307,17 @@ onMounted(() => {
     stats.load()
     table.load(filters)
     filterOptions.load()
+
+    // Update toutes les secondes pour rafraîchir les temps restants
+    refreshInterval = setInterval(() => {
+        now.value = Date.now()
+    }, 1000)
+})
+
+onUnmounted(() => {
+    if (refreshInterval) {
+        clearInterval(refreshInterval)
+    }
 })
 </script>
 
@@ -499,12 +545,21 @@ onMounted(() => {
                                     {{ row.assigned_at ? 'Assigné' : 'Libre' }}
                                 </span>
                             </div>
-                            <div v-if="row.display_expires_at || row.real_expires_at" class="space-y-0.5 text-[11px]">
-                                <div v-if="row.display_expires_at" :class="getTimeRemaining(row.display_expires_at) === 'Expiré' ? 'text-red-600' : 'text-gray-600'">
-                                    <span class="font-medium">Affichage:</span> {{ getTimeRemaining(row.display_expires_at) }}
+                            <div v-if="row.display_expires_at || row.real_expires_at" class="group relative">
+                                <div class="text-[11px] text-gray-600">
+                                    <template v-if="row.display_expires_at && row.real_expires_at">
+                                        {{ getTimeRemaining(row.display_expires_at) }} · {{ getTimeRemaining(row.real_expires_at) }}
+                                    </template>
+                                    <template v-else-if="row.display_expires_at">
+                                        {{ getTimeRemaining(row.display_expires_at) }}
+                                    </template>
+                                    <template v-else>
+                                        {{ getTimeRemaining(row.real_expires_at) }}
+                                    </template>
                                 </div>
-                                <div v-if="row.real_expires_at" :class="getTimeRemaining(row.real_expires_at) === 'Expiré' ? 'text-red-600' : 'text-gray-600'">
-                                    <span class="font-medium">Réel:</span> {{ getTimeRemaining(row.real_expires_at) }}
+                                <div class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-64 whitespace-pre-line rounded-lg bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white shadow-xl opacity-0 scale-95 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100">
+                                    {{ getTooltipText(row.display_expires_at, row.real_expires_at) }}
+                                    <div class="absolute left-4 top-full -mt-1 h-2 w-2 rotate-45 bg-gray-900"></div>
                                 </div>
                             </div>
                         </div>
@@ -523,8 +578,7 @@ onMounted(() => {
 
                     <template #stats="{ row }">
                         <div class="text-xs text-gray-600">
-                            <div>{{ row.total_assignments || 0 }} assign.</div>
-                            <div>{{ Math.round((row.total_duration || 0) / 60) }}min</div>
+                            {{ row.total_assignments || 0 }} assignations · {{ formatDuration(row.total_duration || 0) }}
                         </div>
                     </template>
 
