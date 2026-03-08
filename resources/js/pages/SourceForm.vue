@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Head, Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -31,12 +31,15 @@ const initialAssociations = props.source?.source_provider_companies?.map(spc => 
     payout: spc.payout || '',
 })) || []
 
+const enableMaxConcurrent = ref(!!props.source?.max_concurrent_numbers)
+
 const form = useForm({
     name: props.source?.name || '',
     api_key: props.source?.api_key || '',
     fingerprint: props.source?.fingerprint ?? false,
     only_dedicated_phonenumber: props.source?.only_dedicated_phonenumber ?? false,
     color: props.source?.color || 'cyan',
+    max_concurrent_numbers: props.source?.max_concurrent_numbers || null,
     associations: initialAssociations.length > 0 ? initialAssociations : [],
 })
 
@@ -84,7 +87,21 @@ function removeAssociation(index) {
     form.associations.splice(index, 1)
 }
 
+// Quand enableMaxConcurrent est décoché, mettre max_concurrent_numbers à null
+watch(enableMaxConcurrent, (newValue) => {
+    if (!newValue) {
+        form.max_concurrent_numbers = null
+    } else if (form.max_concurrent_numbers === null) {
+        form.max_concurrent_numbers = 1
+    }
+})
+
 function submit() {
+    // S'assurer que max_concurrent_numbers est null si désactivé
+    if (!enableMaxConcurrent.value) {
+        form.max_concurrent_numbers = null
+    }
+
     if (isEdit.value) {
         form.put(`/sources/${props.source.id}`)
     } else {
@@ -168,6 +185,35 @@ function submit() {
                                     v-model:checked="form.only_dedicated_phonenumber"
                                 />
                                 <Label for="only_dedicated_phonenumber">Numéro dédié uniquement</Label>
+                            </div>
+                        </div>
+
+                        <!-- Max concurrent numbers (uniquement si fingerprint activé) -->
+                        <div v-if="form.fingerprint" class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                            <div class="flex items-center space-x-2">
+                                <Switch
+                                    id="enable_max_concurrent"
+                                    v-model:checked="enableMaxConcurrent"
+                                />
+                                <Label for="enable_max_concurrent">Limiter le nombre de numéros simultanés</Label>
+                            </div>
+
+                            <div v-if="enableMaxConcurrent" class="space-y-2">
+                                <Label for="max_concurrent_numbers">Nombre maximum de numéros simultanés</Label>
+                                <Input
+                                    id="max_concurrent_numbers"
+                                    v-model.number="form.max_concurrent_numbers"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Ex: 5"
+                                    :class="{ 'border-red-500': form.errors.max_concurrent_numbers }"
+                                />
+                                <p class="text-xs text-gray-500">
+                                    Nombre maximum de numéros pouvant être assignés simultanément à cette source
+                                </p>
+                                <p v-if="form.errors.max_concurrent_numbers" class="text-sm text-red-600">
+                                    {{ form.errors.max_concurrent_numbers }}
+                                </p>
                             </div>
                         </div>
 

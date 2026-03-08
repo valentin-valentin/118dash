@@ -16,6 +16,7 @@ class Source extends Model
         'fingerprint',
         'only_dedicated_phonenumber',
         'color',
+        'max_concurrent_numbers',
     ];
 
     protected $casts = [
