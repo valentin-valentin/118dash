@@ -181,14 +181,19 @@ function hasInvalidRouting(row) {
     const isExpired = row.real_expires_at && new Date(row.real_expires_at) < now.value
     const expiredFor2Minutes = row.real_expires_at && (now.value - new Date(row.real_expires_at)) > 2 * 60 * 1000
 
-    // Si ASSIGNÉ (pas expiré) mais pointe vers scr.sip.twilio.com → ERREUR
-    if (row.assigned_at && !isExpired && row.current_endpoint === 'scr.sip.twilio.com') {
-        return true
-    }
+    // Déterminer si le numéro est assigné (a assigned_at ET pas expiré)
+    const isAssigned = row.assigned_at && !isExpired
 
-    // Si EXPIRÉ depuis plus de 2 minutes mais NE pointe PAS vers scr.sip.twilio.com → ERREUR
-    if (expiredFor2Minutes && row.current_endpoint !== 'scr.sip.twilio.com') {
-        return true
+    if (isAssigned) {
+        // Si ASSIGNÉ mais pointe vers scr.sip.twilio.com → ERREUR
+        if (row.current_endpoint === 'scr.sip.twilio.com') {
+            return true
+        }
+    } else {
+        // Si LIBRE (pas assigned_at OU expiré) mais NE pointe PAS vers scr.sip.twilio.com → ERREUR
+        if (row.current_endpoint !== 'scr.sip.twilio.com') {
+            return true
+        }
     }
 
     return false

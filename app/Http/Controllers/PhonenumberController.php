@@ -191,10 +191,11 @@ class PhonenumberController extends Controller
         }
 
         if (!$hasErrors) {
-            // Check for numbers expired for more than 2 minutes but NOT pointing to scr.sip.twilio.com
-            $twoMinutesAgo = now()->subMinutes(2);
-            $hasErrors = Phonenumber::whereNotNull('real_expires_at')
-                ->where('real_expires_at', '<', $twoMinutesAgo)
+            // Check for FREE numbers (no assigned_at OR expired) NOT pointing to scr.sip.twilio.com
+            $hasErrors = Phonenumber::where(function ($query) {
+                    $query->whereNull('assigned_at')
+                          ->orWhere('real_expires_at', '<', now());
+                })
                 ->where(function ($query) {
                     $query->whereNull('current_endpoint')
                           ->orWhere('current_endpoint', '!=', 'scr.sip.twilio.com');
