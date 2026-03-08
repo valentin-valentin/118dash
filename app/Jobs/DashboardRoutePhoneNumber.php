@@ -11,6 +11,7 @@ class DashboardRoutePhoneNumber implements ShouldQueue
 {
     use Queueable;
 
+    public $queue = 'dash';
     public int $phonenumberId;
 
     /**
