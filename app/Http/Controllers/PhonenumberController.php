@@ -49,7 +49,7 @@ class PhonenumberController extends Controller
         $phonenumber = Phonenumber::create($validated);
 
         // Dispatcher le job de routing
-        \App\Jobs\RoutePhoneNumber::dispatch($phonenumber->id);
+        \App\Jobs\DashboardRoutePhoneNumber::dispatch($phonenumber->id);
 
         return redirect()->route('phonenumbers.index')
             ->with('success', 'Numéro créé avec succès. Le routing est en cours.');
@@ -313,7 +313,7 @@ class PhonenumberController extends Controller
 
         // Dispatcher les jobs de routing pour tous les numéros
         foreach ($validated['ids'] as $phonenumberId) {
-            \App\Jobs\RoutePhoneNumber::dispatch($phonenumberId);
+            \App\Jobs\DashboardRoutePhoneNumber::dispatch($phonenumberId);
         }
 
         $count = count($validated['ids']);
@@ -379,7 +379,7 @@ class PhonenumberController extends Controller
 
         // Dispatcher les jobs de routing pour tous les numéros créés
         foreach ($createdIds as $phonenumberId) {
-            \App\Jobs\RoutePhoneNumber::dispatch($phonenumberId);
+            \App\Jobs\DashboardRoutePhoneNumber::dispatch($phonenumberId);
         }
 
         return response()->json([

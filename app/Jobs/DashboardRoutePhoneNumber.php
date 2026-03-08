@@ -7,7 +7,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class RoutePhoneNumber implements ShouldQueue
+class DashboardRoutePhoneNumber implements ShouldQueue
 {
     use Queueable;
 
