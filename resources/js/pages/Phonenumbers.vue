@@ -363,6 +363,30 @@ async function bulkRoute() {
     }
 }
 
+async function cancelDeletion(id) {
+    try {
+        const response = await fetch('/data/phonenumbers/cancel-deletion', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+            body: JSON.stringify({ id }),
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+            table.load(filters)
+            stats.load()
+        } else {
+            alert(data.message || 'Erreur lors de l\'annulation')
+        }
+    } catch (error) {
+        alert('Erreur lors de l\'annulation')
+    }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     stats.load()
@@ -553,8 +577,21 @@ onUnmounted(() => {
                         <span class="font-mono text-xs text-gray-500">#{{ value }}</span>
                     </template>
 
-                    <template #phonenumber="{ value }">
-                        <span class="font-mono font-semibold text-gray-900">{{ value }}</span>
+                    <template #phonenumber="{ row, value }">
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono font-semibold text-gray-900">{{ value }}</span>
+                            <template v-if="row.will_be_deleted">
+                                <span class="text-xs font-medium text-red-600">Sera supprimé</span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    @click="cancelDeletion(row.id)"
+                                    class="h-6 px-2 text-xs text-red-600 hover:text-red-700"
+                                >
+                                    Annuler
+                                </Button>
+                            </template>
+                        </div>
                     </template>
 
                     <template #company="{ row }">

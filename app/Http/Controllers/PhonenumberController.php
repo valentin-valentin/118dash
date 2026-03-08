@@ -365,6 +365,21 @@ class PhonenumberController extends Controller
         ]);
     }
 
+    public function cancelDeletion(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'id' => 'required|exists:phonenumbers,id',
+        ]);
+
+        $phonenumber = Phonenumber::find($validated['id']);
+        $phonenumber->update(['will_be_deleted' => false]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Suppression annulée.',
+        ]);
+    }
+
     public function bulkImport(Request $request): JsonResponse
     {
         $validated = $request->validate([
