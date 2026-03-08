@@ -578,19 +578,19 @@ onUnmounted(() => {
                     </template>
 
                     <template #phonenumber="{ row, value }">
-                        <div class="flex items-center gap-2">
+                        <div class="space-y-1">
                             <span class="font-mono font-semibold text-gray-900">{{ value }}</span>
-                            <template v-if="row.will_be_deleted">
+                            <div v-if="row.will_be_deleted" class="flex items-center gap-2">
                                 <span class="text-xs font-medium text-red-600">Sera supprimé</span>
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     @click="cancelDeletion(row.id)"
-                                    class="h-6 px-2 text-xs text-red-600 hover:text-red-700"
+                                    class="h-5 px-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                                 >
                                     Annuler
                                 </Button>
-                            </template>
+                            </div>
                         </div>
                     </template>
 
