@@ -179,21 +179,30 @@ function hasInvalidRouting(row) {
 
     // Vérifier si le numéro est expiré
     const isExpired = row.real_expires_at && new Date(row.real_expires_at) < now.value
-    const expiredFor2Minutes = row.real_expires_at && (now.value - new Date(row.real_expires_at)) > 2 * 60 * 1000
 
-    // Déterminer si le numéro est assigné (a assigned_at ET pas expiré)
-    const isAssigned = row.assigned_at && !isExpired
-
-    if (isAssigned) {
-        // Si ASSIGNÉ mais pointe vers scr.sip.twilio.com → ERREUR
-        if (row.current_endpoint === 'scr.sip.twilio.com') {
-            return true
-        }
-    } else {
-        // Si LIBRE (pas assigned_at OU expiré) mais NE pointe PAS vers scr.sip.twilio.com → ERREUR
+    // Si le numéro n'a jamais été assigné
+    if (!row.assigned_at) {
+        // Doit pointer vers scr.sip.twilio.com immédiatement
         if (row.current_endpoint !== 'scr.sip.twilio.com') {
             return true
         }
+    }
+    // Si le numéro est assigné et PAS expiré
+    else if (!isExpired) {
+        // Doit pointer vers une vraie destination (pas scr.sip.twilio.com)
+        if (row.current_endpoint === 'scr.sip.twilio.com') {
+            return true
+        }
+    }
+    // Si le numéro est expiré
+    else {
+        const expiredFor2Minutes = (now.value - new Date(row.real_expires_at)) > 2 * 60 * 1000
+
+        // Si expiré depuis plus de 2 minutes et ne pointe PAS vers scr.sip.twilio.com → ERREUR
+        if (expiredFor2Minutes && row.current_endpoint !== 'scr.sip.twilio.com') {
+            return true
+        }
+        // Si expiré depuis moins de 2 minutes → OK (délai de grâce pour le re-routing)
     }
 
     return false
@@ -655,9 +664,24 @@ onUnmounted(() => {
                     v-if="table.data?.total"
                     class="flex items-center justify-between border-t border-gray-50 px-4 py-3"
                 >
-                    <div class="text-sm text-gray-500">
-                        Page {{ table.data.current_page }} sur {{ table.data.last_page }}
-                        · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                    <div class="flex items-center gap-4">
+                        <div class="text-sm text-gray-500">
+                            Page {{ table.data.current_page }} sur {{ table.data.last_page }}
+                            · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-gray-600">Résultats par page :</span>
+                            <select
+                                v-model.number="filters.per_page"
+                                class="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                                <option :value="250">250</option>
+                                <option :value="500">500</option>
+                                <option :value="1000">1000</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="flex gap-2">
                         <Button
