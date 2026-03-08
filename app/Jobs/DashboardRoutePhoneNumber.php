@@ -11,7 +11,6 @@ class DashboardRoutePhoneNumber implements ShouldQueue
 {
     use Queueable;
 
-    public $queue = 'dash';
     public int $phonenumberId;
 
     /**
@@ -20,6 +19,7 @@ class DashboardRoutePhoneNumber implements ShouldQueue
     public function __construct(int $phonenumberId)
     {
         $this->phonenumberId = $phonenumberId;
+        $this->onQueue('dash');
     }
 
     /**
