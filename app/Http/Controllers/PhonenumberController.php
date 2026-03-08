@@ -226,12 +226,42 @@ class PhonenumberController extends Controller
             'ids.*' => 'required|exists:phonenumbers,id',
         ]);
 
-        $count = Phonenumber::whereIn('id', $validated['ids'])->delete();
+        // Séparer les numéros assignés des non-assignés
+        $assignedNumbers = Phonenumber::whereIn('id', $validated['ids'])
+            ->whereNotNull('assigned_at')
+            ->get();
+
+        $unassignedNumbers = Phonenumber::whereIn('id', $validated['ids'])
+            ->whereNull('assigned_at')
+            ->get();
+
+        // Pour les numéros assignés, on marque will_be_deleted = true
+        $markedCount = 0;
+        foreach ($assignedNumbers as $number) {
+            $number->update(['will_be_deleted' => true]);
+            $markedCount++;
+        }
+
+        // Pour les numéros non-assignés, on supprime vraiment
+        $deletedCount = 0;
+        foreach ($unassignedNumbers as $number) {
+            $number->delete();
+            $deletedCount++;
+        }
+
+        $message = [];
+        if ($markedCount > 0) {
+            $message[] = "{$markedCount} numéro(s) marqué(s) pour suppression";
+        }
+        if ($deletedCount > 0) {
+            $message[] = "{$deletedCount} numéro(s) supprimé(s)";
+        }
 
         return response()->json([
             'success' => true,
-            'message' => "{$count} numéro(s) supprimé(s) avec succès.",
-            'count' => $count,
+            'message' => implode(', ', $message) . '.',
+            'marked' => $markedCount,
+            'deleted' => $deletedCount,
         ]);
     }
 

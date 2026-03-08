@@ -84,7 +84,6 @@ const columns = [
     { key: 'assigned_status', label: 'Assignation' },
     { key: 'routing', label: 'Routing' },
     { key: 'stats', label: 'Statistiques' },
-    { key: 'actions', label: 'Actions' },
 ]
 
 // ─── Sélection Multiple ───────────────────────────────────────────────────────
@@ -649,14 +648,6 @@ onUnmounted(() => {
                                 <div class="absolute left-4 top-full -mt-1 h-2 w-2 rotate-45 bg-gray-900"></div>
                             </div>
                         </div>
-                    </template>
-
-                    <template #actions="{ row }">
-                        <Button variant="ghost" size="sm" as-child>
-                            <Link :href="`/phonenumbers/${row.id}/edit`">
-                                <Pencil class="h-4 w-4" />
-                            </Link>
-                        </Button>
                     </template>
                 </DataTable>
 

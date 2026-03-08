@@ -29,6 +29,7 @@ class Phonenumber extends Model
         'last_routed_at',
         'routing_error',
         'routing_error_at',
+        'will_be_deleted',
     ];
 
     protected $casts = [
@@ -40,6 +41,7 @@ class Phonenumber extends Model
         'routing_error_at' => 'datetime',
         'total_assignments' => 'integer',
         'total_duration' => 'integer',
+        'will_be_deleted' => 'boolean',
     ];
 
     public function company(): BelongsTo
