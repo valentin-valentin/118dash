@@ -177,16 +177,18 @@ function hasInvalidRouting(row) {
     // Si le numéro a une erreur de routing explicite
     if (row.routing_error) return true
 
-    // Si le numéro est expiré depuis plus de 2 minutes
-    if (row.real_expires_at) {
-        const expires = new Date(row.real_expires_at)
-        const diffMs = now.value - expires
-        const diffMinutes = Math.floor(diffMs / 1000 / 60)
+    // Vérifier si le numéro est expiré
+    const isExpired = row.real_expires_at && new Date(row.real_expires_at) < now.value
+    const expiredFor2Minutes = row.real_expires_at && (now.value - new Date(row.real_expires_at)) > 2 * 60 * 1000
 
-        // Si expiré depuis plus de 2 minutes et ne pointe PAS vers scr.sip.twilio.com
-        if (diffMinutes > 2 && row.current_endpoint !== 'scr.sip.twilio.com') {
-            return true
-        }
+    // Si ASSIGNÉ (pas expiré) mais pointe vers scr.sip.twilio.com → ERREUR
+    if (row.assigned_at && !isExpired && row.current_endpoint === 'scr.sip.twilio.com') {
+        return true
+    }
+
+    // Si EXPIRÉ depuis plus de 2 minutes mais NE pointe PAS vers scr.sip.twilio.com → ERREUR
+    if (expiredFor2Minutes && row.current_endpoint !== 'scr.sip.twilio.com') {
+        return true
     }
 
     return false
