@@ -409,9 +409,24 @@ onMounted(() => {
                     v-if="table.data?.total"
                     class="flex items-center justify-between border-t border-gray-50 px-4 py-3"
                 >
-                    <div class="text-sm text-gray-500">
-                        Page {{ table.data.current_page }} sur {{ table.data.last_page }}
-                        · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                    <div class="flex items-center gap-4">
+                        <div class="text-sm text-gray-500">
+                            Page {{ table.data.current_page }} sur {{ table.data.last_page }}
+                            · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-gray-600">Résultats par page :</span>
+                            <select
+                                v-model.number="filters.per_page"
+                                class="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                                <option :value="250">250</option>
+                                <option :value="500">500</option>
+                                <option :value="1000">1000</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="flex gap-2">
                         <button

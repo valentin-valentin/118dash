@@ -75,6 +75,13 @@ function getColor(index) {
     return colors[index % colors.length]
 }
 
+// Vérifier si un provider-company est déjà sélectionné (sauf pour l'index courant)
+function isProviderCompanySelected(pcId, currentIndex) {
+    return form.associations.some((assoc, index) =>
+        index !== currentIndex && assoc.providers_companies_id === pcId
+    )
+}
+
 function addAssociation() {
     form.associations.push({
         providers_companies_id: null,
@@ -310,8 +317,9 @@ function submit() {
                                                 v-for="pc in availableProviderCompanies"
                                                 :key="pc.id"
                                                 :value="pc.id"
+                                                :disabled="isProviderCompanySelected(pc.id, index)"
                                             >
-                                                {{ pc.label }}
+                                                {{ pc.label }}{{ isProviderCompanySelected(pc.id, index) ? ' (déjà sélectionné)' : '' }}
                                             </option>
                                         </select>
                                         <p v-if="form.errors[`associations.${index}.providers_companies_id`]" class="text-sm text-red-600">

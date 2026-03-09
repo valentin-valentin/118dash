@@ -446,19 +446,6 @@ onUnmounted(() => {
                 :loading-results="table.loading"
                 @reset="reset"
             >
-                <div class="mb-3 flex items-center justify-between">
-                    <span class="text-sm text-gray-600">Résultats par page :</span>
-                    <select
-                        v-model.number="filters.per_page"
-                        class="rounded-md border border-gray-300 px-3 py-1 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                        <option :value="50">50</option>
-                        <option :value="100">100</option>
-                        <option :value="250">250</option>
-                        <option :value="500">500</option>
-                        <option :value="1000">1000</option>
-                    </select>
-                </div>
                 <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                     <!-- Recherche -->
                     <Input
