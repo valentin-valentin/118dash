@@ -149,25 +149,19 @@ onMounted(() => {
                     </template>
 
                     <template #fingerprint="{ value }">
-                        <div class="flex justify-center">
-                            <Check v-if="value" class="h-4 w-4 text-green-600" />
-                            <X v-else class="h-4 w-4 text-gray-400" />
-                        </div>
+                        <Check v-if="value" class="h-4 w-4 text-green-600" />
+                        <X v-else class="h-4 w-4 text-gray-400" />
                     </template>
 
                     <template #only_dedicated_phonenumber="{ value }">
-                        <div class="flex justify-center">
-                            <Check v-if="value" class="h-4 w-4 text-green-600" />
-                            <X v-else class="h-4 w-4 text-gray-400" />
-                        </div>
+                        <Check v-if="value" class="h-4 w-4 text-green-600" />
+                        <X v-else class="h-4 w-4 text-gray-400" />
                     </template>
 
                     <template #total_assignable="{ row }">
-                        <div class="text-center">
-                            <span class="text-sm font-medium text-gray-900">
-                                {{ row.total_assignable || 0 }} numéros
-                            </span>
-                        </div>
+                        <span class="text-sm font-medium text-gray-900">
+                            {{ row.total_assignable || 0 }} numéros
+                        </span>
                     </template>
 
                     <template #associations="{ row }">
