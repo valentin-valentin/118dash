@@ -52,7 +52,6 @@ const columns = [
     { key: 'driver', label: 'Driver', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
     { key: 'enabled', label: 'Statut', sortable: true },
-    { key: 'created_at', label: 'Créé le', sortable: true },
     { key: 'actions', label: 'Actions' },
 ]
 
@@ -151,12 +150,6 @@ onMounted(() => {
 
                     <template #payout="{ value }">
                         <span class="text-sm text-gray-600">{{ value ? `${value} €` : '-' }}</span>
-                    </template>
-
-                    <template #created_at="{ value }">
-                        <span class="text-sm text-gray-600">
-                            {{ value ? new Date(value).toLocaleDateString('fr-FR') : '-' }}
-                        </span>
                     </template>
 
                     <template #enabled="{ value }">

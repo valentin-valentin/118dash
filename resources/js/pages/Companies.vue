@@ -51,7 +51,6 @@ const columns = [
     { key: 'name', label: 'Nom', sortable: true },
     { key: 'providers', label: 'Providers' },
     { key: 'enabled', label: 'Statut', sortable: true },
-    { key: 'created_at', label: 'Créé le', sortable: true },
     { key: 'actions', label: 'Actions' },
 ]
 
@@ -163,12 +162,6 @@ onMounted(() => {
                             </div>
                         </div>
                         <span v-else class="text-sm text-gray-400">Aucun provider</span>
-                    </template>
-
-                    <template #created_at="{ value }">
-                        <span class="text-sm text-gray-600">
-                            {{ value ? new Date(value).toLocaleDateString('fr-FR') : '-' }}
-                        </span>
                     </template>
 
                     <template #enabled="{ value }">

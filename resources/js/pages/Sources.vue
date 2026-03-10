@@ -48,7 +48,6 @@ const columns = [
     { key: 'only_dedicated_phonenumber', label: 'Numéro dédié' },
     { key: 'total_assignable', label: 'Numéros assignables' },
     { key: 'associations', label: 'Répartition' },
-    { key: 'created_at', label: 'Créé le', sortable: true },
     { key: 'actions', label: 'Actions' },
 ]
 
@@ -189,12 +188,6 @@ onMounted(() => {
                             </div>
                         </div>
                         <span v-else class="text-sm text-gray-400">Aucune répartition</span>
-                    </template>
-
-                    <template #created_at="{ value }">
-                        <span class="text-sm text-gray-600">
-                            {{ value ? new Date(value).toLocaleDateString('fr-FR') : '-' }}
-                        </span>
                     </template>
 
                     <template #actions="{ row }">
