@@ -4,6 +4,7 @@ import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
+import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import { Input } from '@/components/ui/input'
@@ -18,9 +19,13 @@ const stats = useApi('/data/blacklists/stats')
 // ─── Table + Filtres ──────────────────────────────────────────────────────────
 const table = useApi('/data/blacklists')
 
+// ─── Filter Options ───────────────────────────────────────────────────────────
+const filterOptions = useApi('/data/blacklists/filter-options')
+
 const { filters, reset } = useFilters(
     {
         search: '',
+        source: '',
         sort: 'phonenumber',
         dir: 'asc',
         per_page: 50,
@@ -29,7 +34,7 @@ const { filters, reset } = useFilters(
     (f) => table.load(f),
 )
 
-const hasFilters = computed(() => !!filters.search)
+const hasFilters = computed(() => !!filters.search || !!filters.source)
 
 function toggleSort(key) {
     if (filters.sort === key) {
@@ -53,6 +58,7 @@ const columns = [
 onMounted(() => {
     stats.load()
     table.load(filters)
+    filterOptions.load()
 })
 </script>
 
@@ -98,6 +104,15 @@ onMounted(() => {
                         type="text"
                         placeholder="Rechercher..."
                         class="h-8"
+                    />
+
+                    <!-- Source -->
+                    <FilterSelect
+                        v-model="filters.source"
+                        :options="filterOptions.data?.sources || []"
+                        placeholder="Toutes les sources"
+                        :searchable="true"
+                        :loading="filterOptions.loading"
                     />
                 </div>
             </FilterBar>

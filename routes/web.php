@@ -92,6 +92,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/cancel-deletion', [PhonenumberController::class, 'cancelDeletion']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
+        Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);
         Route::get('/blacklists', [BlacklistController::class, 'data']);
 
         Route::get('/assignment-history/stats', [AssignmentHistoryController::class, 'stats']);

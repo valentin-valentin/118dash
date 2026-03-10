@@ -83,6 +83,10 @@ class BlacklistController extends Controller
             });
         }
 
+        if ($request->filled('source')) {
+            $query->where('source', $request->source);
+        }
+
         // Tri
         $sortable = ['id', 'phonenumber', 'source', 'created_at', 'updated_at'];
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'phonenumber';
@@ -97,6 +101,21 @@ class BlacklistController extends Controller
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
+        ]);
+    }
+
+    public function filterOptions(): JsonResponse
+    {
+        // Récupérer toutes les sources distinctes
+        $sources = Blacklist::whereNotNull('source')
+            ->distinct()
+            ->orderBy('source')
+            ->pluck('source')
+            ->map(fn($source) => ['value' => $source, 'label' => $source])
+            ->toArray();
+
+        return response()->json([
+            'sources' => $sources,
         ]);
     }
 
