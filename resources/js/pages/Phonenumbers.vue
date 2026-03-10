@@ -669,8 +669,7 @@ onUnmounted(() => {
                     <template #stats="{ row }">
                         <div class="space-y-0.5 text-[10px] leading-tight text-gray-600">
                             <div>{{ row.total_assignments || 0 }} assignations</div>
-                            <div>{{ row.total_calls || 0 }} appels</div>
-                            <div>{{ formatDuration(row.total_duration || 0) }}</div>
+                            <div>{{ row.total_calls || 0 }} appels · {{ formatDuration(row.total_duration || 0) }}</div>
                         </div>
                     </template>
                 </DataTable>
