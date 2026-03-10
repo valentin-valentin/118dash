@@ -578,6 +578,9 @@ onUnmounted(() => {
                                     Annuler
                                 </Button>
                             </div>
+                            <div v-if="!row.sip_registered">
+                                <span class="text-xs font-medium text-orange-600">Pas encore ajouté sur le SIP</span>
+                            </div>
                         </div>
                     </template>
 
