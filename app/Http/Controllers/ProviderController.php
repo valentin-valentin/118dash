@@ -90,8 +90,14 @@ class ProviderController extends Controller
         $perPage = min($request->input('per_page', 50), 100);
         $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
 
+        // Ajouter le nombre total de numéros pour chaque provider
+        $items = $paginator->items();
+        foreach ($items as $provider) {
+            $provider->total_phonenumbers = \App\Models\Phonenumber::where('provider_id', $provider->id)->count();
+        }
+
         return response()->json([
-            'items' => $paginator->items(),
+            'items' => $items,
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),

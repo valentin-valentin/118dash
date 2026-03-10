@@ -137,7 +137,12 @@ onMounted(() => {
                     </template>
 
                     <template #name="{ row }">
-                        <ColorBadge :color="row.color" :label="row.name" />
+                        <div class="flex items-center gap-2">
+                            <ColorBadge :color="row.color" :label="row.name" />
+                            <span class="text-xs font-medium text-gray-600">
+                                {{ row.total_phonenumbers || 0 }} num.
+                            </span>
+                        </div>
                     </template>
 
                     <template #driver="{ value }">

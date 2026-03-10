@@ -149,6 +149,9 @@ class CompanyController extends Controller
         // Ajouter le nombre de numéros pour chaque provider-company
         $items = $paginator->items();
         foreach ($items as $company) {
+            // Compter le nombre total de numéros pour cette company
+            $company->total_phonenumbers = \App\Models\Phonenumber::where('company_id', $company->id)->count();
+
             foreach ($company->providerCompanies as $pc) {
                 // Compter tous les numéros pour ce couple provider-company
                 $pc->phonenumbers_count = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
