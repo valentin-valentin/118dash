@@ -63,6 +63,7 @@ Route::middleware(['auth'])->group(function () {
     // All return JSON for Vue XHR calls. Add your routes here.
     Route::prefix('data')->group(function () {
         Route::get('/stats',   [DashboardController::class, 'stats']);
+        Route::get('/daily-breakdown', [DashboardController::class, 'dailyBreakdown']);
         Route::get('/example', [DashboardController::class, 'example']);
         Route::get('/calls/stats', [CallController::class, 'stats']);
         Route::get('/calls/filter-options', [CallController::class, 'filterOptions']);
