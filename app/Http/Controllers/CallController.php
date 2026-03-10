@@ -203,7 +203,7 @@ class CallController extends Controller
             'today' => Call::whereDate('called_at', today())->count(),
             'this_week' => Call::whereBetween('called_at', [now()->startOfWeek(), now()->endOfWeek()])->count(),
             'this_month' => Call::whereBetween('called_at', [now()->startOfMonth(), now()->endOfMonth()])->count(),
-            'avg_duration' => round(Call::avg('total_duration')),
+            'avg_duration_month' => round(Call::whereBetween('called_at', [now()->startOfMonth(), now()->endOfMonth()])->avg('total_duration')),
         ]);
     }
 

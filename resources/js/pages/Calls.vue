@@ -160,8 +160,8 @@ onMounted(() => {
                 <StatCard label="Cette semaine" :value="stats.data?.this_week" :loading="stats.loading" />
                 <StatCard label="Ce mois" :value="stats.data?.this_month" :loading="stats.loading" />
                 <StatCard
-                    label="Durée moy."
-                    :value="stats.data?.avg_duration ? formatDuration(stats.data.avg_duration) : '-'"
+                    label="Durée moy. mois"
+                    :value="stats.data?.avg_duration_month ? formatDuration(stats.data.avg_duration_month) : '-'"
                     :loading="stats.loading"
                 />
             </div>
