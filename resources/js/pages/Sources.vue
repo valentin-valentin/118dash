@@ -165,7 +165,7 @@ onMounted(() => {
                     <template #total_assignable="{ row }">
                         <div class="text-center">
                             <span class="text-sm font-medium text-gray-900">
-                                {{ row.total_assignable || 0 }}
+                                {{ row.total_assignable || 0 }} numéros
                             </span>
                         </div>
                     </template>
