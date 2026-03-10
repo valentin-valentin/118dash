@@ -146,8 +146,19 @@ class CompanyController extends Controller
         $perPage = min($request->input('per_page', 50), 100);
         $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
 
+        // Ajouter le nombre de numéros pour chaque provider-company
+        $items = $paginator->items();
+        foreach ($items as $company) {
+            foreach ($company->providerCompanies as $pc) {
+                // Compter tous les numéros pour ce couple provider-company
+                $pc->phonenumbers_count = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
+                    ->where('company_id', $pc->company_id)
+                    ->count();
+            }
+        }
+
         return response()->json([
-            'items' => $paginator->items(),
+            'items' => $items,
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),

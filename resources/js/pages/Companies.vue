@@ -152,6 +152,9 @@ onMounted(() => {
                                 <span v-if="pc.payout" class="text-xs text-gray-500">
                                     {{ pc.payout }} €
                                 </span>
+                                <span class="text-xs font-medium text-blue-600">
+                                    {{ pc.phonenumbers_count || 0 }} num.
+                                </span>
                             </div>
                         </div>
                         <span v-else class="text-sm text-gray-400">Aucun provider</span>
