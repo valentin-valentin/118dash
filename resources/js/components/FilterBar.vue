@@ -55,7 +55,7 @@ const emit = defineEmits(['reset', 'clear-cache'])
         <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <h3 class="text-sm font-medium text-gray-700">{{ title }}</h3>
-                <div v-if="resultCount !== null" class="flex items-center gap-1.5">
+                <div v-if="resultCount !== null && hasActiveFilters" class="flex items-center gap-1.5">
                     <span class="text-xs text-gray-400">·</span>
                     <span v-if="loadingResults" class="flex items-center gap-1.5 text-xs text-gray-400">
                         <svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

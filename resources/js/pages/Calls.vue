@@ -156,9 +156,9 @@ onMounted(() => {
 
             <!-- KPI -->
             <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <StatCard label="Total" :value="stats.data?.total" :loading="stats.loading" />
                 <StatCard label="Aujourd'hui" :value="stats.data?.today" :loading="stats.loading" />
                 <StatCard label="Cette semaine" :value="stats.data?.this_week" :loading="stats.loading" />
+                <StatCard label="Ce mois" :value="stats.data?.this_month" :loading="stats.loading" />
                 <StatCard
                     label="Durée moy."
                     :value="stats.data?.avg_duration ? formatDuration(stats.data.avg_duration) : '-'"
@@ -406,13 +406,20 @@ onMounted(() => {
                 </DataTable>
 
                 <div
-                    v-if="table.data?.total"
+                    v-if="table.data?.items?.length"
                     class="flex items-center justify-between border-t border-gray-50 px-4 py-3"
                 >
                     <div class="flex items-center gap-4">
                         <div class="text-sm text-gray-500">
-                            Page {{ table.data.current_page }} sur {{ table.data.last_page }}
-                            · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                            <template v-if="table.data.last_page">
+                                Page {{ table.data.current_page }} sur {{ table.data.last_page }}
+                            </template>
+                            <template v-else>
+                                Page {{ table.data.current_page }}
+                            </template>
+                            <template v-if="hasFilters && table.data.total">
+                                · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                            </template>
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="text-sm text-gray-600">Résultats par page :</span>
@@ -437,7 +444,7 @@ onMounted(() => {
                             Précédent
                         </button>
                         <button
-                            v-if="table.data.current_page < table.data.last_page"
+                            v-if="table.data.last_page ? table.data.current_page < table.data.last_page : table.data.has_more_pages"
                             @click="filters.page = (filters.page || 1) + 1"
                             class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
                         >

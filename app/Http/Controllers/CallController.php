@@ -45,57 +45,72 @@ class CallController extends Controller
         $query = Call::query()
             ->with(['agent:id,name', 'callcenter:id,name', 'blacklist:id,name']);
 
+        // Détecter si des filtres sont actifs
+        $hasFilters = false;
+
         // Filtres
         if ($request->filled('caller')) {
+            $hasFilters = true;
             $query->where('caller', 'like', "%{$request->caller}%");
         }
 
         if ($request->filled('called')) {
+            $hasFilters = true;
             $query->where('called', 'like', "%{$request->called}%");
         }
 
         if ($request->filled('brand_name')) {
+            $hasFilters = true;
             $brands = $this->parseMultiSelect($request->brand_name);
             $query->whereIn('brand_name', $brands);
         }
 
         if ($request->filled('agent_name')) {
+            $hasFilters = true;
             $agents = $this->parseMultiSelect($request->agent_name);
             $query->whereIn('agent_name', $agents);
         }
 
         if ($request->filled('callcenter_id')) {
+            $hasFilters = true;
             $callcenters = $this->parseMultiSelect($request->callcenter_id);
             $query->whereIn('callcenter_id', $callcenters);
         }
 
         if ($request->filled('carrier')) {
+            $hasFilters = true;
             $carriers = $this->parseMultiSelect($request->carrier);
             $query->whereIn('carrier', $carriers);
         }
 
         if ($request->filled('date_from')) {
+            $hasFilters = true;
             $query->whereDate('called_at', '>=', $request->date_from);
         }
 
         if ($request->filled('date_to')) {
+            $hasFilters = true;
             $query->whereDate('called_at', '<=', $request->date_to);
         }
 
         if ($request->filled('duration_min')) {
+            $hasFilters = true;
             $query->where('total_duration', '>=', $request->duration_min);
         }
 
         if ($request->filled('duration_max')) {
+            $hasFilters = true;
             $query->where('total_duration', '<=', $request->duration_max);
         }
 
         if ($request->filled('who_hangup')) {
+            $hasFilters = true;
             $whoHangup = $this->parseMultiSelect($request->who_hangup);
             $query->whereIn('who_hangup', $whoHangup);
         }
 
         if ($request->filled('has_rating')) {
+            $hasFilters = true;
             if ($request->has_rating === 'yes') {
                 $query->whereNotNull('ratings_note');
             } else {
@@ -104,35 +119,43 @@ class CallController extends Controller
         }
 
         if ($request->filled('ratings_warning')) {
+            $hasFilters = true;
             $query->where('ratings_warning', $request->ratings_warning === 'yes');
         }
 
         if ($request->filled('ratings_danger')) {
+            $hasFilters = true;
             $query->where('ratings_danger', $request->ratings_danger === 'yes');
         }
 
         if ($request->filled('ratings_not_rated')) {
+            $hasFilters = true;
             $query->where('ratings_not_rated', $request->ratings_not_rated === 'yes');
         }
 
         if ($request->filled('ratings_reviewer')) {
+            $hasFilters = true;
             $reviewers = $this->parseMultiSelect($request->ratings_reviewer);
             $query->whereIn('ratings_reviewer', $reviewers);
         }
 
         if ($request->filled('phone_agent_hangup')) {
+            $hasFilters = true;
             $query->where('phone_agent_hangup', $request->phone_agent_hangup === 'yes');
         }
 
         if ($request->filled('phone_reported_by_agent')) {
+            $hasFilters = true;
             $query->where('phone_reported_by_agent', $request->phone_reported_by_agent === 'yes');
         }
 
         if ($request->filled('phone_cant_provide_service')) {
+            $hasFilters = true;
             $query->where('phone_cant_provide_service', $request->phone_cant_provide_service === 'yes');
         }
 
         if ($request->filled('blacklist_id')) {
+            $hasFilters = true;
             if ($request->blacklist_id === 'any') {
                 $query->whereNotNull('blacklist_id');
             } elseif ($request->blacklist_id === 'none') {
@@ -148,23 +171,38 @@ class CallController extends Controller
         $dir = $request->dir === 'asc' ? 'asc' : 'desc';
 
         $perPage = min($request->input('per_page', 50), 100); // Max 100 par page
-        $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
 
+        // Si pas de filtres, utiliser simplePaginate pour éviter le COUNT() coûteux
+        if (!$hasFilters) {
+            $paginator = $query->orderBy($sort, $dir)->simplePaginate($perPage);
+            return response()->json([
+                'items' => $paginator->items(),
+                'total' => null, // Pas de total si pas de filtres
+                'current_page' => $paginator->currentPage(),
+                'last_page' => null, // SimplePaginate ne fournit pas last_page
+                'per_page' => $paginator->perPage(),
+                'has_more_pages' => $paginator->hasMorePages(),
+            ]);
+        }
+
+        // Avec filtres, utiliser paginate normal
+        $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
         return response()->json([
             'items' => $paginator->items(),
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
+            'has_more_pages' => $paginator->hasMorePages(),
         ]);
     }
 
     public function stats(): JsonResponse
     {
         return response()->json([
-            'total' => Call::count(),
             'today' => Call::whereDate('called_at', today())->count(),
             'this_week' => Call::whereBetween('called_at', [now()->startOfWeek(), now()->endOfWeek()])->count(),
+            'this_month' => Call::whereBetween('called_at', [now()->startOfMonth(), now()->endOfMonth()])->count(),
             'avg_duration' => round(Call::avg('total_duration')),
         ]);
     }
