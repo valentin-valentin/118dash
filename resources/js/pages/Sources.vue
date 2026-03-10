@@ -44,9 +44,9 @@ function toggleSort(key) {
 const columns = [
     { key: 'id', label: 'ID', sortable: true },
     { key: 'name', label: 'Nom', sortable: true },
-    { key: 'api_key', label: 'Clé API', sortable: true },
     { key: 'fingerprint', label: 'Fingerprint' },
     { key: 'only_dedicated_phonenumber', label: 'Numéro dédié' },
+    { key: 'total_assignable', label: 'Numéros assignables' },
     { key: 'associations', label: 'Répartition' },
     { key: 'created_at', label: 'Créé le', sortable: true },
     { key: 'actions', label: 'Actions' },
@@ -120,11 +120,11 @@ onMounted(() => {
                 @reset="reset"
             >
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                    <!-- Recherche par nom ou API key -->
+                    <!-- Recherche par nom -->
                     <Input
                         v-model="filters.search"
                         type="text"
-                        placeholder="Rechercher par nom ou clé API..."
+                        placeholder="Rechercher par nom..."
                         class="h-8"
                     />
                 </div>
@@ -148,10 +148,6 @@ onMounted(() => {
                         <ColorBadge :color="row.color" :label="row.name" />
                     </template>
 
-                    <template #api_key="{ value }">
-                        <span class="font-mono text-xs text-gray-600">{{ value }}</span>
-                    </template>
-
                     <template #fingerprint="{ value }">
                         <div class="flex justify-center">
                             <Check v-if="value" class="h-4 w-4 text-green-600" />
@@ -163,6 +159,14 @@ onMounted(() => {
                         <div class="flex justify-center">
                             <Check v-if="value" class="h-4 w-4 text-green-600" />
                             <X v-else class="h-4 w-4 text-gray-400" />
+                        </div>
+                    </template>
+
+                    <template #total_assignable="{ row }">
+                        <div class="text-center">
+                            <span class="text-sm font-medium text-gray-900">
+                                {{ row.total_assignable || 0 }}
+                            </span>
                         </div>
                     </template>
 

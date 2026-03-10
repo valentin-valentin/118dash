@@ -136,7 +136,7 @@ class SourceController extends Controller
         }
 
         // Tri
-        $sortable = ['id', 'name', 'api_key', 'created_at'];
+        $sortable = ['id', 'name', 'created_at'];
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'name';
         $dir = $request->dir === 'desc' ? 'desc' : 'asc';
 
@@ -146,6 +146,7 @@ class SourceController extends Controller
         // Ajouter le nombre de numéros assignables pour chaque association
         $items = $paginator->items();
         foreach ($items as $source) {
+            $totalAssignable = 0;
             foreach ($source->sourceProviderCompanies as $spc) {
                 if ($spc->providerCompany) {
                     // Compter les numéros non assignés pour ce couple provider-company
@@ -154,8 +155,12 @@ class SourceController extends Controller
                         ->whereNull('assigned_at')
                         ->where('will_be_deleted', false)
                         ->count();
+
+                    $totalAssignable += $spc->assignable_count;
                 }
             }
+            // Total de numéros assignables pour cette source
+            $source->total_assignable = $totalAssignable;
         }
 
         return response()->json([
