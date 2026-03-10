@@ -143,8 +143,23 @@ class SourceController extends Controller
         $perPage = min($request->input('per_page', 50), 100);
         $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
 
+        // Ajouter le nombre de numéros assignables pour chaque association
+        $items = $paginator->items();
+        foreach ($items as $source) {
+            foreach ($source->sourceProviderCompanies as $spc) {
+                if ($spc->providerCompany) {
+                    // Compter les numéros non assignés pour ce couple provider-company
+                    $spc->assignable_count = \App\Models\Phonenumber::where('provider_id', $spc->providerCompany->provider_id)
+                        ->where('company_id', $spc->providerCompany->company_id)
+                        ->whereNull('assigned_at')
+                        ->where('will_be_deleted', false)
+                        ->count();
+                }
+            }
+        }
+
         return response()->json([
-            'items' => $paginator->items(),
+            'items' => $items,
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),

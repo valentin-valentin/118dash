@@ -185,6 +185,9 @@ onMounted(() => {
                                 <span class="text-xs text-gray-500">
                                     (w: {{ assoc.weight }})
                                 </span>
+                                <span class="text-xs font-medium text-blue-600">
+                                    {{ assoc.assignable_count || 0 }} num.
+                                </span>
                             </div>
                         </div>
                         <span v-else class="text-sm text-gray-400">Aucune répartition</span>
