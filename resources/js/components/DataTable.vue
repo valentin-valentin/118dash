@@ -33,7 +33,7 @@ const emit = defineEmits(['sort'])
                     <th
                         v-for="col in columns"
                         :key="col.key"
-                        class="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400"
+                        class="whitespace-nowrap px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400"
                         :class="[col.headerClass, col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
                         @click="col.sortable && emit('sort', col.key)"
                     >
@@ -53,7 +53,7 @@ const emit = defineEmits(['sort'])
                 <!-- Skeleton loading -->
                 <template v-if="loading">
                     <tr v-for="n in 8" :key="n" class="border-b border-gray-50">
-                        <td v-for="col in columns" :key="col.key" class="px-4 py-3">
+                        <td v-for="col in columns" :key="col.key" class="px-3 py-2">
                             <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
                         </td>
                     </tr>
@@ -62,7 +62,7 @@ const emit = defineEmits(['sort'])
                 <!-- Vide -->
                 <template v-else-if="rows.length === 0">
                     <tr>
-                        <td :colspan="columns.length" class="px-4 py-10 text-center text-sm text-gray-300">
+                        <td :colspan="columns.length" class="px-3 py-8 text-center text-sm text-gray-300">
                             {{ emptyMessage ?? 'No data' }}
                         </td>
                     </tr>
@@ -79,7 +79,7 @@ const emit = defineEmits(['sort'])
                         <td
                             v-for="col in columns"
                             :key="col.key"
-                            class="px-4 py-2.5 text-gray-700"
+                            class="px-3 py-1.5 text-gray-700"
                             :class="col.class"
                         >
                             <slot :name="col.key" :row="row" :value="row[col.key]">

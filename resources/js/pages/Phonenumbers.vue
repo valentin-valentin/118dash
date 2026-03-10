@@ -667,13 +667,10 @@ onUnmounted(() => {
                     </template>
 
                     <template #stats="{ row }">
-                        <div class="group relative text-xs text-gray-600">
-                            {{ row.total_assignments || 0 }} · {{ formatDuration(row.total_duration || 0) }}
-                            <div class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-48 rounded-lg bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white shadow-xl opacity-0 scale-95 transition-all duration-200 group-hover:opacity-100 group-hover:scale-100">
-                                <div>{{ row.total_assignments || 0 }} assignations</div>
-                                <div>Durée totale : {{ formatDuration(row.total_duration || 0) }}</div>
-                                <div class="absolute left-4 top-full -mt-1 h-2 w-2 rotate-45 bg-gray-900"></div>
-                            </div>
+                        <div class="space-y-0.5 text-[10px] leading-tight text-gray-600">
+                            <div>{{ row.total_assignments || 0 }} assignations</div>
+                            <div>{{ row.total_calls || 0 }} appels</div>
+                            <div>{{ formatDuration(row.total_duration || 0) }}</div>
                         </div>
                     </template>
                 </DataTable>

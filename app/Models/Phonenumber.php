@@ -24,12 +24,14 @@ class Phonenumber extends Model
         'real_expires_at',
         'last_assigned_at',
         'total_assignments',
+        'total_calls',
         'total_duration',
         'current_endpoint',
         'last_routed_at',
         'routing_error',
         'routing_error_at',
         'will_be_deleted',
+        'sip_registered',
     ];
 
     protected $casts = [
@@ -40,8 +42,10 @@ class Phonenumber extends Model
         'last_routed_at' => 'datetime',
         'routing_error_at' => 'datetime',
         'total_assignments' => 'integer',
+        'total_calls' => 'integer',
         'total_duration' => 'integer',
         'will_be_deleted' => 'boolean',
+        'sip_registered' => 'boolean',
     ];
 
     public function company(): BelongsTo
