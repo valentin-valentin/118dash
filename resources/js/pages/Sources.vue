@@ -159,7 +159,12 @@ onMounted(() => {
                                 <ColorBadge
                                     v-if="assoc.provider_company?.provider"
                                     :color="assoc.provider_company.provider.color"
-                                    :label="`${assoc.provider_company.provider.name} - ${assoc.provider_company.company?.name || ''}`"
+                                    :label="assoc.provider_company.provider.name"
+                                />
+                                <ColorBadge
+                                    v-if="assoc.provider_company?.company"
+                                    :color="assoc.provider_company.company.color"
+                                    :label="assoc.provider_company.company.name"
                                 />
                                 <span class="text-xs font-medium text-gray-900">
                                     {{ assoc.percentage }}%
