@@ -45,17 +45,17 @@ class RoutingLogController extends Controller
 
         // Filter by source
         if ($sourceId = $request->get('source_id')) {
-            $query->where('source_id', $sourceId);
+            $query->where('source_id', (int) $sourceId);
         }
 
         // Filter by company
         if ($companyId = $request->get('company_id')) {
-            $query->where('company_id', $companyId);
+            $query->where('company_id', (int) $companyId);
         }
 
         // Filter by provider
         if ($providerId = $request->get('provider_id')) {
-            $query->where('provider_id', $providerId);
+            $query->where('provider_id', (int) $providerId);
         }
 
         // Date range
@@ -156,17 +156,17 @@ class RoutingLogController extends Controller
         $sources = \App\Models\Source::select('id', 'name')
             ->orderBy('name')
             ->get()
-            ->map(fn($s) => ['value' => (string)$s->id, 'label' => $s->name]);
+            ->map(fn($s) => ['value' => $s->id, 'label' => $s->name]);
 
         $companies = \App\Models\Company::select('id', 'name')
             ->orderBy('name')
             ->get()
-            ->map(fn($c) => ['value' => (string)$c->id, 'label' => $c->name]);
+            ->map(fn($c) => ['value' => $c->id, 'label' => $c->name]);
 
         $providers = \App\Models\Provider::select('id', 'name')
             ->orderBy('name')
             ->get()
-            ->map(fn($p) => ['value' => (string)$p->id, 'label' => $p->name]);
+            ->map(fn($p) => ['value' => $p->id, 'label' => $p->name]);
 
         $statuses = RoutingLog::distinct()
             ->pluck('status')

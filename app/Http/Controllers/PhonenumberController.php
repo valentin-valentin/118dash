@@ -107,18 +107,18 @@ class PhonenumberController extends Controller
         }
 
         if ($request->filled('company_id')) {
-            $query->where('company_id', $request->company_id);
+            $query->where('company_id', (int) $request->company_id);
         }
 
         if ($request->filled('provider_id')) {
-            $query->where('provider_id', $request->provider_id);
+            $query->where('provider_id', (int) $request->provider_id);
         }
 
         if ($request->filled('only_source_id')) {
             if ($request->only_source_id === 'null') {
                 $query->whereNull('only_source_id');
             } else {
-                $query->where('only_source_id', $request->only_source_id);
+                $query->where('only_source_id', (int) $request->only_source_id);
             }
         }
 
@@ -126,7 +126,7 @@ class PhonenumberController extends Controller
             if ($request->source_id === 'null') {
                 $query->whereNull('source_id');
             } else {
-                $query->where('source_id', $request->source_id);
+                $query->where('source_id', (int) $request->source_id);
             }
         }
 

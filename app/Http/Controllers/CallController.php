@@ -84,6 +84,8 @@ class CallController extends Controller
         if ($request->filled('callcenter_id')) {
             $hasFilters = true;
             $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            // Convert to integers to ensure proper comparison
+            $callcenters = array_map('intval', $callcenters);
             $query->whereIn('callcenter_id', $callcenters);
         }
 
@@ -96,6 +98,8 @@ class CallController extends Controller
         if ($request->filled('provider_id')) {
             $hasFilters = true;
             $providers = $this->parseMultiSelect($request->provider_id);
+            // Convert to integers to ensure proper comparison
+            $providers = array_map('intval', $providers);
             $query->whereHas('phonenumber', function ($q) use ($providers) {
                 $q->whereIn('provider_id', $providers);
             });
@@ -104,6 +108,8 @@ class CallController extends Controller
         if ($request->filled('company_id')) {
             $hasFilters = true;
             $companies = $this->parseMultiSelect($request->company_id);
+            // Convert to integers to ensure proper comparison
+            $companies = array_map('intval', $companies);
             $query->whereHas('phonenumber', function ($q) use ($companies) {
                 $q->whereIn('company_id', $companies);
             });
@@ -112,6 +118,8 @@ class CallController extends Controller
         if ($request->filled('source_id')) {
             $hasFilters = true;
             $sources = $this->parseMultiSelect($request->source_id);
+            // Convert to integers to ensure proper comparison
+            $sources = array_map('intval', $sources);
             $query->where(function ($q) use ($sources) {
                 $q->whereIn('source_id', $sources)
                   ->orWhereHas('phonenumber', function ($sq) use ($sources) {
