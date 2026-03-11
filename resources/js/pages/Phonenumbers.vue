@@ -553,7 +553,7 @@ onUnmounted(() => {
                             type="checkbox"
                             :checked="isSelected(row.id)"
                             @change="toggleSelect(row.id)"
-                            class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            class="h-4 w-4 b rounded border-gray-300 text-primary focus:ring-primary"
                         />
                     </template>
 
@@ -562,7 +562,7 @@ onUnmounted(() => {
                             type="checkbox"
                             :checked="allSelected"
                             @change="toggleSelectAll"
-                            class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            class="h-4 w-4 h rounded border-gray-300 text-primary focus:ring-primary"
                         />
                     </template>
 
