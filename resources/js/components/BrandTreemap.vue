@@ -32,6 +32,9 @@ const chartOptions = computed(() => ({
         toolbar: {
             show: false,
         },
+        animations: {
+            enabled: false,
+        },
     },
     plotOptions: {
         treemap: {

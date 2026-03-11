@@ -27,7 +27,6 @@ const {
     agents: [],
     callcenters: [],
     carriers: [],
-    who_hangup: [],
     ratings_reviewers: [],
     blacklists: [],
 })
@@ -47,7 +46,6 @@ const { filters, reset } = useFilters(
         duration_min: '',
         duration_max: '',
         carrier: [],
-        who_hangup: [],
         has_rating: '',
         ratings_warning: '',
         ratings_danger: '',
@@ -76,7 +74,6 @@ const hasFilters = computed(() =>
     !!filters.duration_min ||
     !!filters.duration_max ||
     (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
-    (Array.isArray(filters.who_hangup) && filters.who_hangup.length > 0) ||
     !!filters.has_rating ||
     !!filters.ratings_warning ||
     !!filters.ratings_danger ||
@@ -104,10 +101,10 @@ const columns = [
     { key: 'called', label: 'Appelé' },
     { key: 'brand_name', label: 'Marque', sortable: true },
     { key: 'agent_name', label: 'Agent', sortable: true },
+    { key: 'carrier', label: 'Opérateur', sortable: true },
     { key: 'total_duration', label: 'Durée', sortable: true },
     { key: 'duration_agent', label: 'Durée agent', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
-    { key: 'who_hangup', label: 'Qui raccroche' },
 ]
 
 function formatDate(dateString) {
@@ -131,6 +128,19 @@ function formatDuration(seconds) {
 
 function getRowClass(row) {
     return row.blacklist_id ? 'bg-red-50 hover:bg-red-100/80' : ''
+}
+
+// Mapping des carriers
+const carrierMapping = {
+    'BOUY': 'Bouygues',
+    'FREE': 'Free',
+    'FRMO': 'Free Mobile',
+    'FRTE': 'Orange',
+    'SFR0': 'SFR',
+}
+
+function getCarrierDisplayName(code) {
+    return carrierMapping[code] || code
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -226,14 +236,6 @@ onMounted(() => {
                         v-model="filters.carrier"
                         :options="filterOptions.carriers"
                         placeholder="Tous les opérateurs"
-                        multiple
-                    />
-
-                    <!-- Qui raccroche -->
-                    <FilterSelect
-                        v-model="filters.who_hangup"
-                        :options="filterOptions.who_hangup"
-                        placeholder="Qui raccroche"
                         multiple
                     />
 
@@ -402,6 +404,9 @@ onMounted(() => {
                     </template>
                     <template #called="{ value }">
                         <span class="font-mono text-xs">{{ value || '-' }}</span>
+                    </template>
+                    <template #carrier="{ value }">
+                        <span class="text-sm">{{ getCarrierDisplayName(value) }}</span>
                     </template>
                 </DataTable>
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\CarrierHelper;
 use App\Models\Call;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -184,7 +185,7 @@ class DashboardController extends Controller
 
             if ($request->filled('source_id')) {
                 $sources = $this->parseMultiSelect($request->source_id);
-                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
                 $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
                 $calledNumbers = [];
                 foreach ($providerCompanies as $pc) {
@@ -193,9 +194,8 @@ class DashboardController extends Controller
                         ->pluck('phonenumber');
                     $calledNumbers = array_merge($calledNumbers, $nums->toArray());
                 }
-                if (!empty($calledNumbers)) {
-                    $query->whereIn('called', $calledNumbers);
-                }
+                // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
+                $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
             }
         };
 
@@ -272,6 +272,11 @@ class DashboardController extends Controller
         $query = Call::query();
 
         // Appliquer les mêmes filtres
+        if ($request->filled('brand_name')) {
+            $brands = $this->parseMultiSelect($request->brand_name);
+            $query->whereIn('brand_name', $brands);
+        }
+
         if ($request->filled('agent_name')) {
             $agents = $this->parseMultiSelect($request->agent_name);
             $query->whereIn('agent_name', $agents);
@@ -301,7 +306,7 @@ class DashboardController extends Controller
 
         if ($request->filled('source_id')) {
             $sources = $this->parseMultiSelect($request->source_id);
-            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
             $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
             $calledNumbers = [];
             foreach ($providerCompanies as $pc) {
@@ -310,12 +315,11 @@ class DashboardController extends Controller
                     ->pluck('phonenumber');
                 $calledNumbers = array_merge($calledNumbers, $nums->toArray());
             }
-            if (!empty($calledNumbers)) {
-                $query->whereIn('called', $calledNumbers);
-            }
+            // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
+            $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
         }
 
-        // Ne pas filtrer par brand_name pour le camembert (on veut toutes les marques)
+        // Ne pas filtrer par brand_name pour le camembert (on veut toutes les marques avec minimum 3 appels)
         $brands = $query->whereBetween('called_at', [$start, $end])
             ->whereNotNull('brand_name')
             ->where('brand_name', '!=', '')
@@ -329,6 +333,7 @@ class DashboardController extends Controller
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->groupBy('brand_name')
+            ->havingRaw('COUNT(*) >= 3')
             ->orderByDesc('benefice')
             ->get()
             ->map(function ($row) {
@@ -405,7 +410,7 @@ class DashboardController extends Controller
         if ($request->filled('source_id')) {
             // Via source_provider_companies -> provider_companies -> phonenumbers
             $sources = $this->parseMultiSelect($request->source_id);
-            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
             $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
             $calledNumbers = [];
             foreach ($providerCompanies as $pc) {
@@ -414,9 +419,8 @@ class DashboardController extends Controller
                     ->pluck('phonenumber');
                 $calledNumbers = array_merge($calledNumbers, $nums->toArray());
             }
-            if (!empty($calledNumbers)) {
-                $query->whereIn('called', $calledNumbers);
-            }
+            // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
+            $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
         }
 
         // Détecter si on est sur un jour en cours (pas terminé)
@@ -480,7 +484,7 @@ class DashboardController extends Controller
 
         if ($request->filled('source_id')) {
             $sources = $this->parseMultiSelect($request->source_id);
-            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
             $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
             $calledNumbers = [];
             foreach ($providerCompanies as $pc) {
@@ -489,9 +493,8 @@ class DashboardController extends Controller
                     ->pluck('phonenumber');
                 $calledNumbers = array_merge($calledNumbers, $nums->toArray());
             }
-            if (!empty($calledNumbers)) {
-                $previousQuery->whereIn('called', $calledNumbers);
-            }
+            // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
+            $previousQuery->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
         }
 
         $previousDaily = $previousQuery->whereBetween('called_at', [$previousMonthStart, $previousMonthEnd])
@@ -556,7 +559,7 @@ class DashboardController extends Controller
 
             if ($request->filled('source_id')) {
                 $sources = $this->parseMultiSelect($request->source_id);
-                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
                 $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
                 $calledNumbers = [];
                 foreach ($providerCompanies as $pc) {
@@ -565,9 +568,8 @@ class DashboardController extends Controller
                         ->pluck('phonenumber');
                     $calledNumbers = array_merge($calledNumbers, $nums->toArray());
                 }
-                if (!empty($calledNumbers)) {
-                    $todayPreviousQuery->whereIn('called', $calledNumbers);
-                }
+                // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
+                $todayPreviousQuery->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
             }
 
             $todayHourComparison = $todayPreviousQuery
@@ -683,8 +685,22 @@ class DashboardController extends Controller
                     ->distinct()
                     ->whereNotNull('carrier')
                     ->where('carrier', '!=', '')
-                    ->orderBy('carrier')
-                    ->pluck('carrier'),
+                    ->pluck('carrier')
+                    ->map(function ($code) {
+                        return [
+                            'value' => $code,
+                            'label' => CarrierHelper::getDisplayName($code),
+                            'isDefined' => CarrierHelper::isDefined($code),
+                        ];
+                    })
+                    ->sortBy(function ($carrier) {
+                        // Les carriers définis en premier, puis par label alphabétique
+                        return [
+                            $carrier['isDefined'] ? 0 : 1,
+                            $carrier['label'],
+                        ];
+                    })
+                    ->values(),
                 'providers' => \App\Models\Provider::select('id', 'name')
                     ->orderBy('name')
                     ->get(),

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\CarrierHelper;
 use App\Models\Call;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -231,8 +232,21 @@ class CallController extends Controller
                     ->distinct()
                     ->whereNotNull('carrier')
                     ->where('carrier', '!=', '')
-                    ->orderBy('carrier')
-                    ->pluck('carrier'),
+                    ->pluck('carrier')
+                    ->map(function ($code) {
+                        return [
+                            'value' => $code,
+                            'label' => CarrierHelper::getDisplayName($code),
+                            'isDefined' => CarrierHelper::isDefined($code),
+                        ];
+                    })
+                    ->sortBy(function ($carrier) {
+                        return [
+                            $carrier['isDefined'] ? 0 : 1,
+                            $carrier['label'],
+                        ];
+                    })
+                    ->values(),
                 'who_hangup' => Call::select('who_hangup')
                     ->distinct()
                     ->whereNotNull('who_hangup')
