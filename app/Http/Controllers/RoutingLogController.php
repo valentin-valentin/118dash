@@ -143,9 +143,9 @@ class RoutingLogController extends Controller
      */
     public function stats(): JsonResponse
     {
-        $total = RoutingLog::count();
-        $errors = RoutingLog::whereIn('status', ['error', 'failed', 'failure'])->count();
-        $success = RoutingLog::where('status', 'success')->count();
+        $total = RoutingLog::whereDate('created_at', today())->count();
+        $errors = RoutingLog::whereDate('created_at', today())->whereIn('status', ['error', 'failed', 'failure'])->count();
+        $success = RoutingLog::whereDate('created_at', today())->where('status', 'success')->count();
         $today = RoutingLog::whereDate('created_at', today())->count();
 
         return response()->json([

@@ -153,11 +153,10 @@ onMounted(() => {
             />
 
             <!-- KPI -->
-            <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div class="grid grid-cols-3 gap-4">
                 <StatCard label="Total" :value="stats.data?.total" :loading="stats.loading" />
                 <StatCard label="Erreurs" :value="stats.data?.errors" :loading="stats.loading" variant="danger" />
                 <StatCard label="Succès" :value="stats.data?.success" :loading="stats.loading" variant="success" />
-                <StatCard label="Aujourd'hui" :value="stats.data?.today" :loading="stats.loading" />
             </div>
 
             <!-- Filtres -->
