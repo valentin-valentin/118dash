@@ -10,7 +10,7 @@ class CarrierHelper
     private static array $carrierMapping = [
         'BOUY' => 'Bouygues',
         'FREE' => 'Free',
-        'FRMO' => 'Free Mobile',
+        'FRMO' => 'Free',
         'FRTE' => 'Orange',
         'SFR0' => 'SFR',
     ];

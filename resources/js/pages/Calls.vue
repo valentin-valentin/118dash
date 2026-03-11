@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
+import { User, PhoneForwarded } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/calls/stats')
@@ -106,8 +107,7 @@ const columns = [
     { key: 'brand_name', label: 'Marque', sortable: true },
     { key: 'agent_name', label: 'Agent', sortable: true },
     { key: 'carrier', label: 'Opérateur', sortable: true },
-    { key: 'total_duration', label: 'Durée', sortable: true },
-    { key: 'duration_agent', label: 'Durée agent', sortable: true },
+    { key: 'duration', label: 'Durée', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
 ]
 
@@ -154,13 +154,23 @@ function getRowClass(row) {
 const carrierMapping = {
     'BOUY': 'Bouygues',
     'FREE': 'Free',
-    'FRMO': 'Free Mobile',
+    'FRMO': 'Free',
     'FRTE': 'Orange',
     'SFR0': 'SFR',
 }
 
 function getCarrierDisplayName(code) {
     return carrierMapping[code] || code
+}
+
+function formatAgentName(agentName) {
+    if (!agentName) return '-'
+    // Si format +33118500999@68.183.243.180, extraire "118500"
+    const match = agentName.match(/^\+33(\d{6})\d*@/)
+    if (match) {
+        return match[1]
+    }
+    return agentName
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -410,14 +420,27 @@ onMounted(() => {
                     <template #called_at="{ value }">
                         <span class="text-sm text-gray-900">{{ formatDate(value) }}</span>
                     </template>
-                    <template #total_duration="{ value }">
-                        <span class="text-sm text-gray-900">{{ formatDuration(value) }}</span>
+                    <template #duration="{ row }">
+                        <div class="space-y-0.5">
+                            <div class="text-sm text-gray-900">{{ formatDuration(row.total_duration) }}</div>
+                            <div class="flex items-center gap-2 text-xs text-gray-500">
+                                <div class="flex items-center gap-0.5">
+                                    <User class="h-3 w-3" />
+                                    <span>{{ formatDuration(row.duration_agent) }}</span>
+                                </div>
+                                <div class="flex items-center gap-0.5">
+                                    <PhoneForwarded class="h-3 w-3" />
+                                    <span>{{ formatDuration(row.duration_transfert) }}</span>
+                                </div>
+                            </div>
+                        </div>
                     </template>
-                    <template #duration_agent="{ value }">
-                        <span class="text-sm text-gray-900">{{ formatDuration(value) }}</span>
-                    </template>
-                    <template #payout="{ value }">
-                        <span class="text-sm text-gray-900">{{ value ? formatCurrency(parseFloat(value)) + ' €' : '-' }}</span>
+                    <template #payout="{ row }">
+                        <div v-if="row.payout !== null && row.payout !== undefined" class="text-sm">
+                            <span class="text-gray-500">{{ formatCurrency(parseFloat(row.payout)) }} - {{ formatCurrency(parseFloat(row.payout_source || 0)) }} = </span>
+                            <span class="font-medium text-gray-900">{{ formatCurrency(parseFloat(row.payout) - parseFloat(row.payout_source || 0)) }}</span>
+                        </div>
+                        <span v-else class="text-sm text-gray-400">-</span>
                     </template>
                     <template #caller="{ value }">
                         <span class="text-sm text-gray-700">{{ value || '-' }}</span>
@@ -453,7 +476,7 @@ onMounted(() => {
                         <span class="text-sm text-gray-900">{{ value || '-' }}</span>
                     </template>
                     <template #agent_name="{ value }">
-                        <span class="text-sm text-gray-900">{{ value || '-' }}</span>
+                        <span class="text-sm text-gray-900">{{ formatAgentName(value) }}</span>
                     </template>
                     <template #carrier="{ value }">
                         <span class="text-sm text-gray-900">{{ getCarrierDisplayName(value) }}</span>

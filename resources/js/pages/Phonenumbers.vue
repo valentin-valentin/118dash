@@ -586,15 +586,21 @@ onUnmounted(() => {
                     </template>
 
                     <template #company="{ row }">
-                        <span class="inline-flex rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">
-                            {{ row.company?.name || '-' }}
-                        </span>
+                        <ColorBadge
+                            v-if="row.company"
+                            :color="row.company.color"
+                            :label="row.company.name"
+                        />
+                        <span v-else class="text-xs text-gray-400">-</span>
                     </template>
 
                     <template #provider="{ row }">
-                        <span class="inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                            {{ row.provider?.name || '-' }}
-                        </span>
+                        <ColorBadge
+                            v-if="row.provider"
+                            :color="row.provider.color"
+                            :label="row.provider.name"
+                        />
+                        <span v-else class="text-xs text-gray-400">-</span>
                     </template>
 
                     <template #only_source="{ row }">
