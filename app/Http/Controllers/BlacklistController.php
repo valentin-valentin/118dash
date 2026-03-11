@@ -25,7 +25,7 @@ class BlacklistController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'phonenumber' => ['required', 'string', 'regex:/^\+33[1-9]\d{8}$/', 'unique:blacklists,phonenumber'],
+            'phonenumber' => ['required', 'string', 'regex:/^\+33[1-9]\d{8}$/', 'unique:blacklist,phonenumber'],
             'source' => 'nullable|string|max:255',
             'note' => 'nullable|string|max:1000',
         ], [
@@ -52,7 +52,7 @@ class BlacklistController extends Controller
     public function update(Request $request, Blacklist $blacklist)
     {
         $validated = $request->validate([
-            'phonenumber' => ['required', 'string', 'regex:/^\+33[1-9]\d{8}$/', 'unique:blacklists,phonenumber,' . $blacklist->id],
+            'phonenumber' => ['required', 'string', 'regex:/^\+33[1-9]\d{8}$/', 'unique:blacklist,phonenumber,' . $blacklist->id],
             'source' => 'nullable|string|max:255',
             'note' => 'nullable|string|max:1000',
         ], [

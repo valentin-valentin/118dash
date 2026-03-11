@@ -51,7 +51,7 @@ class CallController extends Controller
                 'phonenumber:id,phonenumber,provider_id,company_id,source_id',
                 'phonenumber.provider:id,name,color',
                 'phonenumber.company:id,name,color',
-                'source:id,name,color'
+                'phonenumber.source:id,name,color'
             ]);
 
         // Détecter si des filtres sont actifs

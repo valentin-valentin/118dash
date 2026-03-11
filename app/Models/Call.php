@@ -197,9 +197,4 @@ class Call extends Model
     {
         return $this->belongsTo(Phonenumber::class, 'called', 'phonenumber');
     }
-
-    public function source(): BelongsTo
-    {
-        return $this->belongsTo(Source::class);
-    }
 }
