@@ -120,10 +120,17 @@ class CallController extends Controller
             $sources = $this->parseMultiSelect($request->source_id);
             // Convert to integers to ensure proper comparison
             $sources = array_map('intval', $sources);
+            // Filter logic must match display logic:
+            // Show source from Call.source_id if exists, otherwise from Phonenumber.source_id
             $query->where(function ($q) use ($sources) {
+                // Case 1: Call has direct source_id
                 $q->whereIn('source_id', $sources)
-                  ->orWhereHas('phonenumber', function ($sq) use ($sources) {
-                      $sq->whereIn('source_id', $sources);
+                  // Case 2: Call has NO source_id (null) AND phonenumber has source_id
+                  ->orWhere(function ($sq) use ($sources) {
+                      $sq->whereNull('source_id')
+                         ->whereHas('phonenumber', function ($psq) use ($sources) {
+                             $psq->whereIn('source_id', $sources);
+                         });
                   });
             });
         }
