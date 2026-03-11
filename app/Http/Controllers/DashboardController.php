@@ -705,7 +705,10 @@ class DashboardController extends Controller
                 'callcenters' => \App\Models\Callcenter::select('id', 'name')
                     ->where('enabled', true)
                     ->orderBy('name')
-                    ->get(),
+                    ->get()
+                    ->map(fn($c) => ['value' => $c->id, 'label' => $c->name])
+                    ->values()
+                    ->toArray(),
                 'carriers' => Call::select('carrier')
                     ->distinct()
                     ->whereNotNull('carrier')
@@ -726,15 +729,24 @@ class DashboardController extends Controller
                         ];
                     })
                     ->values(),
-                'providers' => \App\Models\Provider::select('id', 'name')
+                'providers' => \App\Models\Provider::select('id', 'name', 'color')
                     ->orderBy('name')
-                    ->get(),
-                'companies' => \App\Models\Company::select('id', 'name')
+                    ->get()
+                    ->map(fn($p) => ['value' => $p->id, 'label' => $p->name, 'color' => $p->color])
+                    ->values()
+                    ->toArray(),
+                'companies' => \App\Models\Company::select('id', 'name', 'color')
                     ->orderBy('name')
-                    ->get(),
-                'sources' => \App\Models\Source::select('id', 'name')
+                    ->get()
+                    ->map(fn($c) => ['value' => $c->id, 'label' => $c->name, 'color' => $c->color])
+                    ->values()
+                    ->toArray(),
+                'sources' => \App\Models\Source::select('id', 'name', 'color')
                     ->orderBy('name')
-                    ->get(),
+                    ->get()
+                    ->map(fn($s) => ['value' => $s->id, 'label' => $s->name, 'color' => $s->color])
+                    ->values()
+                    ->toArray(),
             ];
         }));
     }
