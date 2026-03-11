@@ -35,9 +35,15 @@ function parseUrlParams<T extends Record<string, unknown>>(defaults: T): T {
 
             // If default is array, split by comma
             if (Array.isArray(defaults[key])) {
-                result[key] = value.split(',').filter(v => v.trim() !== '') as any;
+                result[key] = value.split(',').filter(v => v.trim() !== '').map(v => {
+                    // Try to parse as number for numeric IDs
+                    const num = Number(v);
+                    return !isNaN(num) && v.trim() !== '' ? num : v;
+                }) as any;
             } else {
-                result[key] = value as any;
+                // Try to parse single values as numbers too
+                const num = Number(value);
+                result[key] = (!isNaN(num) && value.trim() !== '' ? num : value) as any;
             }
         }
     }
