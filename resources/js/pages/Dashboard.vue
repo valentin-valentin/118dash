@@ -466,15 +466,15 @@ onMounted(() => {
                                     :key="i"
                                     :class="[
                                         'border-b border-gray-50 transition-colors',
-                                        isSunday(row.date) ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-100/80'
+                                        isSunday(row.date) ? 'bg-gray-50' : 'hover:bg-gray-100/80'
                                     ]"
                                 >
                                     <td class="px-3 py-1.5 text-sm">
-                                        <div class="font-medium text-gray-900">{{ formatDayName(row.date) }}</div>
-                                        <div class="text-xs text-gray-500">{{ formatDateShort(row.date) }}</div>
+                                        <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ formatDayName(row.date) }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ formatDateShort(row.date) }}</div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div class="text-gray-900">{{ row.calls?.toLocaleString() ?? '-' }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ row.calls?.toLocaleString() ?? '-' }}</div>
                                         <div v-if="row.prev_calls !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ row.prev_calls.toLocaleString() }}
                                             <span :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
@@ -483,7 +483,7 @@ onMounted(() => {
                                         </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div class="text-gray-900">{{ formatDuration(row.total_duration) }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDuration(row.total_duration) }}</div>
                                         <div v-if="row.prev_total_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatDuration(row.prev_total_duration) }}
                                             <span :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
@@ -492,7 +492,7 @@ onMounted(() => {
                                         </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div class="text-gray-900">{{ formatDuration(row.avg_duration) }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDuration(row.avg_duration) }}</div>
                                         <div v-if="row.prev_avg_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatDuration(row.prev_avg_duration) }}
                                             <span :class="row.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
@@ -501,7 +501,7 @@ onMounted(() => {
                                         </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div class="text-gray-900">{{ formatCurrency(row.ca) }} €</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatCurrency(row.ca) }} €</div>
                                         <div v-if="row.prev_ca !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_ca) }} €
                                             <span :class="row.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
@@ -510,7 +510,7 @@ onMounted(() => {
                                         </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div class="text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatCurrency(row.reverse) }} €</div>
                                         <div v-if="row.prev_reverse !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_reverse) }} €
                                             <span :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
@@ -519,7 +519,7 @@ onMounted(() => {
                                         </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div class="font-bold text-gray-900">{{ formatCurrency(row.benefice) }} €</div>
+                                        <div :class="isSunday(row.date) ? 'font-bold text-gray-400' : 'font-bold text-gray-900'">{{ formatCurrency(row.benefice) }} €</div>
                                         <div v-if="row.prev_benefice !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_benefice) }} €
                                             <span :class="row.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
