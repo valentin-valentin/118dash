@@ -216,7 +216,7 @@ onMounted(() => {
                         :key="p.value"
                         @click="period = p.value"
                         :class="[
-                            'rounded-md px-3 py-2 text-xs font-medium transition-all',
+                            'rounded-md px-3 py-2 text-xs font-medium transition-all min-w-[110px]',
                             period === p.value
                                 ? 'bg-gray-900 text-white'
                                 : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
