@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import ColorBadge from '@/components/ColorBadge.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
@@ -597,22 +598,20 @@ onUnmounted(() => {
                     </template>
 
                     <template #only_source="{ row }">
-                        <span
+                        <ColorBadge
                             v-if="row.only_source"
-                            class="inline-flex rounded-full bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700"
-                        >
-                            {{ row.only_source.name }}
-                        </span>
+                            :color="row.only_source.color"
+                            :label="row.only_source.name"
+                        />
                         <span v-else class="text-xs text-gray-400">-</span>
                     </template>
 
                     <template #source="{ row }">
-                        <span
+                        <ColorBadge
                             v-if="row.source"
-                            class="inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"
-                        >
-                            {{ row.source.name }}
-                        </span>
+                            :color="row.source.color"
+                            :label="row.source.name"
+                        />
                         <span v-else class="text-xs text-gray-400">Non assigné</span>
                     </template>
 
