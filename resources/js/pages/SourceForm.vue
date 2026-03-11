@@ -235,9 +235,9 @@ function submit() {
                 <Card>
                     <CardHeader>
                         <CardTitle>Répartition Provider - Company</CardTitle>
-                        <CardDescription>
+                        <!-- <CardDescription>
                             Gérez les weights pour répartir le trafic entre les différentes combinaisons provider-company
-                        </CardDescription>
+                        </CardDescription> -->
                     </CardHeader>
                     <CardContent class="space-y-6">
                         <!-- Indicateur du total -->
