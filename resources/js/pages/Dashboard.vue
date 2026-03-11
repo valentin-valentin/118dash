@@ -31,19 +31,38 @@ const {
     sources: [],
 })
 
+// ─── Month Selection ──────────────────────────────────────────────────────────
+// Generate months from current month back to 12 months
+const monthOptions = computed(() => {
+    const months = []
+    const now = new Date()
+    for (let i = 0; i < 12; i++) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        const year = date.getFullYear()
+        const month = date.getMonth() + 1
+        const monthName = date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+        months.push({
+            value: `${year}-${month.toString().padStart(2, '0')}`,
+            label: monthName.charAt(0).toUpperCase() + monthName.slice(1)
+        })
+    }
+    return months
+})
+
 // ─── Daily Breakdown + Treemap + Filtres ─────────────────────────────────────
 const daily = useApi('/data/daily-breakdown')
 const brandDistribution = useApi('/data/brand-distribution')
 
 const { filters, reset } = useFilters(
     {
-        brand_name: [],
-        agent_name: [],
-        callcenter_id: [],
-        carrier: [],
+        month: monthOptions.value[0].value, // Current month by default
+        source_id: [],
         provider_id: [],
         company_id: [],
-        source_id: [],
+        brand_name: [],
+        carrier: [],
+        callcenter_id: [],
+        agent_name: [],
     },
     (f) => {
         daily.load(f)
@@ -52,13 +71,14 @@ const { filters, reset } = useFilters(
 )
 
 const hasFilters = computed(() =>
-    (Array.isArray(filters.brand_name) && filters.brand_name.length > 0) ||
-    (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
-    (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
-    (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
+    (filters.month !== monthOptions.value[0].value) ||
+    (Array.isArray(filters.source_id) && filters.source_id.length > 0) ||
     (Array.isArray(filters.provider_id) && filters.provider_id.length > 0) ||
     (Array.isArray(filters.company_id) && filters.company_id.length > 0) ||
-    (Array.isArray(filters.source_id) && filters.source_id.length > 0)
+    (Array.isArray(filters.brand_name) && filters.brand_name.length > 0) ||
+    (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
+    (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
+    (Array.isArray(filters.agent_name) && filters.agent_name.length > 0)
 )
 
 // ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
@@ -404,7 +424,40 @@ onMounted(() => {
                 :is-loading="isLoadingOptions"
                 @reset="reset"
             >
-                <div class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+                <div class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
+                    <!-- 1. Mois -->
+                    <FilterSelect
+                        v-model="filters.month"
+                        :options="monthOptions"
+                        placeholder="Mois"
+                        :searchable="false"
+                    />
+
+                    <!-- 2. Sources -->
+                    <FilterSelect
+                        v-model="filters.source_id"
+                        :options="filterOptions.sources"
+                        placeholder="Sources"
+                        multiple
+                    />
+
+                    <!-- 3. Providers -->
+                    <FilterSelect
+                        v-model="filters.provider_id"
+                        :options="filterOptions.providers"
+                        placeholder="Providers"
+                        multiple
+                    />
+
+                    <!-- 4. Companies -->
+                    <FilterSelect
+                        v-model="filters.company_id"
+                        :options="filterOptions.companies"
+                        placeholder="Companies"
+                        multiple
+                    />
+
+                    <!-- 5. Marques -->
                     <FilterSelect
                         v-model="filters.brand_name"
                         :options="filterOptions.brands"
@@ -413,21 +466,7 @@ onMounted(() => {
                         multiple
                     />
 
-                    <FilterSelect
-                        v-model="filters.agent_name"
-                        :options="filterOptions.agents"
-                        placeholder="Agents"
-                        searchable
-                        multiple
-                    />
-
-                    <FilterSelect
-                        v-model="filters.callcenter_id"
-                        :options="filterOptions.callcenters"
-                        placeholder="Call Centers"
-                        multiple
-                    />
-
+                    <!-- 6. Opérateurs -->
                     <FilterSelect
                         v-model="filters.carrier"
                         :options="filterOptions.carriers"
@@ -435,24 +474,20 @@ onMounted(() => {
                         multiple
                     />
 
+                    <!-- 7. Call Centers -->
                     <FilterSelect
-                        v-model="filters.provider_id"
-                        :options="filterOptions.providers"
-                        placeholder="Providers"
+                        v-model="filters.callcenter_id"
+                        :options="filterOptions.callcenters"
+                        placeholder="Call Centers"
                         multiple
                     />
 
+                    <!-- 8. Agents -->
                     <FilterSelect
-                        v-model="filters.company_id"
-                        :options="filterOptions.companies"
-                        placeholder="Companies"
-                        multiple
-                    />
-
-                    <FilterSelect
-                        v-model="filters.source_id"
-                        :options="filterOptions.sources"
-                        placeholder="Sources"
+                        v-model="filters.agent_name"
+                        :options="filterOptions.agents"
+                        placeholder="Agents"
+                        searchable
                         multiple
                     />
                 </div>

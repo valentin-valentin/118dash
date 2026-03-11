@@ -150,10 +150,19 @@ class DashboardController extends Controller
      */
     public function chartData(Request $request): JsonResponse
     {
-        $currentStart = now()->startOfMonth();
-        $currentEnd = now()->endOfMonth();
-        $previousStart = now()->subMonth()->startOfMonth();
-        $previousEnd = now()->subMonth()->endOfMonth();
+        // Parse month filter (format: YYYY-MM)
+        if ($request->filled('month')) {
+            [$year, $month] = explode('-', $request->month);
+            $currentStart = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+            $currentEnd = \Carbon\Carbon::createFromDate($year, $month, 1)->endOfMonth();
+            $previousStart = \Carbon\Carbon::createFromDate($year, $month, 1)->subMonth()->startOfMonth();
+            $previousEnd = \Carbon\Carbon::createFromDate($year, $month, 1)->subMonth()->endOfMonth();
+        } else {
+            $currentStart = now()->startOfMonth();
+            $currentEnd = now()->endOfMonth();
+            $previousStart = now()->subMonth()->startOfMonth();
+            $previousEnd = now()->subMonth()->endOfMonth();
+        }
 
         // Fonction pour construire la query avec les filtres
         $applyFilters = function ($query) use ($request) {
@@ -272,8 +281,15 @@ class DashboardController extends Controller
      */
     public function brandDistribution(Request $request): JsonResponse
     {
-        $start = now()->startOfMonth();
-        $end = now()->endOfMonth();
+        // Parse month filter (format: YYYY-MM)
+        if ($request->filled('month')) {
+            [$year, $month] = explode('-', $request->month);
+            $start = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+            $end = \Carbon\Carbon::createFromDate($year, $month, 1)->endOfMonth();
+        } else {
+            $start = now()->startOfMonth();
+            $end = now()->endOfMonth();
+        }
 
         $query = Call::query();
 
@@ -376,10 +392,19 @@ class DashboardController extends Controller
      */
     public function dailyBreakdown(Request $request): JsonResponse
     {
-        $start = now()->startOfMonth();
-        $end = now()->endOfMonth();
-        $previousMonthStart = now()->subMonth()->startOfMonth();
-        $previousMonthEnd = now()->subMonth()->endOfMonth();
+        // Parse month filter (format: YYYY-MM)
+        if ($request->filled('month')) {
+            [$year, $month] = explode('-', $request->month);
+            $start = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+            $end = \Carbon\Carbon::createFromDate($year, $month, 1)->endOfMonth();
+            $previousMonthStart = \Carbon\Carbon::createFromDate($year, $month, 1)->subMonth()->startOfMonth();
+            $previousMonthEnd = \Carbon\Carbon::createFromDate($year, $month, 1)->subMonth()->endOfMonth();
+        } else {
+            $start = now()->startOfMonth();
+            $end = now()->endOfMonth();
+            $previousMonthStart = now()->subMonth()->startOfMonth();
+            $previousMonthEnd = now()->subMonth()->endOfMonth();
+        }
 
         $query = Call::query();
 
