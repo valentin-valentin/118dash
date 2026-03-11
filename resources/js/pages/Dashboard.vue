@@ -519,7 +519,7 @@ onMounted(() => {
                         <tbody>
                             <!-- Total en haut -->
                             <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
-                                <td class="px-3 py-2 text-left font-bold text-gray-900">TOTAL MOIS</td>
+                                <td class="px-3 py-2 text-left font-bold text-gray-900"></td>
                                 <td class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.calls) }}</div>
                                     <div v-if="daily.data.totals.prev_calls !== null" class="text-xs text-gray-500">
