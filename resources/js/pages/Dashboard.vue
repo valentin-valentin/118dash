@@ -520,12 +520,60 @@ onMounted(() => {
                             <!-- Total en haut -->
                             <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
                                 <td class="px-3 py-2 text-left font-bold text-gray-900">TOTAL MOIS</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ formatNumber(daily.data.totals.calls) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ formatDurationTotal(daily.data.totals.total_duration) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.avg_duration) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.ca) }} €</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.reverse) }} €</td>
-                                <td class="px-3 py-2 text-right font-bold text-gray-900">{{ formatCurrency(daily.data.totals.benefice) }} €</td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.calls) }}</div>
+                                    <div v-if="daily.data.totals.prev_calls !== null" class="text-xs text-gray-500">
+                                        {{ formatNumber(daily.data.totals.prev_calls) }}
+                                        <span v-if="daily.data.totals.calls_var !== null" :class="daily.data.totals.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ daily.data.totals.calls_var >= 0 ? '+' : '' }}{{ daily.data.totals.calls_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatDurationTotal(daily.data.totals.total_duration) }}</div>
+                                    <div v-if="daily.data.totals.prev_total_duration !== null" class="text-xs text-gray-500">
+                                        {{ formatDurationTotal(daily.data.totals.prev_total_duration) }}
+                                        <span v-if="daily.data.totals.total_duration_var !== null" :class="daily.data.totals.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ daily.data.totals.total_duration_var >= 0 ? '+' : '' }}{{ daily.data.totals.total_duration_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatDuration(daily.data.totals.avg_duration) }}</div>
+                                    <div v-if="daily.data.totals.prev_avg_duration !== null" class="text-xs text-gray-500">
+                                        {{ formatDuration(daily.data.totals.prev_avg_duration) }}
+                                        <span v-if="daily.data.totals.avg_duration_var !== null" :class="daily.data.totals.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ daily.data.totals.avg_duration_var >= 0 ? '+' : '' }}{{ daily.data.totals.avg_duration_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatCurrency(daily.data.totals.ca) }} €</div>
+                                    <div v-if="daily.data.totals.prev_ca !== null" class="text-xs text-gray-500">
+                                        {{ formatCurrency(daily.data.totals.prev_ca) }} €
+                                        <span v-if="daily.data.totals.ca_var !== null" :class="daily.data.totals.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ daily.data.totals.ca_var >= 0 ? '+' : '' }}{{ daily.data.totals.ca_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatCurrency(daily.data.totals.reverse) }} €</div>
+                                    <div v-if="daily.data.totals.prev_reverse !== null" class="text-xs text-gray-500">
+                                        {{ formatCurrency(daily.data.totals.prev_reverse) }} €
+                                        <span v-if="daily.data.totals.reverse_var !== null" :class="daily.data.totals.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ daily.data.totals.reverse_var >= 0 ? '+' : '' }}{{ daily.data.totals.reverse_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-bold">{{ formatCurrency(daily.data.totals.benefice) }} €</div>
+                                    <div v-if="daily.data.totals.prev_benefice !== null" class="text-xs text-gray-500">
+                                        {{ formatCurrency(daily.data.totals.prev_benefice) }} €
+                                        <span v-if="daily.data.totals.benefice_var !== null" :class="daily.data.totals.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ daily.data.totals.benefice_var >= 0 ? '+' : '' }}{{ daily.data.totals.benefice_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
                             </tr>
 
                             <!-- Skeleton loading -->

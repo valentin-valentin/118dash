@@ -606,14 +606,68 @@ class DashboardController extends Controller
             ];
         });
 
-        // Calculer les totaux
+        // Calculer les totaux du mois actuel
+        $totalCalls = $daily->sum('calls');
+        $totalCa = round($daily->sum('ca'), 2);
+        $totalReverse = round($daily->sum('reverse'), 2);
+        $totalBenefice = round($daily->sum('benefice'), 2);
+        $totalDuration = $daily->sum('total_duration');
+        $avgDuration = $daily->avg('avg_duration') ? round($daily->avg('avg_duration')) : 0;
+
+        // Calculer les totaux du mois précédent à la même période (jusqu'au même jour du mois)
+        $previousMonthStart = $start->copy()->subMonth();
+        $dayOfMonth = $today->day;
+        $daysInPreviousMonth = $previousMonthStart->copy()->endOfMonth()->day;
+        $previousMonthEnd = $previousMonthStart->copy()->addDays(min($dayOfMonth, $daysInPreviousMonth) - 1)->endOfDay();
+
+        $prevMonthQuery = Call::query();
+        $applyFilters($prevMonthQuery);
+
+        $prevMonthData = $prevMonthQuery->whereBetween('called_at', [$previousMonthStart, $previousMonthEnd])
+            ->selectRaw('
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->first();
+
+        $prevTotalCalls = $prevMonthData ? (int) $prevMonthData->calls : 0;
+        $prevTotalCa = $prevMonthData ? round((float) $prevMonthData->ca, 2) : 0;
+        $prevTotalReverse = $prevMonthData ? round((float) $prevMonthData->reverse, 2) : 0;
+        $prevTotalBenefice = $prevMonthData ? round((float) $prevMonthData->benefice, 2) : 0;
+        $prevTotalDuration = $prevMonthData ? (int) $prevMonthData->total_duration : 0;
+        $prevAvgDuration = $prevMonthData ? round((float) $prevMonthData->avg_duration) : 0;
+
+        // Calculer les variations
+        $callsVar = ($prevTotalCalls > 0) ? round((($totalCalls - $prevTotalCalls) / $prevTotalCalls) * 100, 1) : null;
+        $caVar = ($prevTotalCa > 0) ? round((($totalCa - $prevTotalCa) / $prevTotalCa) * 100, 1) : null;
+        $reverseVar = ($prevTotalReverse > 0) ? round((($totalReverse - $prevTotalReverse) / $prevTotalReverse) * 100, 1) : null;
+        $beneficeVar = ($prevTotalBenefice > 0) ? round((($totalBenefice - $prevTotalBenefice) / $prevTotalBenefice) * 100, 1) : null;
+        $totalDurationVar = ($prevTotalDuration > 0) ? round((($totalDuration - $prevTotalDuration) / $prevTotalDuration) * 100, 1) : null;
+        $avgDurationVar = ($prevAvgDuration > 0) ? round((($avgDuration - $prevAvgDuration) / $prevAvgDuration) * 100, 1) : null;
+
         $totals = [
-            'calls' => $daily->sum('calls'),
-            'ca' => round($daily->sum('ca'), 2),
-            'reverse' => round($daily->sum('reverse'), 2),
-            'benefice' => round($daily->sum('benefice'), 2),
-            'total_duration' => $daily->sum('total_duration'),
-            'avg_duration' => $daily->avg('avg_duration') ? round($daily->avg('avg_duration')) : 0,
+            'calls' => $totalCalls,
+            'ca' => $totalCa,
+            'reverse' => $totalReverse,
+            'benefice' => $totalBenefice,
+            'total_duration' => $totalDuration,
+            'avg_duration' => $avgDuration,
+            'prev_calls' => $prevTotalCalls,
+            'prev_ca' => $prevTotalCa,
+            'prev_reverse' => $prevTotalReverse,
+            'prev_benefice' => $prevTotalBenefice,
+            'prev_total_duration' => $prevTotalDuration,
+            'prev_avg_duration' => $prevAvgDuration,
+            'calls_var' => $callsVar,
+            'ca_var' => $caVar,
+            'reverse_var' => $reverseVar,
+            'benefice_var' => $beneficeVar,
+            'total_duration_var' => $totalDurationVar,
+            'avg_duration_var' => $avgDurationVar,
         ];
 
         return response()->json([
