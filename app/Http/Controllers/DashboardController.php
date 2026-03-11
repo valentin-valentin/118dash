@@ -406,70 +406,88 @@ class DashboardController extends Controller
             $previousMonthEnd = now()->subMonth()->endOfMonth();
         }
 
-        $query = Call::query();
+        // Créer une closure pour appliquer les filtres (réutilisable)
+        $applyFilters = function($query) use ($request) {
+            if ($request->filled('brand_name')) {
+                $brands = $this->parseMultiSelect($request->brand_name);
+                $query->whereIn('brand_name', $brands);
+            }
 
-        // Appliquer les filtres
-        if ($request->filled('brand_name')) {
-            $brands = $this->parseMultiSelect($request->brand_name);
-            $query->whereIn('brand_name', $brands);
+            if ($request->filled('agent_name')) {
+                $agents = $this->parseMultiSelect($request->agent_name);
+                $query->whereIn('agent_name', $agents);
+            }
+
+            if ($request->filled('callcenter_id')) {
+                $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
+                $query->whereIn('callcenter_id', $callcenters);
+            }
+
+            if ($request->filled('carrier')) {
+                $carriers = $this->parseMultiSelect($request->carrier);
+                $query->whereIn('carrier', $carriers);
+            }
+
+            if ($request->filled('provider_id')) {
+                $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
+                $query->whereHas('phonenumber', function ($q) use ($providers) {
+                    $q->whereIn('provider_id', $providers);
+                });
+            }
+
+            if ($request->filled('company_id')) {
+                $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
+                $query->whereHas('phonenumber', function ($q) use ($companies) {
+                    $q->whereIn('company_id', $companies);
+                });
+            }
+
+            if ($request->filled('source_id')) {
+                $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
+                $query->where(function ($q) use ($sources) {
+                    $q->whereIn('source_id', $sources)
+                      ->orWhere(function ($sq) use ($sources) {
+                          $sq->whereNull('source_id')
+                             ->whereHas('phonenumber', function ($psq) use ($sources) {
+                                 $psq->whereIn('source_id', $sources);
+                             });
+                      });
+                });
+            }
+
+            return $query;
+        };
+
+        $today = \Carbon\Carbon::now();
+        $now = \Carbon\Carbon::now();
+
+        // Générer les jours du mois jusqu'à aujourd'hui (pas au-delà)
+        $lastDay = $today->lt($end) ? $today : $end;
+        $allDays = collect();
+        $currentDay = $start->copy();
+        while ($currentDay->lte($lastDay)) {
+            $allDays->push($currentDay->format('Y-m-d'));
+            $currentDay->addDay();
         }
 
-        if ($request->filled('agent_name')) {
-            $agents = $this->parseMultiSelect($request->agent_name);
-            $query->whereIn('agent_name', $agents);
-        }
+        // Récupérer les données pour chaque jour
+        $daily = $allDays->map(function($dateStr) use ($applyFilters, $today, $now) {
+            $date = \Carbon\Carbon::parse($dateStr);
 
-        if ($request->filled('callcenter_id')) {
-            $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
-            $query->whereIn('callcenter_id', $callcenters);
-        }
+            $dayQuery = Call::query();
+            $applyFilters($dayQuery);
 
-        if ($request->filled('carrier')) {
-            $carriers = $this->parseMultiSelect($request->carrier);
-            $query->whereIn('carrier', $carriers);
-        }
+            // Si c'est aujourd'hui, limiter à maintenant
+            if ($date->isSameDay($today)) {
+                $dayStart = $date->copy()->startOfDay();
+                $dayEnd = $now;
+            } else {
+                $dayStart = $date->copy()->startOfDay();
+                $dayEnd = $date->copy()->endOfDay();
+            }
 
-        if ($request->filled('provider_id')) {
-            $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-            $query->whereHas('phonenumber', function ($q) use ($providers) {
-                $q->whereIn('provider_id', $providers);
-            });
-        }
-
-        if ($request->filled('company_id')) {
-            $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-            $query->whereHas('phonenumber', function ($q) use ($companies) {
-                $q->whereIn('company_id', $companies);
-            });
-        }
-
-        if ($request->filled('source_id')) {
-            $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-            $query->where(function ($q) use ($sources) {
-                $q->whereIn('source_id', $sources)
-                  ->orWhere(function ($sq) use ($sources) {
-                      $sq->whereNull('source_id')
-                         ->whereHas('phonenumber', function ($psq) use ($sources) {
-                             $psq->whereIn('source_id', $sources);
-                         });
-                  });
-            });
-        }
-
-        // Détecter si on est sur un jour en cours (pas terminé)
-        $today = today();
-        $now = now();
-        $currentDay = (int) $now->format('d');
-
-        // Séparer les jours passés et aujourd'hui
-        $yesterdayEnd = $today->copy()->subDay()->endOfDay();
-
-        // Données des jours PASSÉS (jours complets)
-        $pastDays = collect();
-        if ($start <= $yesterdayEnd) {
-            $pastDays = (clone $query)->whereBetween('called_at', [$start, min($yesterdayEnd, $end)])
+            $data = $dayQuery->whereBetween('called_at', [$dayStart, $dayEnd])
                 ->selectRaw('
-                    DATE(called_at) as date,
                     COUNT(*) as calls,
                     COALESCE(SUM(payout), 0) as ca,
                     COALESCE(SUM(payout_source), 0) as reverse,
@@ -477,30 +495,18 @@ class DashboardController extends Controller
                     COALESCE(SUM(total_duration), 0) as total_duration,
                     COALESCE(AVG(total_duration), 0) as avg_duration
                 ')
-                ->groupBy('date')
-                ->orderBy('date', 'asc')
-                ->get();
-        }
+                ->first();
 
-        // Données d'AUJOURD'HUI uniquement (jusqu'à maintenant)
-        $todayData = collect();
-        if ($today >= $start && $today <= $end) {
-            $todayData = (clone $query)->whereBetween('called_at', [$today->copy()->startOfDay(), $now])
-                ->selectRaw('
-                    DATE(called_at) as date,
-                    COUNT(*) as calls,
-                    COALESCE(SUM(payout), 0) as ca,
-                    COALESCE(SUM(payout_source), 0) as reverse,
-                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
-                    COALESCE(SUM(total_duration), 0) as total_duration,
-                    COALESCE(AVG(total_duration), 0) as avg_duration
-                ')
-                ->groupBy('date')
-                ->get();
-        }
-
-        // Merger les deux résultats
-        $daily = $pastDays->merge($todayData)->sortBy('date')->values();
+            return (object)[
+                'date' => $dateStr,
+                'calls' => $data ? (int) $data->calls : 0,
+                'ca' => $data ? (float) $data->ca : 0,
+                'reverse' => $data ? (float) $data->reverse : 0,
+                'benefice' => $data ? (float) $data->benefice : 0,
+                'total_duration' => $data ? (int) $data->total_duration : 0,
+                'avg_duration' => $data ? (float) $data->avg_duration : 0,
+            ];
+        });
 
         // Données semaine précédente (7 jours avant, mêmes filtres)
         // On récupère pour chaque date du mois actuel, la date -7 jours
@@ -512,66 +518,19 @@ class DashboardController extends Controller
             $previousWeekDate = $currentDate->copy()->subDays(7);
 
             $prevQuery = Call::query();
-
-            // Appliquer les mêmes filtres
-            if ($request->filled('brand_name')) {
-                $brands = $this->parseMultiSelect($request->brand_name);
-                $prevQuery->whereIn('brand_name', $brands);
-            }
-
-            if ($request->filled('agent_name')) {
-                $agents = $this->parseMultiSelect($request->agent_name);
-                $prevQuery->whereIn('agent_name', $agents);
-            }
-
-            if ($request->filled('callcenter_id')) {
-                $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
-                $prevQuery->whereIn('callcenter_id', $callcenters);
-            }
-
-            if ($request->filled('carrier')) {
-                $carriers = $this->parseMultiSelect($request->carrier);
-                $prevQuery->whereIn('carrier', $carriers);
-            }
-
-            if ($request->filled('provider_id')) {
-                $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-                $prevQuery->whereHas('phonenumber', function ($q) use ($providers) {
-                    $q->whereIn('provider_id', $providers);
-                });
-            }
-
-            if ($request->filled('company_id')) {
-                $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-                $prevQuery->whereHas('phonenumber', function ($q) use ($companies) {
-                    $q->whereIn('company_id', $companies);
-                });
-            }
-
-            if ($request->filled('source_id')) {
-                $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-                $prevQuery->where(function ($q) use ($sources) {
-                    $q->whereIn('source_id', $sources)
-                      ->orWhere(function ($sq) use ($sources) {
-                          $sq->whereNull('source_id')
-                             ->whereHas('phonenumber', function ($psq) use ($sources) {
-                                 $psq->whereIn('source_id', $sources);
-                             });
-                      });
-                });
-            }
+            $applyFilters($prevQuery);
 
             // Si c'est aujourd'hui, comparer jusqu'à la même heure
             if ($currentDate->isToday()) {
                 $prevQuery->whereBetween('called_at', [
-                    $previousWeekDate->startOfDay(),
+                    $previousWeekDate->copy()->startOfDay(),
                     $previousWeekDate->copy()->setTime($now->hour, $now->minute, $now->second)
                 ]);
             } else {
                 // Jour complet
                 $prevQuery->whereBetween('called_at', [
-                    $previousWeekDate->startOfDay(),
-                    $previousWeekDate->endOfDay()
+                    $previousWeekDate->copy()->startOfDay(),
+                    $previousWeekDate->copy()->endOfDay()
                 ]);
             }
 
