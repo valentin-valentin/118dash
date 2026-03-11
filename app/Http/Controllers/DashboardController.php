@@ -319,6 +319,13 @@ class DashboardController extends Controller
             $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
         }
 
+        // Compter toutes les marques avec au moins un appel (pour le compteur)
+        $totalBrandsCount = (clone $query)->whereBetween('called_at', [$start, $end])
+            ->whereNotNull('brand_name')
+            ->where('brand_name', '!=', '')
+            ->distinct('brand_name')
+            ->count('brand_name');
+
         // Ne pas filtrer par brand_name pour le camembert (on veut toutes les marques avec minimum 3 appels)
         $brands = $query->whereBetween('called_at', [$start, $end])
             ->whereNotNull('brand_name')
@@ -352,7 +359,10 @@ class DashboardController extends Controller
                 ];
             });
 
-        return response()->json($brands);
+        return response()->json([
+            'brands' => $brands,
+            'total_count' => $totalBrandsCount,
+        ]);
     }
 
     /**

@@ -545,7 +545,8 @@ onMounted(() => {
 
             <!-- Treemap des marques (après le tableau) -->
             <BrandTreemap
-                :brands="brandDistribution.data || []"
+                :brands="brandDistribution.data?.brands || []"
+                :total-count="brandDistribution.data?.total_count || 0"
                 :loading="brandDistribution.loading"
             />
         </div>

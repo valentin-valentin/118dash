@@ -7,6 +7,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    totalCount: {
+        type: Number,
+        default: 0,
+    },
     loading: {
         type: Boolean,
         default: false,
@@ -133,11 +137,11 @@ const series = computed(() => {
 </style>
 
 <template>
-    <div class="rounded-lg border border-gray-200 bg-white p-6 treemap-hover">
+    <div class="-mb-3 rounded-lg border border-gray-200 bg-white p-6 treemap-hover">
         <h3 class="mb-4 text-lg font-semibold text-gray-900">
             Répartition par marques
-            <span v-if="brands && brands.length > 0" class="text-sm font-normal text-gray-500">
-                ({{ brands.length }} marques)
+            <span v-if="totalCount > 0" class="text-sm font-normal text-gray-500">
+                ({{ totalCount }} marques)
             </span>
         </h3>
 
