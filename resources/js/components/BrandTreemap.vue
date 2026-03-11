@@ -19,6 +19,7 @@ const props = defineProps({
 
 const chartKey = ref(0)
 const isReady = ref(false)
+const chartRef = ref(null)
 
 // Forcer le re-render quand les données changent
 watch(() => [props.brands, props.loading], () => {
@@ -26,8 +27,31 @@ watch(() => [props.brands, props.loading], () => {
     nextTick(() => {
         chartKey.value++
         isReady.value = true
+        // Désactiver les clics après le render
+        nextTick(() => {
+            disableChartInteractions()
+        })
     })
 }, { immediate: true })
+
+// Fonction pour désactiver complètement les interactions
+const disableChartInteractions = () => {
+    nextTick(() => {
+        const svg = document.querySelector('.treemap-hover svg')
+        if (svg) {
+            svg.addEventListener('click', (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                return false
+            }, true)
+            svg.addEventListener('mousedown', (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                return false
+            }, true)
+        }
+    })
+}
 
 const chartOptions = computed(() => ({
     chart: {
@@ -39,12 +63,24 @@ const chartOptions = computed(() => ({
         animations: {
             enabled: false,
         },
+        selection: {
+            enabled: false,
+        },
+        zoom: {
+            enabled: false,
+        },
+        events: {
+            dataPointSelection: () => false,
+            click: () => false,
+            mouseMove: () => true,
+        },
     },
     plotOptions: {
         treemap: {
             distributed: true,
             enableShades: true,
             shadeIntensity: 0.1,
+            enableSelection: false,
             colorScale: {
                 ranges: [{
                     from: 0,
@@ -55,7 +91,17 @@ const chartOptions = computed(() => ({
         },
     },
     states: {
+        normal: {
+            filter: {
+                type: 'none'
+            }
+        },
         hover: {
+            filter: {
+                type: 'none'
+            }
+        },
+        active: {
             filter: {
                 type: 'none'
             }
@@ -71,6 +117,9 @@ const chartOptions = computed(() => ({
         formatter: (text, op) => {
             return text
         },
+    },
+    fill: {
+        opacity: 1
     },
     tooltip: {
         custom: function({ seriesIndex, dataPointIndex, w }) {
@@ -131,14 +180,57 @@ const series = computed(() => {
 </script>
 
 <style scoped>
+.treemap-hover :deep(.apexcharts-treemap-rect) {
+    cursor: default !important;
+    fill: #f3f4f6 !important;
+}
 .treemap-hover :deep(.apexcharts-treemap-rect:hover) {
     fill: #e8eaed !important;
+}
+.treemap-hover :deep(.apexcharts-treemap-rect:active),
+.treemap-hover :deep(.apexcharts-treemap-rect:focus),
+.treemap-hover :deep(.apexcharts-treemap-rect:focus-visible),
+.treemap-hover :deep(.apexcharts-treemap-rect.apexcharts-active),
+.treemap-hover :deep(.apexcharts-treemap-rect.apexcharts-selected) {
+    fill: #f3f4f6 !important;
+    stroke: none !important;
+    outline: none !important;
+    opacity: 1 !important;
+}
+.treemap-hover :deep(.apexcharts-series[selected]),
+.treemap-hover :deep(.apexcharts-series.apexcharts-selected),
+.treemap-hover :deep(.apexcharts-series.apexcharts-active) {
+    opacity: 1 !important;
+}
+.treemap-hover :deep(.apexcharts-series path) {
+    fill: #f3f4f6 !important;
+}
+.treemap-hover :deep(.apexcharts-series path:hover) {
+    fill: #e8eaed !important;
+}
+.treemap-hover :deep(.apexcharts-series path:active),
+.treemap-hover :deep(.apexcharts-series path:focus) {
+    fill: #f3f4f6 !important;
+}
+.treemap-hover :deep(.apexcharts-data-labels) {
+    pointer-events: none !important;
+}
+.treemap-hover :deep(svg),
+.treemap-hover :deep(svg *) {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    outline: none !important;
+}
+.treemap-hover :deep(svg *:focus),
+.treemap-hover :deep(svg *:focus-visible) {
+    outline: none !important;
 }
 </style>
 
 <template>
-    <div class="-mb-3 rounded-lg border border-gray-200 bg-white p-6 treemap-hover">
-        <h3 class="mb-4 text-lg font-semibold text-gray-900">
+    <div class="rounded-lg border border-gray-200 bg-white p-6 treemap-hover">
+        <h3 class="-mb-3 text-lg font-semibold text-gray-900">
             Répartition par marques
             <span v-if="totalCount > 0" class="text-sm font-normal text-gray-500">
                 ({{ totalCount }} marques)
