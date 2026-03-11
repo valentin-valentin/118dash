@@ -17,11 +17,15 @@ class Source extends Model
         'only_dedicated_phonenumber',
         'color',
         'max_concurrent_numbers',
+        'payout_call',
+        'payout_minute',
     ];
 
     protected $casts = [
         'fingerprint' => 'boolean',
         'only_dedicated_phonenumber' => 'boolean',
+        'payout_call' => 'decimal:2',
+        'payout_minute' => 'decimal:2',
     ];
 
     public function sourceProviderCompanies(): HasMany

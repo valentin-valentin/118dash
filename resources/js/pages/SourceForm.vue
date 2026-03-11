@@ -40,6 +40,8 @@ const form = useForm({
     only_dedicated_phonenumber: props.source?.only_dedicated_phonenumber ?? false,
     color: props.source?.color || 'cyan',
     max_concurrent_numbers: props.source?.max_concurrent_numbers || null,
+    payout_call: props.source?.payout_call || '',
+    payout_minute: props.source?.payout_minute || '',
     associations: initialAssociations.length > 0 ? initialAssociations : [],
 })
 
@@ -220,6 +222,38 @@ function submit() {
                                 </p>
                                 <p v-if="form.errors.max_concurrent_numbers" class="text-sm text-red-600">
                                     {{ form.errors.max_concurrent_numbers }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div class="space-y-2">
+                                <Label for="payout_call">Payout par appel</Label>
+                                <Input
+                                    id="payout_call"
+                                    v-model="form.payout_call"
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    :class="{ 'border-red-500': form.errors.payout_call }"
+                                />
+                                <p v-if="form.errors.payout_call" class="text-sm text-red-600">
+                                    {{ form.errors.payout_call }}
+                                </p>
+                            </div>
+
+                            <div class="space-y-2">
+                                <Label for="payout_minute">Payout par minute</Label>
+                                <Input
+                                    id="payout_minute"
+                                    v-model="form.payout_minute"
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    :class="{ 'border-red-500': form.errors.payout_minute }"
+                                />
+                                <p v-if="form.errors.payout_minute" class="text-sm text-red-600">
+                                    {{ form.errors.payout_minute }}
                                 </p>
                             </div>
                         </div>

@@ -35,6 +35,8 @@ class SourceController extends Controller
             'only_dedicated_phonenumber' => 'boolean',
             'color' => 'nullable|string|max:50',
             'max_concurrent_numbers' => 'nullable|integer|min:1',
+            'payout_call' => 'nullable|numeric',
+            'payout_minute' => 'nullable|numeric',
             'associations' => 'nullable|array',
             'associations.*.providers_companies_id' => 'required|exists:providers_companies,id',
             'associations.*.weight' => 'required|integer|min:1',
@@ -49,6 +51,8 @@ class SourceController extends Controller
                 'only_dedicated_phonenumber' => $validated['only_dedicated_phonenumber'] ?? false,
                 'color' => $validated['color'] ?? 'cyan',
                 'max_concurrent_numbers' => $validated['max_concurrent_numbers'] ?? null,
+                'payout_call' => $validated['payout_call'] ?? null,
+                'payout_minute' => $validated['payout_minute'] ?? null,
             ]);
 
             if (!empty($validated['associations'])) {
@@ -86,6 +90,8 @@ class SourceController extends Controller
             'only_dedicated_phonenumber' => 'boolean',
             'color' => 'nullable|string|max:50',
             'max_concurrent_numbers' => 'nullable|integer|min:1',
+            'payout_call' => 'nullable|numeric',
+            'payout_minute' => 'nullable|numeric',
             'associations' => 'nullable|array',
             'associations.*.providers_companies_id' => 'required|exists:providers_companies,id',
             'associations.*.weight' => 'required|integer|min:1',
@@ -100,6 +106,8 @@ class SourceController extends Controller
                 'only_dedicated_phonenumber' => $validated['only_dedicated_phonenumber'] ?? false,
                 'color' => $validated['color'] ?? 'cyan',
                 'max_concurrent_numbers' => $validated['max_concurrent_numbers'] ?? null,
+                'payout_call' => $validated['payout_call'] ?? null,
+                'payout_minute' => $validated['payout_minute'] ?? null,
             ]);
 
             // Supprimer les anciennes associations
