@@ -242,9 +242,9 @@ onMounted(() => {
             <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
 
             <!-- Sélecteur de période + Hero KPIs -->
-            <div class="flex items-start gap-4">
+            <div class="lg:flex items-start gap-4">
                 <!-- Sélecteur de période -->
-                <div class="flex shrink-0 flex-col gap-1.5">
+                <div class="flex lg:shrink-0 lg:flex-col gap-1.5 mb-4 lg:mb-0">
                     <button
                         v-for="p in [
                             { value: 'today', label: 'Aujourd\'hui' },
@@ -254,7 +254,7 @@ onMounted(() => {
                         :key="p.value"
                         @click="period = p.value"
                         :class="[
-                            'rounded-md px-3 py-2 text-xs font-medium transition-all min-w-[110px]',
+                            'rounded-md px-3 py-2 text-xs font-medium transition-all min-w-[110px] w-full',
                             period === p.value
                                 ? 'bg-gray-900 text-white'
                                 : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
@@ -265,7 +265,7 @@ onMounted(() => {
                 </div>
 
                 <!-- Hero KPIs -->
-                <div class="grid flex-1 grid-cols-1 gap-4 md:grid-cols-6">
+                <div class="grid flex-1 grid-cols-1 gap-4 md: grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
                     <!-- Appels -->
                     <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
                         <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Appels</div>
@@ -285,6 +285,56 @@ onMounted(() => {
                                     <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatNumber(stats.data[compLabels.comp2Key].calls) }}</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls)) }} {{ formatVariation(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Durée totale -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Durée totale</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatDurationTotal(stats.data?.current.total_duration) }}
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDurationTotal(stats.data[compLabels.comp1Key].total_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDurationTotal(stats.data[compLabels.comp2Key].total_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Durée moyenne -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Durée moy.</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatDuration(stats.data?.current.avg_duration) }}
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDuration(stats.data[compLabels.comp1Key].avg_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration)) }} {{ formatVariation(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDuration(stats.data[compLabels.comp2Key].avg_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration)) }} {{ formatVariation(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration)) }}
                                     </span>
                                 </div>
                             </div>
@@ -360,56 +410,6 @@ onMounted(() => {
                                     <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatCurrency(stats.data[compLabels.comp2Key].benefice) }} €</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice)) }} {{ formatVariation(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice)) }}
-                                    </span>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-
-                    <!-- Durée totale -->
-                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
-                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Durée totale</div>
-                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                        <template v-else>
-                            <div class="mt-2 text-2xl font-bold text-gray-900">
-                                {{ formatDurationTotal(stats.data?.current.total_duration) }}
-                            </div>
-                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDurationTotal(stats.data[compLabels.comp1Key].total_duration) }}</span>
-                                    <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration))">
-                                        {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }}
-                                    </span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDurationTotal(stats.data[compLabels.comp2Key].total_duration) }}</span>
-                                    <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration))">
-                                        {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }}
-                                    </span>
-                                </div>
-                            </div>
-                        </template>
-                    </div>
-
-                    <!-- Durée moyenne -->
-                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
-                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Durée moy.</div>
-                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                        <template v-else>
-                            <div class="mt-2 text-2xl font-bold text-gray-900">
-                                {{ formatDuration(stats.data?.current.avg_duration) }}
-                            </div>
-                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDuration(stats.data[compLabels.comp1Key].avg_duration) }}</span>
-                                    <span :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration))">
-                                        {{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration)) }} {{ formatVariation(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration)) }}
-                                    </span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDuration(stats.data[compLabels.comp2Key].avg_duration) }}</span>
-                                    <span :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration))">
-                                        {{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration)) }} {{ formatVariation(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration)) }}
                                     </span>
                                 </div>
                             </div>
