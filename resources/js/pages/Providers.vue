@@ -49,7 +49,6 @@ function toggleSort(key) {
 const columns = [
     { key: 'id', label: 'ID', sortable: true },
     { key: 'name', label: 'Nom', sortable: true },
-    { key: 'driver', label: 'Driver', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
     { key: 'enabled', label: 'Statut', sortable: true },
     { key: 'actions', label: 'Actions' },
@@ -100,11 +99,11 @@ onMounted(() => {
                 @reset="reset"
             >
                 <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                    <!-- Recherche par nom ou driver -->
+                    <!-- Recherche par nom -->
                     <Input
                         v-model="filters.search"
                         type="text"
-                        placeholder="Rechercher par nom ou driver..."
+                        placeholder="Rechercher par nom..."
                         class="h-8"
                     />
 
@@ -142,10 +141,6 @@ onMounted(() => {
                                 {{ row.total_phonenumbers || 0 }} num.
                             </span>
                         </div>
-                    </template>
-
-                    <template #driver="{ value }">
-                        <span class="font-mono text-sm text-gray-600">{{ value }}</span>
                     </template>
 
                     <template #payout="{ value }">
