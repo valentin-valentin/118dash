@@ -97,7 +97,6 @@ function toggleSort(key) {
 }
 
 const columns = [
-    { key: 'id', label: 'ID', sortable: true },
     { key: 'called_at', label: 'Date', sortable: true },
     { key: 'caller', label: 'Appelant' },
     { key: 'called', label: 'Appelé' },
@@ -106,7 +105,7 @@ const columns = [
     { key: 'source', label: 'Source' },
     { key: 'brand_name', label: 'Marque', sortable: true },
     { key: 'agent_name', label: 'Agent', sortable: true },
-    { key: 'carrier', label: 'Opérateur', sortable: true },
+    { key: 'carrier', label: 'Opé.', sortable: true },
     { key: 'duration', label: 'Durée', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
 ]
@@ -409,20 +408,17 @@ onMounted(() => {
                     :row-class="getRowClass"
                     @sort="toggleSort"
                 >
-                    <template #id="{ value, row }">
+                    <template #called_at="{ value, row }">
                         <Link
                             :href="`/calls/${row.id}`"
-                            class="text-sm font-medium text-blue-600 hover:underline"
+                            class="text-sm text-blue-600 hover:underline"
                         >
-                            #{{ value }}
+                            {{ formatDate(value) }}
                         </Link>
                     </template>
-                    <template #called_at="{ value }">
-                        <span class="text-sm text-gray-900">{{ formatDate(value) }}</span>
-                    </template>
                     <template #duration="{ row }">
-                        <div class="space-y-0.5">
-                            <div class="text-sm text-gray-900">{{ formatDuration(row.total_duration) }}</div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-gray-700">{{ formatDuration(row.total_duration) }}</span>
                             <div class="flex items-center gap-2 text-xs text-gray-500">
                                 <div class="flex items-center gap-0.5">
                                     <User class="h-3 w-3" />
@@ -437,8 +433,8 @@ onMounted(() => {
                     </template>
                     <template #payout="{ row }">
                         <div v-if="row.payout !== null && row.payout !== undefined" class="text-sm">
-                            <span class="text-gray-500">{{ formatCurrency(parseFloat(row.payout)) }} - {{ formatCurrency(parseFloat(row.payout_source || 0)) }} = </span>
-                            <span class="font-medium text-gray-900">{{ formatCurrency(parseFloat(row.payout) - parseFloat(row.payout_source || 0)) }}</span>
+                            <span class="text-gray-500 text-xs">{{ formatCurrency(parseFloat(row.payout)) }} - {{ formatCurrency(parseFloat(row.payout_source || 0)) }} = </span>
+                            <span class="">{{ formatCurrency(parseFloat(row.payout) - parseFloat(row.payout_source || 0)) }}</span>
                         </div>
                         <span v-else class="text-sm text-gray-400">-</span>
                     </template>
@@ -476,10 +472,10 @@ onMounted(() => {
                         <span class="text-sm text-gray-900">{{ value || '-' }}</span>
                     </template>
                     <template #agent_name="{ value }">
-                        <span class="text-sm text-gray-900">{{ formatAgentName(value) }}</span>
+                        <span class="text-xs text-gray-900">{{ formatAgentName(value) }}</span>
                     </template>
                     <template #carrier="{ value }">
-                        <span class="text-sm text-gray-900">{{ getCarrierDisplayName(value) }}</span>
+                        <span class="text-xs text-gray-900">{{ getCarrierDisplayName(value) }}</span>
                     </template>
                 </DataTable>
 
