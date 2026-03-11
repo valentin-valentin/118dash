@@ -119,6 +119,22 @@ function formatDate(dateString) {
     })
 }
 
+function formatNumber(value) {
+    if (value === null || value === undefined) return '-'
+    // Format personnalisé : espace pour milliers, pas de décimales
+    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+    // Remplacer les virgules par des espaces
+    return formatted.replace(/,/g, ' ')
+}
+
+function formatCurrency(value) {
+    if (value === null || value === undefined) return '-'
+    // Format personnalisé : espace pour milliers, point pour décimales
+    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
+    // Remplacer les virgules par des espaces
+    return formatted.replace(/,/g, ' ')
+}
+
 function formatDuration(seconds) {
     if (!seconds) return '-'
     const mins = Math.floor(seconds / 60)
@@ -382,31 +398,37 @@ onMounted(() => {
                     <template #id="{ value, row }">
                         <Link
                             :href="`/calls/${row.id}`"
-                            class="text-blue-600 hover:underline"
+                            class="text-sm font-medium text-blue-600 hover:underline"
                         >
                             #{{ value }}
                         </Link>
                     </template>
                     <template #called_at="{ value }">
-                        <span class="text-sm">{{ formatDate(value) }}</span>
+                        <span class="text-sm text-gray-900">{{ formatDate(value) }}</span>
                     </template>
                     <template #total_duration="{ value }">
-                        <span class="font-mono text-sm">{{ formatDuration(value) }}</span>
+                        <span class="text-sm text-gray-900">{{ formatDuration(value) }}</span>
                     </template>
                     <template #duration_agent="{ value }">
-                        <span class="font-mono text-sm">{{ formatDuration(value) }}</span>
+                        <span class="text-sm text-gray-900">{{ formatDuration(value) }}</span>
                     </template>
                     <template #payout="{ value }">
-                        <span class="font-mono text-sm">{{ value ? parseFloat(value).toFixed(2) + '€' : '-' }}</span>
+                        <span class="text-sm text-gray-900">{{ value ? formatCurrency(parseFloat(value)) + ' €' : '-' }}</span>
                     </template>
                     <template #caller="{ value }">
-                        <span class="font-mono text-xs">{{ value || '-' }}</span>
+                        <span class="text-sm text-gray-700">{{ value || '-' }}</span>
                     </template>
                     <template #called="{ value }">
-                        <span class="font-mono text-xs">{{ value || '-' }}</span>
+                        <span class="text-sm text-gray-700">{{ value || '-' }}</span>
+                    </template>
+                    <template #brand_name="{ value }">
+                        <span class="text-sm text-gray-900">{{ value || '-' }}</span>
+                    </template>
+                    <template #agent_name="{ value }">
+                        <span class="text-sm text-gray-900">{{ value || '-' }}</span>
                     </template>
                     <template #carrier="{ value }">
-                        <span class="text-sm">{{ getCarrierDisplayName(value) }}</span>
+                        <span class="text-sm text-gray-900">{{ getCarrierDisplayName(value) }}</span>
                     </template>
                 </DataTable>
 
@@ -423,7 +445,7 @@ onMounted(() => {
                                 Page {{ table.data.current_page }}
                             </template>
                             <template v-if="hasFilters && table.data.total">
-                                · {{ table.data.total.toLocaleString() }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                                · {{ formatNumber(table.data.total) }} résultat{{ table.data.total !== 1 ? 's' : '' }}
                             </template>
                         </div>
                         <div class="flex items-center gap-2">

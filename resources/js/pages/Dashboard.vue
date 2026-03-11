@@ -148,9 +148,20 @@ function formatDuration(seconds) {
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
+function formatNumber(value) {
+    if (value === null || value === undefined) return '-'
+    // Format personnalisé : espace pour milliers, pas de décimales
+    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+    // Remplacer les virgules par des espaces
+    return formatted.replace(/,/g, ' ')
+}
+
 function formatCurrency(value) {
     if (value === null || value === undefined) return '-'
-    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
+    // Format personnalisé : espace pour milliers, point pour décimales
+    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
+    // Remplacer les virgules par des espaces
+    return formatted.replace(/,/g, ' ')
 }
 
 function getVariation(current, previous) {
@@ -234,17 +245,17 @@ onMounted(() => {
                         <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
                         <template v-else>
                             <div class="mt-2 text-2xl font-bold text-gray-900">
-                                {{ stats.data?.current.calls?.toLocaleString() ?? '-' }}
+                                {{ formatNumber(stats.data?.current.calls) }}
                             </div>
                             <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
                                 <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ stats.data[compLabels.comp1Key].calls.toLocaleString() }}</span>
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatNumber(stats.data[compLabels.comp1Key].calls) }}</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.calls, stats.data[compLabels.comp1Key].calls))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.calls, stats.data[compLabels.comp1Key].calls)) }} {{ formatVariation(getVariation(stats.data.current.calls, stats.data[compLabels.comp1Key].calls)) }}
                                     </span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ stats.data[compLabels.comp2Key].calls.toLocaleString() }}</span>
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatNumber(stats.data[compLabels.comp2Key].calls) }}</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls)) }} {{ formatVariation(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls)) }}
                                     </span>
@@ -442,7 +453,7 @@ onMounted(() => {
                             <!-- Total en haut -->
                             <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
                                 <td class="px-3 py-2 text-left font-bold text-gray-900">TOTAL MOIS</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ daily.data.totals.calls.toLocaleString() }}</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ formatNumber(daily.data.totals.calls) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.total_duration) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.avg_duration) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.ca) }} €</td>
@@ -474,9 +485,9 @@ onMounted(() => {
                                         <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ formatDateShort(row.date) }}</div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ row.calls?.toLocaleString() ?? '-' }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.calls) }}</div>
                                         <div v-if="row.prev_calls !== null && !isSunday(row.date)" class="text-xs text-gray-500">
-                                            {{ row.prev_calls.toLocaleString() }}
+                                            {{ formatNumber(row.prev_calls) }}
                                             <span :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
                                             </span>
