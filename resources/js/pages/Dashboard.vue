@@ -548,8 +548,8 @@ onMounted(() => {
                                     ]"
                                 >
                                     <td class="px-3 py-1.5 text-sm">
-                                        <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ formatDayName(row.date) }}</div>
-                                        <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ formatDateShort(row.date) }}</div>
+                                        <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ row.comparison_label }}</div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.calls) }}</div>

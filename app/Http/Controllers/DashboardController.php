@@ -461,132 +461,96 @@ class DashboardController extends Controller
         $now = now();
         $currentDay = (int) $now->format('d');
 
-        // Données mois en cours
-        $daily = $query->whereBetween('called_at', [$start, $end])
-            ->selectRaw('
-                DATE(called_at) as date,
-                COUNT(*) as calls,
-                COALESCE(SUM(payout), 0) as ca,
-                COALESCE(SUM(payout_source), 0) as reverse,
-                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
-                COALESCE(SUM(total_duration), 0) as total_duration,
-                COALESCE(AVG(total_duration), 0) as avg_duration
-            ')
-            ->groupBy('date')
-            ->orderBy('date', 'asc')
-            ->get();
+        // Séparer les jours passés et aujourd'hui
+        $yesterdayEnd = $today->copy()->subDay()->endOfDay();
 
-        // Données mois précédent (mêmes filtres)
-        $previousQuery = Call::query();
-
-        if ($request->filled('brand_name')) {
-            $brands = $this->parseMultiSelect($request->brand_name);
-            $previousQuery->whereIn('brand_name', $brands);
+        // Données des jours PASSÉS (jours complets)
+        $pastDays = collect();
+        if ($start <= $yesterdayEnd) {
+            $pastDays = (clone $query)->whereBetween('called_at', [$start, min($yesterdayEnd, $end)])
+                ->selectRaw('
+                    DATE(called_at) as date,
+                    COUNT(*) as calls,
+                    COALESCE(SUM(payout), 0) as ca,
+                    COALESCE(SUM(payout_source), 0) as reverse,
+                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                    COALESCE(SUM(total_duration), 0) as total_duration,
+                    COALESCE(AVG(total_duration), 0) as avg_duration
+                ')
+                ->groupBy('date')
+                ->orderBy('date', 'asc')
+                ->get();
         }
 
-        if ($request->filled('agent_name')) {
-            $agents = $this->parseMultiSelect($request->agent_name);
-            $previousQuery->whereIn('agent_name', $agents);
+        // Données d'AUJOURD'HUI uniquement (jusqu'à maintenant)
+        $todayData = collect();
+        if ($today >= $start && $today <= $end) {
+            $todayData = (clone $query)->whereBetween('called_at', [$today->startOfDay(), $now])
+                ->selectRaw('
+                    DATE(called_at) as date,
+                    COUNT(*) as calls,
+                    COALESCE(SUM(payout), 0) as ca,
+                    COALESCE(SUM(payout_source), 0) as reverse,
+                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                    COALESCE(SUM(total_duration), 0) as total_duration,
+                    COALESCE(AVG(total_duration), 0) as avg_duration
+                ')
+                ->groupBy('date')
+                ->get();
         }
 
-        if ($request->filled('callcenter_id')) {
-            $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
-            $previousQuery->whereIn('callcenter_id', $callcenters);
-        }
+        // Merger les deux résultats
+        $daily = $pastDays->merge($todayData)->sortBy('date')->values();
 
-        if ($request->filled('carrier')) {
-            $carriers = $this->parseMultiSelect($request->carrier);
-            $previousQuery->whereIn('carrier', $carriers);
-        }
+        // Données semaine précédente (7 jours avant, mêmes filtres)
+        // On récupère pour chaque date du mois actuel, la date -7 jours
+        $previousWeekData = [];
 
-        if ($request->filled('provider_id')) {
-            $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-            $previousQuery->whereHas('phonenumber', function ($q) use ($providers) {
-                $q->whereIn('provider_id', $providers);
-            });
-        }
+        // Pour chaque jour, récupérer les données de 7 jours avant
+        foreach ($daily as $dayData) {
+            $currentDate = \Carbon\Carbon::parse($dayData->date);
+            $previousWeekDate = $currentDate->copy()->subDays(7);
 
-        if ($request->filled('company_id')) {
-            $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-            $previousQuery->whereHas('phonenumber', function ($q) use ($companies) {
-                $q->whereIn('company_id', $companies);
-            });
-        }
-
-        if ($request->filled('source_id')) {
-            $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-            $previousQuery->where(function ($q) use ($sources) {
-                $q->whereIn('source_id', $sources)
-                  ->orWhere(function ($sq) use ($sources) {
-                      $sq->whereNull('source_id')
-                         ->whereHas('phonenumber', function ($psq) use ($sources) {
-                             $psq->whereIn('source_id', $sources);
-                         });
-                  });
-            });
-        }
-
-        $previousDaily = $previousQuery->whereBetween('called_at', [$previousMonthStart, $previousMonthEnd])
-            ->selectRaw('
-                DAY(called_at) as day,
-                COUNT(*) as calls,
-                COALESCE(SUM(payout), 0) as ca,
-                COALESCE(SUM(payout_source), 0) as reverse,
-                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
-                COALESCE(SUM(total_duration), 0) as total_duration,
-                COALESCE(AVG(total_duration), 0) as avg_duration
-            ')
-            ->groupBy('day')
-            ->get()
-            ->keyBy('day');
-
-        // Pour aujourd'hui (journée incomplète), comparer à la même heure du mois précédent
-        $todayHourComparison = null;
-        if ($now->format('Y-m-d') >= $start->format('Y-m-d') && $now->format('Y-m-d') <= $end->format('Y-m-d')) {
-            // Construire la requête pour le même jour du mois précédent jusqu'à la même heure
-            $previousMonthSameDayStart = $now->copy()->subMonth()->startOfDay();
-            $previousMonthSameDayEnd = $now->copy()->subMonth();
-
-            $todayPreviousQuery = Call::query();
+            $prevQuery = Call::query();
 
             // Appliquer les mêmes filtres
             if ($request->filled('brand_name')) {
                 $brands = $this->parseMultiSelect($request->brand_name);
-                $todayPreviousQuery->whereIn('brand_name', $brands);
+                $prevQuery->whereIn('brand_name', $brands);
             }
 
             if ($request->filled('agent_name')) {
                 $agents = $this->parseMultiSelect($request->agent_name);
-                $todayPreviousQuery->whereIn('agent_name', $agents);
+                $prevQuery->whereIn('agent_name', $agents);
             }
 
             if ($request->filled('callcenter_id')) {
                 $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
-                $todayPreviousQuery->whereIn('callcenter_id', $callcenters);
+                $prevQuery->whereIn('callcenter_id', $callcenters);
             }
 
             if ($request->filled('carrier')) {
                 $carriers = $this->parseMultiSelect($request->carrier);
-                $todayPreviousQuery->whereIn('carrier', $carriers);
+                $prevQuery->whereIn('carrier', $carriers);
             }
 
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-                $todayPreviousQuery->whereHas('phonenumber', function ($q) use ($providers) {
+                $prevQuery->whereHas('phonenumber', function ($q) use ($providers) {
                     $q->whereIn('provider_id', $providers);
                 });
             }
 
             if ($request->filled('company_id')) {
                 $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-                $todayPreviousQuery->whereHas('phonenumber', function ($q) use ($companies) {
+                $prevQuery->whereHas('phonenumber', function ($q) use ($companies) {
                     $q->whereIn('company_id', $companies);
                 });
             }
 
             if ($request->filled('source_id')) {
                 $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-                $todayPreviousQuery->where(function ($q) use ($sources) {
+                $prevQuery->where(function ($q) use ($sources) {
                     $q->whereIn('source_id', $sources)
                       ->orWhere(function ($sq) use ($sources) {
                           $sq->whereNull('source_id')
@@ -597,30 +561,39 @@ class DashboardController extends Controller
                 });
             }
 
-            $todayHourComparison = $todayPreviousQuery
-                ->whereBetween('called_at', [$previousMonthSameDayStart, $previousMonthSameDayEnd])
-                ->selectRaw('
-                    COUNT(*) as calls,
-                    COALESCE(SUM(payout), 0) as ca,
-                    COALESCE(SUM(payout_source), 0) as reverse,
-                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
-                    COALESCE(SUM(total_duration), 0) as total_duration,
-                    COALESCE(AVG(total_duration), 0) as avg_duration
-                ')
-                ->first();
+            // Si c'est aujourd'hui, comparer jusqu'à la même heure
+            if ($currentDate->isToday()) {
+                $prevQuery->whereBetween('called_at', [
+                    $previousWeekDate->startOfDay(),
+                    $previousWeekDate->copy()->setTime($now->hour, $now->minute, $now->second)
+                ]);
+            } else {
+                // Jour complet
+                $prevQuery->whereBetween('called_at', [
+                    $previousWeekDate->startOfDay(),
+                    $previousWeekDate->endOfDay()
+                ]);
+            }
+
+            $prevData = $prevQuery->selectRaw('
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')->first();
+
+            $previousWeekData[$dayData->date] = $prevData;
         }
 
         // Mapper avec comparaisons
-        $daily = $daily->map(function ($row) use ($previousDaily, $todayHourComparison, $currentDay, $now) {
-            $day = (int) date('d', strtotime($row->date));
-            $isToday = ($row->date === $now->format('Y-m-d'));
+        $daily = $daily->map(function ($row) use ($previousWeekData) {
+            $currentDate = \Carbon\Carbon::parse($row->date);
+            $comparisonDate = $currentDate->copy()->subDays(7);
 
-            // Pour aujourd'hui, utiliser la comparaison horaire. Sinon, utiliser la comparaison journalière complète
-            if ($isToday && $todayHourComparison) {
-                $prev = $todayHourComparison;
-            } else {
-                $prev = $previousDaily->get($day);
-            }
+            // Récupérer les données de 7 jours avant
+            $prev = $previousWeekData[$row->date] ?? null;
 
             $calls = (int) $row->calls;
             $ca = round((float) $row->ca, 2);
@@ -644,8 +617,15 @@ class DashboardController extends Controller
             $totalDurationVar = ($prevTotalDuration && $prevTotalDuration > 0) ? round((($totalDuration - $prevTotalDuration) / $prevTotalDuration) * 100, 1) : null;
             $avgDurationVar = ($prevAvgDuration && $prevAvgDuration > 0) ? round((($avgDuration - $prevAvgDuration) / $prevAvgDuration) * 100, 1) : null;
 
+            // Formater les dates avec jour de la semaine en français
+            $dayName = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][$currentDate->dayOfWeek];
+            $comparisonDayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][$comparisonDate->dayOfWeek];
+
             return [
                 'date' => $row->date,
+                'date_label' => $dayName . ' ' . $currentDate->format('d/m'),
+                'comparison_date' => $comparisonDate->format('Y-m-d'),
+                'comparison_label' => 'vs. ' . $comparisonDayName . ' ' . $comparisonDate->format('d/m'),
                 'calls' => $calls,
                 'ca' => $ca,
                 'reverse' => $reverse,
