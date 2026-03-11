@@ -69,17 +69,17 @@ class AssignmentHistoryController extends Controller
 
         // Filter by source
         if ($request->filled('source_id')) {
-            $query->where('source_id', $request->source_id);
+            $query->where('source_id', (int) $request->source_id);
         }
 
         // Filter by company
         if ($request->filled('company_id')) {
-            $query->where('company_id', $request->company_id);
+            $query->where('company_id', (int) $request->company_id);
         }
 
         // Filter by provider
         if ($request->filled('provider_id')) {
-            $query->where('provider_id', $request->provider_id);
+            $query->where('provider_id', (int) $request->provider_id);
         }
 
         // Sort

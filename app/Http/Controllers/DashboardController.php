@@ -168,7 +168,7 @@ class DashboardController extends Controller
             }
 
             if ($request->filled('callcenter_id')) {
-                $callcenters = $this->parseMultiSelect($request->callcenter_id);
+                $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
                 $query->whereIn('callcenter_id', $callcenters);
             }
 
@@ -178,19 +178,19 @@ class DashboardController extends Controller
             }
 
             if ($request->filled('provider_id')) {
-                $providers = $this->parseMultiSelect($request->provider_id);
+                $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
                 $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
                 $query->whereIn('called', $calledNumbers);
             }
 
             if ($request->filled('company_id')) {
-                $companies = $this->parseMultiSelect($request->company_id);
+                $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
                 $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
                 $query->whereIn('called', $calledNumbers);
             }
 
             if ($request->filled('source_id')) {
-                $sources = $this->parseMultiSelect($request->source_id);
+                $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
                 $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
                 $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
                 $calledNumbers = [];
@@ -289,7 +289,7 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('callcenter_id')) {
-            $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
             $query->whereIn('callcenter_id', $callcenters);
         }
 
@@ -299,19 +299,19 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('provider_id')) {
-            $providers = $this->parseMultiSelect($request->provider_id);
+            $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
             $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
             $query->whereIn('called', $calledNumbers);
         }
 
         if ($request->filled('company_id')) {
-            $companies = $this->parseMultiSelect($request->company_id);
+            $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
             $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
             $query->whereIn('called', $calledNumbers);
         }
 
         if ($request->filled('source_id')) {
-            $sources = $this->parseMultiSelect($request->source_id);
+            $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
             $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
             $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
             $calledNumbers = [];
@@ -395,7 +395,7 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('callcenter_id')) {
-            $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
             $query->whereIn('callcenter_id', $callcenters);
         }
 
@@ -406,7 +406,7 @@ class DashboardController extends Controller
 
         if ($request->filled('provider_id')) {
             // Via phonenumbers
-            $providers = $this->parseMultiSelect($request->provider_id);
+            $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
             $phonenumberIds = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('id');
             $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
             $query->where(function ($q) use ($calledNumbers) {
@@ -416,7 +416,7 @@ class DashboardController extends Controller
 
         if ($request->filled('company_id')) {
             // Via phonenumbers
-            $companies = $this->parseMultiSelect($request->company_id);
+            $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
             $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
             $query->where(function ($q) use ($calledNumbers) {
                 $q->whereIn('called', $calledNumbers);
@@ -425,7 +425,7 @@ class DashboardController extends Controller
 
         if ($request->filled('source_id')) {
             // Via source_provider_companies -> provider_companies -> phonenumbers
-            $sources = $this->parseMultiSelect($request->source_id);
+            $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
             $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
             $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
             $calledNumbers = [];
@@ -473,7 +473,7 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('callcenter_id')) {
-            $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
             $previousQuery->whereIn('callcenter_id', $callcenters);
         }
 
@@ -483,7 +483,7 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('provider_id')) {
-            $providers = $this->parseMultiSelect($request->provider_id);
+            $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
             $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
             $previousQuery->where(function ($q) use ($calledNumbers) {
                 $q->whereIn('called', $calledNumbers);
@@ -491,7 +491,7 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('company_id')) {
-            $companies = $this->parseMultiSelect($request->company_id);
+            $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
             $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
             $previousQuery->where(function ($q) use ($calledNumbers) {
                 $q->whereIn('called', $calledNumbers);
@@ -499,7 +499,7 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('source_id')) {
-            $sources = $this->parseMultiSelect($request->source_id);
+            $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
             $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
             $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
             $calledNumbers = [];
@@ -548,7 +548,7 @@ class DashboardController extends Controller
             }
 
             if ($request->filled('callcenter_id')) {
-                $callcenters = $this->parseMultiSelect($request->callcenter_id);
+                $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
                 $todayPreviousQuery->whereIn('callcenter_id', $callcenters);
             }
 
@@ -558,7 +558,7 @@ class DashboardController extends Controller
             }
 
             if ($request->filled('provider_id')) {
-                $providers = $this->parseMultiSelect($request->provider_id);
+                $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
                 $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
                 $todayPreviousQuery->where(function ($q) use ($calledNumbers) {
                     $q->whereIn('called', $calledNumbers);
@@ -566,7 +566,7 @@ class DashboardController extends Controller
             }
 
             if ($request->filled('company_id')) {
-                $companies = $this->parseMultiSelect($request->company_id);
+                $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
                 $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
                 $todayPreviousQuery->where(function ($q) use ($calledNumbers) {
                     $q->whereIn('called', $calledNumbers);
@@ -574,7 +574,7 @@ class DashboardController extends Controller
             }
 
             if ($request->filled('source_id')) {
-                $sources = $this->parseMultiSelect($request->source_id);
+                $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
                 $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
                 $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
                 $calledNumbers = [];
