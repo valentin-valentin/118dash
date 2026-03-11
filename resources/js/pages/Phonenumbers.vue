@@ -114,6 +114,11 @@ function isSelected(id) {
     return selectedIds.value.includes(id)
 }
 
+// Reset selections when page or filters change
+watch(() => [filters.page, filters.search, filters.company_id, filters.provider_id, filters.only_source_id, filters.source_id, filters.include_deleted, filters.only_deleted, filters.assigned_status, filters.routing_status], () => {
+    selectedIds.value = []
+})
+
 function getTimeRemaining(expiresAt) {
     if (!expiresAt) return null
     const expires = new Date(expiresAt)

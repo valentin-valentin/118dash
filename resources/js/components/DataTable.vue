@@ -37,14 +37,16 @@ const emit = defineEmits(['sort'])
                         :class="[col.headerClass, col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
                         @click="col.sortable && emit('sort', col.key)"
                     >
-                        <span class="flex items-center gap-1">
-                            {{ col.label }}
-                            <template v-if="col.sortable">
-                                <ChevronUp v-if="sortKey === col.key && sortDir === 'asc'" class="size-3" />
-                                <ChevronDown v-else-if="sortKey === col.key && sortDir === 'desc'" class="size-3" />
-                                <span v-else class="size-3 opacity-20">⇅</span>
-                            </template>
-                        </span>
+                        <slot :name="`header-${col.key}`">
+                            <span class="flex items-center gap-1">
+                                {{ col.label }}
+                                <template v-if="col.sortable">
+                                    <ChevronUp v-if="sortKey === col.key && sortDir === 'asc'" class="size-3" />
+                                    <ChevronDown v-else-if="sortKey === col.key && sortDir === 'desc'" class="size-3" />
+                                    <span v-else class="size-3 opacity-20">⇅</span>
+                                </template>
+                            </span>
+                        </slot>
                     </th>
                 </tr>
             </thead>
