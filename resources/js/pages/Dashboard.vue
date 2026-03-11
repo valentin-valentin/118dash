@@ -140,6 +140,14 @@ function isSunday(dateString) {
     return date.getDay() === 0
 }
 
+function formatDurationTotal(seconds) {
+    if (!seconds) return '-'
+    const hours = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+}
+
 function formatDuration(seconds) {
     if (!seconds) return '-'
     const mins = Math.floor(seconds / 60)
@@ -344,17 +352,17 @@ onMounted(() => {
                         <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
                         <template v-else>
                             <div class="mt-2 text-2xl font-bold text-gray-900">
-                                {{ formatDuration(stats.data?.current.total_duration) }}
+                                {{ formatDurationTotal(stats.data?.current.total_duration) }}
                             </div>
                             <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
                                 <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDuration(stats.data[compLabels.comp1Key].total_duration) }}</span>
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDurationTotal(stats.data[compLabels.comp1Key].total_duration) }}</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }}
                                     </span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDuration(stats.data[compLabels.comp2Key].total_duration) }}</span>
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDurationTotal(stats.data[compLabels.comp2Key].total_duration) }}</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }}
                                     </span>
@@ -478,7 +486,7 @@ onMounted(() => {
                             <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
                                 <td class="px-3 py-2 text-left font-bold text-gray-900">TOTAL MOIS</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatNumber(daily.data.totals.calls) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.total_duration) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ formatDurationTotal(daily.data.totals.total_duration) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.avg_duration) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.ca) }} €</td>
                                 <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.reverse) }} €</td>
@@ -518,9 +526,9 @@ onMounted(() => {
                                         </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
-                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDuration(row.total_duration) }}</div>
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDurationTotal(row.total_duration) }}</div>
                                         <div v-if="row.prev_total_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
-                                            {{ formatDuration(row.prev_total_duration) }}
+                                            {{ formatDurationTotal(row.prev_total_duration) }}
                                             <span :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.total_duration_var >= 0 ? '+' : '' }}{{ row.total_duration_var }}%)
                                             </span>
