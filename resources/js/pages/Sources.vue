@@ -60,20 +60,6 @@ function getAssociationStats(associations) {
     }))
 }
 
-function getColor(index) {
-    const colors = [
-        'bg-blue-100 text-blue-700',
-        'bg-green-100 text-green-700',
-        'bg-yellow-100 text-yellow-700',
-        'bg-purple-100 text-purple-700',
-        'bg-pink-100 text-pink-700',
-        'bg-indigo-100 text-indigo-700',
-        'bg-red-100 text-red-700',
-        'bg-orange-100 text-orange-700',
-    ]
-    return colors[index % colors.length]
-}
-
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     stats.load()
@@ -166,23 +152,22 @@ onMounted(() => {
                     <template #associations="{ row }">
                         <div v-if="row.source_provider_companies && row.source_provider_companies.length > 0" class="space-y-1">
                             <div
-                                v-for="(assoc, index) in getAssociationStats(row.source_provider_companies)"
+                                v-for="assoc in getAssociationStats(row.source_provider_companies)"
                                 :key="assoc.id"
                                 class="flex items-center gap-2"
                             >
-                                <span
-                                    class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium"
-                                    :class="getColor(index)"
-                                >
-                                    {{ assoc.provider_company?.provider?.name }} - {{ assoc.provider_company?.company?.name }}
-                                </span>
+                                <ColorBadge
+                                    v-if="assoc.provider_company?.provider"
+                                    :color="assoc.provider_company.provider.color"
+                                    :label="`${assoc.provider_company.provider.name} - ${assoc.provider_company.company?.name || ''}`"
+                                />
                                 <span class="text-xs font-medium text-gray-900">
                                     {{ assoc.percentage }}%
                                 </span>
                                 <span class="text-xs text-gray-500">
                                     (w: {{ assoc.weight }})
                                 </span>
-                                <span class="text-xs font-medium text-blue-600">
+                                <span class="text-xs font-medium text-gray-600">
                                     {{ assoc.assignable_count || 0 }} num.
                                 </span>
                             </div>

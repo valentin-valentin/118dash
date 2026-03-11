@@ -150,13 +150,15 @@ onMounted(() => {
                                 :key="pc.id"
                                 class="flex items-center gap-2"
                             >
-                                <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-                                    {{ pc.provider?.name }}
-                                </span>
+                                <ColorBadge
+                                    v-if="pc.provider"
+                                    :color="pc.provider.color"
+                                    :label="pc.provider.name"
+                                />
                                 <span v-if="pc.payout" class="text-xs text-gray-500">
                                     {{ pc.payout }} €
                                 </span>
-                                <span class="text-xs font-medium text-blue-600">
+                                <span class="text-xs font-medium text-gray-600">
                                     {{ pc.phonenumbers_count || 0 }} num.
                                 </span>
                             </div>
