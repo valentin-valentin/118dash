@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -7,6 +7,7 @@ import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
+import Pagination from '@/components/Pagination.vue'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,9 +40,15 @@ const { filters, reset } = useFilters(
         provider_id: '',
         sort: 'id',
         dir: 'desc',
+        page: 1,
+        per_page: 50,
     },
     (f) => table.load(f),
 )
+
+function changePage(page) {
+    filters.page = page
+}
 
 const hasFilters = computed(() =>
     !!filters.search ||
@@ -51,6 +58,16 @@ const hasFilters = computed(() =>
     !!filters.source_id ||
     !!filters.company_id ||
     !!filters.provider_id
+)
+
+// Reset to page 1 when filters change
+watch(
+    () => [filters.search, filters.start_date, filters.end_date, filters.status, filters.source_id, filters.company_id, filters.provider_id],
+    () => {
+        if (filters.page !== 1) {
+            filters.page = 1
+        }
+    }
 )
 
 function toggleSort(key) {
@@ -272,9 +289,14 @@ onMounted(() => {
                     </template>
                 </DataTable>
 
-                <div v-if="table.data?.total" class="border-t border-gray-50 px-4 py-2 text-xs text-gray-400">
-                    {{ table.data.total }} résultat{{ table.data.total !== 1 ? 's' : '' }}
-                </div>
+                <Pagination
+                    v-if="table.data?.total"
+                    :current-page="table.data.current_page || 1"
+                    :last-page="table.data.last_page || 1"
+                    :total="table.data.total"
+                    :per-page="table.data.per_page || 50"
+                    @update:page="changePage"
+                />
             </div>
         </div>
 

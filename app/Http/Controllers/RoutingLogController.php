@@ -66,7 +66,11 @@ class RoutingLogController extends Controller
             $query->whereDate('created_at', '<=', $endDate);
         }
 
-        $items = $query->limit(100)->get()->map(function ($log) {
+        // Paginate
+        $perPage = min($request->get('per_page', 50), 100);
+        $paginator = $query->paginate($perPage);
+
+        $items = $paginator->getCollection()->map(function ($log) {
             return [
                 'id' => $log->id,
                 'job_id' => $log->job_id,
@@ -87,7 +91,11 @@ class RoutingLogController extends Controller
 
         return response()->json([
             'items' => $items,
-            'total' => $query->count(),
+            'total' => $paginator->total(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'has_more_pages' => $paginator->hasMorePages(),
         ]);
     }
 
