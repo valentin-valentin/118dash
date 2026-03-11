@@ -44,7 +44,15 @@ class CallController extends Controller
     public function data(Request $request): JsonResponse
     {
         $query = Call::query()
-            ->with(['agent:id,name', 'callcenter:id,name', 'blacklist:id,name']);
+            ->with([
+                'agent:id,name',
+                'callcenter:id,name',
+                'blacklist:id,name',
+                'phonenumber:id,phonenumber,provider_id,company_id,source_id',
+                'phonenumber.provider:id,name,color',
+                'phonenumber.company:id,name,color',
+                'source:id,name,color'
+            ]);
 
         // Détecter si des filtres sont actifs
         $hasFilters = false;

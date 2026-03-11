@@ -21,6 +21,8 @@ class Call extends Model
         'duration_transfer',
         'called_at',
         'payout',
+        'payout_source',
+        'source_id',
         'who_hangup',
         'agent_name',
         'brand_name',
@@ -153,6 +155,7 @@ class Call extends Model
         'callback_for_offer' => 'boolean',
         'callback_for_offer_api_response' => 'array',
         'payout' => 'decimal:5',
+        'payout_source' => 'decimal:5',
     ];
 
     public function agent(): BelongsTo
@@ -188,5 +191,15 @@ class Call extends Model
     public function blacklist(): BelongsTo
     {
         return $this->belongsTo(Blacklist::class);
+    }
+
+    public function phonenumber(): BelongsTo
+    {
+        return $this->belongsTo(Phonenumber::class, 'called', 'phonenumber');
+    }
+
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(Source::class);
     }
 }

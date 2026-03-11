@@ -426,7 +426,7 @@ onMounted(() => {
                                 </div>
                                 <div class="flex items-center gap-0.5">
                                     <PhoneForwarded class="h-3 w-3" />
-                                    <span>{{ formatDuration(row.duration_transfert) }}</span>
+                                    <span>{{ formatDuration(row.duration_transfer) }}</span>
                                 </div>
                             </div>
                         </div>
