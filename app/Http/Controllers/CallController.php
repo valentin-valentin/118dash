@@ -286,15 +286,21 @@ class CallController extends Controller
                 'providers' => \App\Models\Provider::select('id', 'name', 'color')
                     ->orderBy('name')
                     ->get()
-                    ->map(fn($p) => ['value' => $p->id, 'label' => $p->name, 'color' => $p->color]),
+                    ->map(fn($p) => ['value' => $p->id, 'label' => $p->name, 'color' => $p->color])
+                    ->values()
+                    ->toArray(),
                 'companies' => \App\Models\Company::select('id', 'name', 'color')
                     ->orderBy('name')
                     ->get()
-                    ->map(fn($c) => ['value' => $c->id, 'label' => $c->name, 'color' => $c->color]),
+                    ->map(fn($c) => ['value' => $c->id, 'label' => $c->name, 'color' => $c->color])
+                    ->values()
+                    ->toArray(),
                 'sources' => \App\Models\Source::select('id', 'name', 'color')
                     ->orderBy('name')
                     ->get()
-                    ->map(fn($s) => ['value' => $s->id, 'label' => $s->name, 'color' => $s->color]),
+                    ->map(fn($s) => ['value' => $s->id, 'label' => $s->name, 'color' => $s->color])
+                    ->values()
+                    ->toArray(),
                 'who_hangup' => Call::select('who_hangup')
                     ->distinct()
                     ->whereNotNull('who_hangup')
