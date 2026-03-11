@@ -31,6 +31,9 @@ const search = ref('')
 const isOpen = ref(false)
 
 const filteredOptions = computed(() => {
+    if (!props.options || !Array.isArray(props.options)) {
+        return []
+    }
     if (!props.searchable || !search.value) {
         return props.options
     }
@@ -42,6 +45,10 @@ const filteredOptions = computed(() => {
 })
 
 const selectedLabel = computed(() => {
+    if (!props.options || !Array.isArray(props.options)) {
+        return props.placeholder
+    }
+
     if (props.multiple) {
         const selected = Array.isArray(props.modelValue) ? props.modelValue : []
         if (selected.length === 0) return props.placeholder
