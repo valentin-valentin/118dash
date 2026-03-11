@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import ColorBadge from '@/components/ColorBadge.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
@@ -99,6 +100,9 @@ const columns = [
     { key: 'called_at', label: 'Date', sortable: true },
     { key: 'caller', label: 'Appelant' },
     { key: 'called', label: 'Appelé' },
+    { key: 'provider', label: 'Provider' },
+    { key: 'company', label: 'Company' },
+    { key: 'source', label: 'Source' },
     { key: 'brand_name', label: 'Marque', sortable: true },
     { key: 'agent_name', label: 'Agent', sortable: true },
     { key: 'carrier', label: 'Opérateur', sortable: true },
@@ -420,6 +424,30 @@ onMounted(() => {
                     </template>
                     <template #called="{ value }">
                         <span class="text-sm text-gray-700">{{ value || '-' }}</span>
+                    </template>
+                    <template #provider="{ row }">
+                        <ColorBadge
+                            v-if="row.phonenumber?.provider"
+                            :color="row.phonenumber.provider.color"
+                            :label="row.phonenumber.provider.name"
+                        />
+                        <span v-else class="text-xs text-gray-400">-</span>
+                    </template>
+                    <template #company="{ row }">
+                        <ColorBadge
+                            v-if="row.phonenumber?.company"
+                            :color="row.phonenumber.company.color"
+                            :label="row.phonenumber.company.name"
+                        />
+                        <span v-else class="text-xs text-gray-400">-</span>
+                    </template>
+                    <template #source="{ row }">
+                        <ColorBadge
+                            v-if="row.source"
+                            :color="row.source.color"
+                            :label="row.source.name"
+                        />
+                        <span v-else class="text-xs text-gray-400">-</span>
                     </template>
                     <template #brand_name="{ value }">
                         <span class="text-sm text-gray-900">{{ value || '-' }}</span>
