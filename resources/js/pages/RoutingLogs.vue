@@ -7,7 +7,6 @@ import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
-import Pagination from '@/components/Pagination.vue'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,17 +37,13 @@ const { filters, reset } = useFilters(
         source_id: '',
         company_id: '',
         provider_id: '',
-        sort: 'id',
+        sort: 'created_at',
         dir: 'desc',
         page: 1,
         per_page: 50,
     },
     (f) => table.load(f),
 )
-
-function changePage(page) {
-    filters.page = page
-}
 
 const hasFilters = computed(() =>
     !!filters.search ||
@@ -289,14 +284,50 @@ onMounted(() => {
                     </template>
                 </DataTable>
 
-                <Pagination
-                    v-if="table.data?.total"
-                    :current-page="table.data.current_page || 1"
-                    :last-page="table.data.last_page || 1"
-                    :total="table.data.total"
-                    :per-page="table.data.per_page || 50"
-                    @update:page="changePage"
-                />
+                <div class="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+                    <div class="flex items-center gap-4">
+                        <div class="text-sm text-gray-600">
+                            <template v-if="!hasFilters">
+                                Page {{ table.data?.current_page || 1 }}
+                            </template>
+                            <template v-else>
+                                Page {{ table.data?.current_page || 1 }}
+                            </template>
+                            <template v-if="table.data?.total">
+                                · {{ table.data.total }} résultat{{ table.data.total !== 1 ? 's' : '' }}
+                            </template>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-gray-600">Résultats par page :</span>
+                            <select
+                                v-model.number="filters.per_page"
+                                class="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                                <option :value="50">50</option>
+                                <option :value="100">100</option>
+                                <option :value="250">250</option>
+                                <option :value="500">500</option>
+                                <option :value="1000">1000</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button
+                            v-if="table.data?.current_page > 1"
+                            @click="filters.page = (filters.page || 1) - 1"
+                            class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
+                        >
+                            Précédent
+                        </button>
+                        <button
+                            v-if="table.data?.last_page ? table.data.current_page < table.data.last_page : table.data?.has_more_pages"
+                            @click="filters.page = (filters.page || 1) + 1"
+                            class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
+                        >
+                            Suivant
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 

@@ -67,7 +67,7 @@ class RoutingLogController extends Controller
         }
 
         // Paginate
-        $perPage = min($request->get('per_page', 50), 100);
+        $perPage = min($request->get('per_page', 50), 1000);
         $paginator = $query->paginate($perPage);
 
         $items = $paginator->getCollection()->map(function ($log) {
