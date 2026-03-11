@@ -485,7 +485,7 @@ class DashboardController extends Controller
         // Données d'AUJOURD'HUI uniquement (jusqu'à maintenant)
         $todayData = collect();
         if ($today >= $start && $today <= $end) {
-            $todayData = (clone $query)->whereBetween('called_at', [$today->startOfDay(), $now])
+            $todayData = (clone $query)->whereBetween('called_at', [$today->copy()->startOfDay(), $now])
                 ->selectRaw('
                     DATE(called_at) as date,
                     COUNT(*) as calls,
