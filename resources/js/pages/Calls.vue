@@ -462,7 +462,12 @@ onMounted(() => {
                     </template>
                     <template #source="{ row }">
                         <ColorBadge
-                            v-if="row.phonenumber?.source"
+                            v-if="row.source"
+                            :color="row.source.color"
+                            :label="row.source.name"
+                        />
+                        <ColorBadge
+                            v-else-if="row.phonenumber?.source"
                             :color="row.phonenumber.source.color"
                             :label="row.phonenumber.source.name"
                         />
