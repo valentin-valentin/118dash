@@ -29,6 +29,9 @@ const {
     agents: [],
     callcenters: [],
     carriers: [],
+    providers: [],
+    companies: [],
+    sources: [],
     ratings_reviewers: [],
     blacklists: [],
 })
@@ -40,6 +43,9 @@ const { filters, reset } = useFilters(
     {
         caller: '',
         called: '',
+        provider_id: [],
+        company_id: [],
+        source_id: [],
         brand_name: [],
         agent_name: [],
         callcenter_id: [],
@@ -48,11 +54,6 @@ const { filters, reset } = useFilters(
         duration_min: '',
         duration_max: '',
         carrier: [],
-        has_rating: '',
-        ratings_warning: '',
-        ratings_danger: '',
-        ratings_not_rated: '',
-        ratings_reviewer: [],
         phone_agent_hangup: '',
         phone_reported_by_agent: '',
         phone_cant_provide_service: '',
@@ -68,6 +69,9 @@ const { filters, reset } = useFilters(
 const hasFilters = computed(() =>
     !!filters.caller ||
     !!filters.called ||
+    (Array.isArray(filters.provider_id) && filters.provider_id.length > 0) ||
+    (Array.isArray(filters.company_id) && filters.company_id.length > 0) ||
+    (Array.isArray(filters.source_id) && filters.source_id.length > 0) ||
     (Array.isArray(filters.brand_name) && filters.brand_name.length > 0) ||
     (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
     (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
@@ -76,11 +80,6 @@ const hasFilters = computed(() =>
     !!filters.duration_min ||
     !!filters.duration_max ||
     (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
-    !!filters.has_rating ||
-    !!filters.ratings_warning ||
-    !!filters.ratings_danger ||
-    !!filters.ratings_not_rated ||
-    (Array.isArray(filters.ratings_reviewer) && filters.ratings_reviewer.length > 0) ||
     !!filters.phone_agent_hangup ||
     !!filters.phone_reported_by_agent ||
     !!filters.phone_cant_provide_service ||
@@ -234,6 +233,33 @@ onMounted(() => {
                         class="h-8"
                     />
 
+                    <!-- Source -->
+                    <FilterSelect
+                        v-model="filters.source_id"
+                        :options="filterOptions.sources"
+                        placeholder="Toutes les sources"
+                        searchable
+                        multiple
+                    />
+
+                    <!-- Provider -->
+                    <FilterSelect
+                        v-model="filters.provider_id"
+                        :options="filterOptions.providers"
+                        placeholder="Tous les providers"
+                        searchable
+                        multiple
+                    />
+
+                    <!-- Company -->
+                    <FilterSelect
+                        v-model="filters.company_id"
+                        :options="filterOptions.companies"
+                        placeholder="Toutes les companies"
+                        searchable
+                        multiple
+                    />
+
                     <!-- Marque (select avec recherche) -->
                     <FilterSelect
                         v-model="filters.brand_name"
@@ -296,58 +322,6 @@ onMounted(() => {
                         type="number"
                         placeholder="Durée max (s)"
                         class="h-8"
-                    />
-
-                    <!-- A un rating -->
-                    <FilterSelect
-                        v-model="filters.has_rating"
-                        :options="[
-                            { value: 'yes', label: 'Avec rating' },
-                            { value: 'no', label: 'Sans rating' },
-                        ]"
-                        placeholder="Rating"
-                        :searchable="false"
-                    />
-
-                    <!-- Rating reviewer -->
-                    <FilterSelect
-                        v-model="filters.ratings_reviewer"
-                        :options="filterOptions.ratings_reviewers"
-                        placeholder="Évaluateur"
-                        multiple
-                    />
-
-                    <!-- Warning -->
-                    <FilterSelect
-                        v-model="filters.ratings_warning"
-                        :options="[
-                            { value: 'yes', label: 'Avec warning' },
-                            { value: 'no', label: 'Sans warning' },
-                        ]"
-                        placeholder="Warning"
-                        :searchable="false"
-                    />
-
-                    <!-- Danger -->
-                    <FilterSelect
-                        v-model="filters.ratings_danger"
-                        :options="[
-                            { value: 'yes', label: 'Avec danger' },
-                            { value: 'no', label: 'Sans danger' },
-                        ]"
-                        placeholder="Danger"
-                        :searchable="false"
-                    />
-
-                    <!-- Non noté -->
-                    <FilterSelect
-                        v-model="filters.ratings_not_rated"
-                        :options="[
-                            { value: 'yes', label: 'Non noté' },
-                            { value: 'no', label: 'Noté' },
-                        ]"
-                        placeholder="Non noté"
-                        :searchable="false"
                     />
 
                     <!-- Agent a raccroché -->
