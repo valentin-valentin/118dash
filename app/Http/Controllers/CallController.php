@@ -48,6 +48,7 @@ class CallController extends Controller
                 'agent:id,name',
                 'callcenter:id,name',
                 'blacklist:id,name',
+                'source:id,name,color',
                 'phonenumber:id,phonenumber,provider_id,company_id,source_id',
                 'phonenumber.provider:id,name,color',
                 'phonenumber.company:id,name,color',
