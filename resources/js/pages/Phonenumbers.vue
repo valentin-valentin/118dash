@@ -562,7 +562,7 @@ onUnmounted(() => {
                             type="checkbox"
                             :checked="allSelected"
                             @change="toggleSelectAll"
-                            class="mt-0.5 -mb-0.5 h-3 w-3 h rounded border-gray-300 text-primary focus:ring-primary"
+                            class="mt-1 -mb-1 h-3 w-3 h rounded border-gray-300 text-primary focus:ring-primary"
                         />
                     </template>
 
