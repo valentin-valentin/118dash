@@ -72,6 +72,7 @@ class DashboardController extends Controller
                 COALESCE(SUM(payout), 0) as ca,
                 COALESCE(SUM(payout_source), 0) as reverse,
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->first();
@@ -83,6 +84,7 @@ class DashboardController extends Controller
                 COALESCE(SUM(payout), 0) as ca,
                 COALESCE(SUM(payout_source), 0) as reverse,
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->first();
@@ -94,6 +96,7 @@ class DashboardController extends Controller
                 COALESCE(SUM(payout), 0) as ca,
                 COALESCE(SUM(payout_source), 0) as reverse,
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->first();
@@ -104,6 +107,7 @@ class DashboardController extends Controller
                 'ca' => round((float) $current->ca, 2),
                 'reverse' => round((float) $current->reverse, 2),
                 'benefice' => round((float) $current->benefice, 2),
+                'total_duration' => round((float) $current->total_duration),
                 'avg_duration' => round((float) $current->avg_duration),
             ],
             $comp1Label => [
@@ -111,6 +115,7 @@ class DashboardController extends Controller
                 'ca' => round((float) $comp1->ca, 2),
                 'reverse' => round((float) $comp1->reverse, 2),
                 'benefice' => round((float) $comp1->benefice, 2),
+                'total_duration' => round((float) $comp1->total_duration),
                 'avg_duration' => round((float) $comp1->avg_duration),
             ],
             $comp2Label => [
@@ -118,6 +123,7 @@ class DashboardController extends Controller
                 'ca' => round((float) $comp2->ca, 2),
                 'reverse' => round((float) $comp2->reverse, 2),
                 'benefice' => round((float) $comp2->benefice, 2),
+                'total_duration' => round((float) $comp2->total_duration),
                 'avg_duration' => round((float) $comp2->avg_duration),
             ],
         ]);

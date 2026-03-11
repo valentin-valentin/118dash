@@ -142,10 +142,9 @@ function isSunday(dateString) {
 
 function formatDuration(seconds) {
     if (!seconds) return '-'
-    const hours = Math.floor(seconds / 3600)
-    const mins = Math.floor((seconds % 3600) / 60)
+    const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
 function formatNumber(value) {
@@ -238,7 +237,7 @@ onMounted(() => {
                 </div>
 
                 <!-- Hero KPIs -->
-                <div class="grid flex-1 grid-cols-1 gap-4 md:grid-cols-5">
+                <div class="grid flex-1 grid-cols-1 gap-4 md:grid-cols-6">
                     <!-- Appels -->
                     <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
                         <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Appels</div>
@@ -333,6 +332,31 @@ onMounted(() => {
                                     <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatCurrency(stats.data[compLabels.comp2Key].benefice) }} €</span>
                                     <span :class="getVariationClass(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice))">
                                         {{ getVariationSymbol(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice)) }} {{ formatVariation(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Durée totale -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Durée totale</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatDuration(stats.data?.current.total_duration) }}
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDuration(stats.data[compLabels.comp1Key].total_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp1Key].total_duration)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDuration(stats.data[compLabels.comp2Key].total_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }} {{ formatVariation(getVariation(stats.data.current.total_duration, stats.data[compLabels.comp2Key].total_duration)) }}
                                     </span>
                                 </div>
                             </div>
