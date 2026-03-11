@@ -3,27 +3,73 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
-import PageHeader from '@/components/PageHeader.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import FilterSelect from '@/components/FilterSelect.vue'
+import BrandTreemap from '@/components/BrandTreemap.vue'
 import { useApi } from '@/composables/useApi'
+import { useFilters } from '@/composables/useFilters'
+import { useFilterOptions } from '@/composables/useFilterOptions'
 
-// ─── Période ──────────────────────────────────────────────────────────────────
+// ─── Période pour les KPIs et graphiques ──────────────────────────────────────
 const period = ref('today')
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/stats')
 
-// ─── Daily Breakdown ──────────────────────────────────────────────────────────
-const daily = useApi('/data/daily-breakdown')
+// ─── Filter Options ───────────────────────────────────────────────────────────
+const {
+    options: filterOptions,
+    isLoading: isLoadingOptions,
+    load: loadFilterOptions,
+} = useFilterOptions('/data/dashboard/filter-options', {
+    brands: [],
+    agents: [],
+    callcenters: [],
+    carriers: [],
+    providers: [],
+    companies: [],
+    sources: [],
+})
 
-// ─── Colonnes tableau ─────────────────────────────────────────────────────────
+// ─── Daily Breakdown + Treemap + Filtres ─────────────────────────────────────
+const daily = useApi('/data/daily-breakdown')
+const brandDistribution = useApi('/data/brand-distribution')
+
+const { filters, reset } = useFilters(
+    {
+        brand_name: [],
+        agent_name: [],
+        callcenter_id: [],
+        carrier: [],
+        provider_id: [],
+        company_id: [],
+        source_id: [],
+    },
+    (f) => {
+        daily.load(f)
+        brandDistribution.load(f)
+    },
+)
+
+const hasFilters = computed(() =>
+    (Array.isArray(filters.brand_name) && filters.brand_name.length > 0) ||
+    (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
+    (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
+    (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
+    (Array.isArray(filters.provider_id) && filters.provider_id.length > 0) ||
+    (Array.isArray(filters.company_id) && filters.company_id.length > 0) ||
+    (Array.isArray(filters.source_id) && filters.source_id.length > 0)
+)
+
+// ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
 const columns = [
     { key: 'date', label: 'Date', sortable: true },
-    { key: 'calls', label: 'Appels', sortable: true },
-    { key: 'ca', label: 'CA (€)', sortable: true },
-    { key: 'reverse', label: 'Reverse (€)', sortable: true },
-    { key: 'benefice', label: 'Bénéfice (€)', sortable: true },
-    { key: 'total_duration', label: 'Durée totale', sortable: true },
-    { key: 'avg_duration', label: 'Durée moy.', sortable: true },
+    { key: 'calls', label: 'Appels', sortable: true, headerClass: 'text-right' },
+    { key: 'total_duration', label: 'Durée totale', sortable: true, headerClass: 'text-right' },
+    { key: 'avg_duration', label: 'Durée moy.', sortable: true, headerClass: 'text-right' },
+    { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
+    { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
+    { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
 ]
 
 const sortKey = ref('date')
@@ -61,14 +107,37 @@ const sortedRows = computed(() => {
     return rows
 })
 
+// ─── No processed data needed - ApexCharts handles this ──────────────────────
+
+// ─── Helpers stats ────────────────────────────────────────────────────────────
+const compLabels = computed(() => {
+    if (period.value === 'today') {
+        return { comp1: 'Hier', comp1Key: 'yesterday', comp2: 'S-1', comp2Key: 'last_week' }
+    } else if (period.value === 'this_week') {
+        return { comp1: 'Sem. dern.', comp1Key: 'last_week', comp2: 'S-2', comp2Key: 'two_weeks_ago' }
+    } else {
+        return { comp1: 'Mois dern.', comp1Key: 'last_month', comp2: 'M-2', comp2Key: 'two_months_ago' }
+    }
+})
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatDate(dateString) {
+function formatDayName(dateString) {
+    const date = new Date(dateString)
+    const dayName = date.toLocaleDateString('fr-FR', { weekday: 'long' })
+    return dayName.charAt(0).toUpperCase() + dayName.slice(1)
+}
+
+function formatDateShort(dateString) {
     const date = new Date(dateString)
     return date.toLocaleDateString('fr-FR', {
         day: '2-digit',
         month: '2-digit',
-        year: 'numeric',
     })
+}
+
+function isSunday(dateString) {
+    const date = new Date(dateString)
+    return date.getDay() === 0
 }
 
 function formatDuration(seconds) {
@@ -80,37 +149,49 @@ function formatDuration(seconds) {
 }
 
 function formatCurrency(value) {
-    if (!value && value !== 0) return '-'
-    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value) + ' €'
+    if (value === null || value === undefined) return '-'
+    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
 }
 
 function getVariation(current, previous) {
-    if (!previous || previous === 0) return 0
+    // Gérer le cas où previous = 0 (dimanche fermé par exemple)
+    if (!previous || previous === 0) {
+        if (current === 0) return null // Les deux à 0
+        return null // On affiche rien si on compare avec 0
+    }
     return ((current - previous) / previous) * 100
 }
 
 function getVariationClass(variation) {
+    if (variation === null) return 'text-gray-400'
     if (variation > 0) return 'text-green-600'
     if (variation < 0) return 'text-red-600'
     return 'text-gray-500'
 }
 
 function getVariationSymbol(variation) {
+    if (variation === null) return '-'
     if (variation > 0) return '↗'
     if (variation < 0) return '↘'
     return '→'
 }
 
-// ─── Watch period changes ─────────────────────────────────────────────────────
+function formatVariation(variation) {
+    if (variation === null) return '-'
+    return Math.abs(variation).toFixed(1) + '%'
+}
+
+// ─── Watch period changes (KPIs only) ─────────────────────────────────────────
 watch(period, () => {
     stats.load({ period: period.value })
-    daily.load({ period: period.value })
 })
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     stats.load({ period: period.value })
-    daily.load({ period: period.value })
+    loadFilterOptions()
+    daily.load(filters)
+    brandDistribution.load(filters)
 })
 </script>
 
@@ -120,165 +201,353 @@ onMounted(() => {
     <AppLayout>
         <div class="space-y-6 p-6">
             <!-- En-tête -->
-            <PageHeader
-                :breadcrumbs="[
-                    { title: 'Dashboard' }
-                ]"
-            >
-                <template #actions>
-                    <!-- Sélecteur de période -->
-                    <div class="flex gap-2 rounded-lg border border-gray-200 bg-white p-1">
-                        <button
-                            v-for="p in ['today', 'this_week', 'this_month']"
-                            :key="p"
-                            @click="period = p"
-                            :class="[
-                                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                                period === p
-                                    ? 'bg-blue-600 text-white'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                            ]"
-                        >
-                            {{ p === 'today' ? 'Aujourd\'hui' : p === 'this_week' ? 'Cette semaine' : 'Ce mois' }}
-                        </button>
+            <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+
+            <!-- Sélecteur de période + Hero KPIs -->
+            <div class="flex items-start gap-4">
+                <!-- Sélecteur de période -->
+                <div class="flex shrink-0 flex-col gap-1.5">
+                    <button
+                        v-for="p in [
+                            { value: 'today', label: 'Aujourd\'hui' },
+                            { value: 'this_week', label: 'Cette semaine' },
+                            { value: 'this_month', label: 'Ce mois' }
+                        ]"
+                        :key="p.value"
+                        @click="period = p.value"
+                        :class="[
+                            'rounded-md px-3 py-2 text-xs font-medium transition-all',
+                            period === p.value
+                                ? 'bg-gray-900 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        ]"
+                    >
+                        {{ p.label }}
+                    </button>
+                </div>
+
+                <!-- Hero KPIs -->
+                <div class="grid flex-1 grid-cols-1 gap-4 md:grid-cols-5">
+                    <!-- Appels -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Appels</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ stats.data?.current.calls?.toLocaleString() ?? '-' }}
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ stats.data[compLabels.comp1Key].calls.toLocaleString() }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.calls, stats.data[compLabels.comp1Key].calls))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.calls, stats.data[compLabels.comp1Key].calls)) }} {{ formatVariation(getVariation(stats.data.current.calls, stats.data[compLabels.comp1Key].calls)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ stats.data[compLabels.comp2Key].calls.toLocaleString() }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls)) }} {{ formatVariation(getVariation(stats.data.current.calls, stats.data[compLabels.comp2Key].calls)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
                     </div>
-                </template>
-            </PageHeader>
 
-            <!-- Hero KPIs -->
-            <div class="grid grid-cols-2 gap-4 sm:grid-cols-5">
-                <!-- Appels -->
-                <div class="rounded-lg border border-gray-100 bg-white p-4">
-                    <div class="text-xs font-medium uppercase tracking-wide text-gray-400">Appels</div>
-                    <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                    <template v-else>
-                        <div class="mt-2 text-2xl font-semibold text-gray-900">
-                            {{ stats.data?.current.calls?.toLocaleString() ?? '-' }}
-                        </div>
-                        <div v-if="stats.data" class="mt-1 flex items-center gap-1 text-xs font-medium" :class="getVariationClass(getVariation(stats.data.current.calls, stats.data.previous.calls))">
-                            <span>{{ getVariationSymbol(getVariation(stats.data.current.calls, stats.data.previous.calls)) }}</span>
-                            <span>{{ Math.abs(getVariation(stats.data.current.calls, stats.data.previous.calls)).toFixed(1) }}%</span>
-                        </div>
-                    </template>
-                </div>
+                    <!-- CA -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">CA</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatCurrency(stats.data?.current.ca) }} €
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatCurrency(stats.data[compLabels.comp1Key].ca) }} €</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.ca, stats.data[compLabels.comp1Key].ca))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.ca, stats.data[compLabels.comp1Key].ca)) }} {{ formatVariation(getVariation(stats.data.current.ca, stats.data[compLabels.comp1Key].ca)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatCurrency(stats.data[compLabels.comp2Key].ca) }} €</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.ca, stats.data[compLabels.comp2Key].ca))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.ca, stats.data[compLabels.comp2Key].ca)) }} {{ formatVariation(getVariation(stats.data.current.ca, stats.data[compLabels.comp2Key].ca)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
 
-                <!-- CA -->
-                <div class="rounded-lg border border-gray-100 bg-white p-4">
-                    <div class="text-xs font-medium uppercase tracking-wide text-gray-400">CA</div>
-                    <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                    <template v-else>
-                        <div class="mt-2 text-2xl font-semibold text-gray-900">
-                            {{ formatCurrency(stats.data?.current.ca) }}
-                        </div>
-                        <div v-if="stats.data" class="mt-1 flex items-center gap-1 text-xs font-medium" :class="getVariationClass(getVariation(stats.data.current.ca, stats.data.previous.ca))">
-                            <span>{{ getVariationSymbol(getVariation(stats.data.current.ca, stats.data.previous.ca)) }}</span>
-                            <span>{{ Math.abs(getVariation(stats.data.current.ca, stats.data.previous.ca)).toFixed(1) }}%</span>
-                        </div>
-                    </template>
-                </div>
+                    <!-- Reverse -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Reverse</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatCurrency(stats.data?.current.reverse) }} €
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatCurrency(stats.data[compLabels.comp1Key].reverse) }} €</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.reverse, stats.data[compLabels.comp1Key].reverse))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.reverse, stats.data[compLabels.comp1Key].reverse)) }} {{ formatVariation(getVariation(stats.data.current.reverse, stats.data[compLabels.comp1Key].reverse)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatCurrency(stats.data[compLabels.comp2Key].reverse) }} €</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.reverse, stats.data[compLabels.comp2Key].reverse))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.reverse, stats.data[compLabels.comp2Key].reverse)) }} {{ formatVariation(getVariation(stats.data.current.reverse, stats.data[compLabels.comp2Key].reverse)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
 
-                <!-- Reverse -->
-                <div class="rounded-lg border border-gray-100 bg-white p-4">
-                    <div class="text-xs font-medium uppercase tracking-wide text-gray-400">Reverse</div>
-                    <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                    <template v-else>
-                        <div class="mt-2 text-2xl font-semibold text-gray-900">
-                            {{ formatCurrency(stats.data?.current.reverse) }}
-                        </div>
-                        <div v-if="stats.data" class="mt-1 flex items-center gap-1 text-xs font-medium" :class="getVariationClass(getVariation(stats.data.current.reverse, stats.data.previous.reverse))">
-                            <span>{{ getVariationSymbol(getVariation(stats.data.current.reverse, stats.data.previous.reverse)) }}</span>
-                            <span>{{ Math.abs(getVariation(stats.data.current.reverse, stats.data.previous.reverse)).toFixed(1) }}%</span>
-                        </div>
-                    </template>
-                </div>
+                    <!-- Bénéfice -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bénéfice</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatCurrency(stats.data?.current.benefice) }} €
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatCurrency(stats.data[compLabels.comp1Key].benefice) }} €</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.benefice, stats.data[compLabels.comp1Key].benefice))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.benefice, stats.data[compLabels.comp1Key].benefice)) }} {{ formatVariation(getVariation(stats.data.current.benefice, stats.data[compLabels.comp1Key].benefice)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatCurrency(stats.data[compLabels.comp2Key].benefice) }} €</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice)) }} {{ formatVariation(getVariation(stats.data.current.benefice, stats.data[compLabels.comp2Key].benefice)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
 
-                <!-- Bénéfice -->
-                <div class="rounded-lg border border-gray-100 bg-white p-4">
-                    <div class="text-xs font-medium uppercase tracking-wide text-gray-400">Bénéfice</div>
-                    <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                    <template v-else>
-                        <div class="mt-2 text-2xl font-semibold text-gray-900">
-                            {{ formatCurrency(stats.data?.current.benefice) }}
-                        </div>
-                        <div v-if="stats.data" class="mt-1 flex items-center gap-1 text-xs font-medium" :class="getVariationClass(getVariation(stats.data.current.benefice, stats.data.previous.benefice))">
-                            <span>{{ getVariationSymbol(getVariation(stats.data.current.benefice, stats.data.previous.benefice)) }}</span>
-                            <span>{{ Math.abs(getVariation(stats.data.current.benefice, stats.data.previous.benefice)).toFixed(1) }}%</span>
-                        </div>
-                    </template>
-                </div>
-
-                <!-- Durée moyenne -->
-                <div class="rounded-lg border border-gray-100 bg-white p-4">
-                    <div class="text-xs font-medium uppercase tracking-wide text-gray-400">Durée moy.</div>
-                    <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
-                    <template v-else>
-                        <div class="mt-2 font-mono text-2xl font-semibold text-gray-900">
-                            {{ formatDuration(stats.data?.current.avg_duration) }}
-                        </div>
-                        <div v-if="stats.data" class="mt-1 flex items-center gap-1 text-xs font-medium" :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data.previous.avg_duration))">
-                            <span>{{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data.previous.avg_duration)) }}</span>
-                            <span>{{ Math.abs(getVariation(stats.data.current.avg_duration, stats.data.previous.avg_duration)).toFixed(1) }}%</span>
-                        </div>
-                    </template>
+                    <!-- Durée moyenne -->
+                    <div class="rounded-lg border border-gray-200 bg-white p-4" style="min-height: 134px;">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Durée moy.</div>
+                        <div v-if="stats.loading" class="mt-2 h-8 animate-pulse rounded bg-gray-100"></div>
+                        <template v-else>
+                            <div class="mt-2 text-2xl font-bold text-gray-900">
+                                {{ formatDuration(stats.data?.current.avg_duration) }}
+                            </div>
+                            <div v-if="!stats.loading && stats.data && stats.data[compLabels.comp1Key] && stats.data[compLabels.comp2Key]" class="mt-2 space-y-1 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp1 }}: {{ formatDuration(stats.data[compLabels.comp1Key].avg_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration)) }} {{ formatVariation(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp1Key].avg_duration)) }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-500">{{ compLabels.comp2 }}: {{ formatDuration(stats.data[compLabels.comp2Key].avg_duration) }}</span>
+                                    <span :class="getVariationClass(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration))">
+                                        {{ getVariationSymbol(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration)) }} {{ formatVariation(getVariation(stats.data.current.avg_duration, stats.data[compLabels.comp2Key].avg_duration)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </div>
+
+            <!-- Filtres -->
+            <FilterBar
+                :has-active-filters="hasFilters"
+                :is-loading="isLoadingOptions"
+                @reset="reset"
+            >
+                <div class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+                    <FilterSelect
+                        v-model="filters.brand_name"
+                        :options="filterOptions.brands"
+                        placeholder="Marques"
+                        searchable
+                        multiple
+                    />
+
+                    <FilterSelect
+                        v-model="filters.agent_name"
+                        :options="filterOptions.agents"
+                        placeholder="Agents"
+                        searchable
+                        multiple
+                    />
+
+                    <FilterSelect
+                        v-model="filters.callcenter_id"
+                        :options="filterOptions.callcenters"
+                        placeholder="Call Centers"
+                        multiple
+                    />
+
+                    <FilterSelect
+                        v-model="filters.carrier"
+                        :options="filterOptions.carriers"
+                        placeholder="Opérateurs"
+                        multiple
+                    />
+
+                    <FilterSelect
+                        v-model="filters.provider_id"
+                        :options="filterOptions.providers"
+                        placeholder="Providers"
+                        multiple
+                    />
+
+                    <FilterSelect
+                        v-model="filters.company_id"
+                        :options="filterOptions.companies"
+                        placeholder="Companies"
+                        multiple
+                    />
+
+                    <FilterSelect
+                        v-model="filters.source_id"
+                        :options="filterOptions.sources"
+                        placeholder="Sources"
+                        multiple
+                    />
+                </div>
+            </FilterBar>
 
             <!-- Tableau jour par jour -->
-            <div class="rounded-lg border border-gray-100 bg-white">
-                <div class="border-b border-gray-100 px-4 py-3">
-                    <h3 class="text-sm font-medium text-gray-700">Détail jour par jour</h3>
-                </div>
+            <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th
+                                    v-for="col in columns"
+                                    :key="col.key"
+                                    class="whitespace-nowrap px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400"
+                                    :class="[col.headerClass || 'text-left', col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
+                                    @click="col.sortable && toggleSort(col.key)"
+                                >
+                                    {{ col.label }}
+                                    <template v-if="col.sortable">
+                                        <span v-if="sortKey === col.key && sortDir === 'asc'">↑</span>
+                                        <span v-else-if="sortKey === col.key && sortDir === 'desc'">↓</span>
+                                        <span v-else class="opacity-20">⇅</span>
+                                    </template>
+                                </th>
+                            </tr>
+                        </thead>
 
-                <DataTable
-                    :columns="columns"
-                    :rows="sortedRows"
-                    :loading="daily.loading"
-                    :sort-key="sortKey"
-                    :sort-dir="sortDir"
-                    @sort="toggleSort"
-                >
-                    <template #date="{ value }">
-                        <span class="text-sm font-medium text-gray-900">{{ formatDate(value) }}</span>
-                    </template>
-                    <template #calls="{ value }">
-                        <span class="text-sm text-gray-900">{{ value?.toLocaleString() ?? '-' }}</span>
-                    </template>
-                    <template #ca="{ value }">
-                        <span class="font-mono text-sm text-gray-900">{{ formatCurrency(value) }}</span>
-                    </template>
-                    <template #reverse="{ value }">
-                        <span class="font-mono text-sm text-gray-900">{{ formatCurrency(value) }}</span>
-                    </template>
-                    <template #benefice="{ value }">
-                        <span class="font-mono text-sm font-medium" :class="value >= 0 ? 'text-green-700' : 'text-red-700'">
-                            {{ formatCurrency(value) }}
-                        </span>
-                    </template>
-                    <template #total_duration="{ value }">
-                        <span class="font-mono text-sm text-gray-900">{{ formatDuration(value) }}</span>
-                    </template>
-                    <template #avg_duration="{ value }">
-                        <span class="font-mono text-sm text-gray-900">{{ formatDuration(value) }}</span>
-                    </template>
-                </DataTable>
+                        <tbody>
+                            <!-- Total en haut -->
+                            <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
+                                <td class="px-3 py-2 text-left font-bold text-gray-900">TOTAL MOIS</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ daily.data.totals.calls.toLocaleString() }}</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.total_duration) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ formatDuration(daily.data.totals.avg_duration) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.ca) }} €</td>
+                                <td class="px-3 py-2 text-right text-gray-900">{{ formatCurrency(daily.data.totals.reverse) }} €</td>
+                                <td class="px-3 py-2 text-right font-bold text-gray-900">{{ formatCurrency(daily.data.totals.benefice) }} €</td>
+                            </tr>
 
-                <!-- Totaux -->
-                <div v-if="daily.data?.totals" class="border-t-2 border-gray-300 bg-gray-50 px-3 py-2">
-                    <div class="flex items-center justify-between text-sm font-semibold text-gray-900">
-                        <div class="w-32">TOTAL</div>
-                        <div class="flex flex-1 items-center justify-between">
-                            <div class="flex-1 text-center">{{ daily.data.totals.calls.toLocaleString() }}</div>
-                            <div class="flex-1 text-center font-mono">{{ formatCurrency(daily.data.totals.ca) }}</div>
-                            <div class="flex-1 text-center font-mono">{{ formatCurrency(daily.data.totals.reverse) }}</div>
-                            <div class="flex-1 text-center font-mono" :class="daily.data.totals.benefice >= 0 ? 'text-green-700' : 'text-red-700'">
-                                {{ formatCurrency(daily.data.totals.benefice) }}
-                            </div>
-                            <div class="flex-1 text-center font-mono">{{ formatDuration(daily.data.totals.total_duration) }}</div>
-                            <div class="flex-1 text-center font-mono">{{ formatDuration(daily.data.totals.avg_duration) }}</div>
-                        </div>
-                    </div>
+                            <!-- Skeleton loading -->
+                            <template v-if="daily.loading">
+                                <tr v-for="n in 8" :key="n" class="border-b border-gray-50">
+                                    <td v-for="col in columns" :key="col.key" class="px-3 py-2">
+                                        <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Lignes -->
+                            <template v-else-if="sortedRows.length > 0">
+                                <tr
+                                    v-for="(row, i) in sortedRows"
+                                    :key="i"
+                                    :class="[
+                                        'border-b border-gray-50 transition-colors',
+                                        isSunday(row.date) ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-100/80'
+                                    ]"
+                                >
+                                    <td class="px-3 py-1.5 text-sm">
+                                        <div class="font-medium text-gray-900">{{ formatDayName(row.date) }}</div>
+                                        <div class="text-xs text-gray-500">{{ formatDateShort(row.date) }}</div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ row.calls?.toLocaleString() ?? '-' }}</div>
+                                        <div v-if="row.prev_calls !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                            {{ row.prev_calls.toLocaleString() }}
+                                            <span :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatDuration(row.total_duration) }}</div>
+                                        <div v-if="row.prev_total_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                            {{ formatDuration(row.prev_total_duration) }}
+                                            <span :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.total_duration_var >= 0 ? '+' : '' }}{{ row.total_duration_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatDuration(row.avg_duration) }}</div>
+                                        <div v-if="row.prev_avg_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                            {{ formatDuration(row.prev_avg_duration) }}
+                                            <span :class="row.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.avg_duration_var >= 0 ? '+' : '' }}{{ row.avg_duration_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatCurrency(row.ca) }} €</div>
+                                        <div v-if="row.prev_ca !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_ca) }} €
+                                            <span :class="row.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.ca_var >= 0 ? '+' : '' }}{{ row.ca_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
+                                        <div v-if="row.prev_reverse !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_reverse) }} €
+                                            <span :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.reverse_var >= 0 ? '+' : '' }}{{ row.reverse_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="font-bold text-gray-900">{{ formatCurrency(row.benefice) }} €</div>
+                                        <div v-if="row.prev_benefice !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_benefice) }} €
+                                            <span :class="row.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.benefice_var >= 0 ? '+' : '' }}{{ row.benefice_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Vide -->
+                            <template v-else>
+                                <tr>
+                                    <td :colspan="columns.length" class="px-3 py-8 text-center text-sm text-gray-300">
+                                        Aucune donnée
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
                 </div>
             </div>
+
+            <!-- Treemap des marques (après le tableau) -->
+            <BrandTreemap
+                :brands="brandDistribution.data || []"
+                :loading="brandDistribution.loading"
+            />
         </div>
     </AppLayout>
 </template>

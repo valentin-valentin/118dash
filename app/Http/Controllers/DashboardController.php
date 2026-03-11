@@ -10,33 +10,89 @@ use Illuminate\Support\Facades\DB;
 class DashboardController extends Controller
 {
     /**
-     * Hero KPIs avec comparaison période précédente
+     * Hero KPIs avec comparaisons multiples (hier + même jour semaine dernière)
      */
     public function stats(Request $request): JsonResponse
     {
-        $period = $request->input('period', 'today'); // today, this_week, this_month
+        $period = $request->input('period', 'today');
+        $now = now();
 
-        // Définir les périodes
-        [$start, $end, $prevStart, $prevEnd] = $this->getPeriodDates($period);
+        // Définir les périodes selon la sélection
+        if ($period === 'today') {
+            // Aujourd'hui jusqu'à maintenant
+            $currentStart = today()->startOfDay();
+            $currentEnd = $now;
+
+            // Hier à la même heure
+            $comp1Start = today()->subDay()->startOfDay();
+            $comp1End = today()->subDay()->setTime($now->hour, $now->minute, $now->second);
+            $comp1Label = 'yesterday';
+
+            // S-1 à la même heure
+            $comp2Start = today()->subWeek()->startOfDay();
+            $comp2End = today()->subWeek()->setTime($now->hour, $now->minute, $now->second);
+            $comp2Label = 'last_week';
+        } elseif ($period === 'this_week') {
+            // Cette semaine depuis le début jusqu'à maintenant
+            $currentStart = now()->startOfWeek();
+            $currentEnd = $now;
+
+            // Même nombre de jours la semaine dernière
+            $daysIntoWeek = $now->dayOfWeek; // 0 = dimanche, 1 = lundi, etc.
+            $comp1Start = now()->subWeek()->startOfWeek();
+            $comp1End = now()->subWeek()->startOfWeek()->addDays($daysIntoWeek)->setTime($now->hour, $now->minute, $now->second);
+            $comp1Label = 'last_week';
+
+            // 2 semaines avant (même durée)
+            $comp2Start = now()->subWeeks(2)->startOfWeek();
+            $comp2End = now()->subWeeks(2)->startOfWeek()->addDays($daysIntoWeek)->setTime($now->hour, $now->minute, $now->second);
+            $comp2Label = 'two_weeks_ago';
+        } else { // this_month
+            // Ce mois depuis le début jusqu'à maintenant
+            $currentStart = now()->startOfMonth();
+            $currentEnd = $now;
+
+            // Même nombre de jours du mois précédent
+            $dayOfMonth = $now->day;
+            $comp1Start = now()->subMonth()->startOfMonth();
+            $comp1End = now()->subMonth()->startOfMonth()->addDays($dayOfMonth - 1)->endOfDay();
+            $comp1Label = 'last_month';
+
+            // Mois d'avant (même durée)
+            $comp2Start = now()->subMonths(2)->startOfMonth();
+            $comp2End = now()->subMonths(2)->startOfMonth()->addDays($dayOfMonth - 1)->endOfDay();
+            $comp2Label = 'two_months_ago';
+        }
 
         // Période actuelle
-        $current = Call::whereBetween('called_at', [$start, $end])
+        $current = Call::whereBetween('called_at', [$currentStart, $currentEnd])
             ->selectRaw('
                 COUNT(*) as calls,
                 COALESCE(SUM(payout), 0) as ca,
                 COALESCE(SUM(payout_source), 0) as reverse,
-                COALESCE(SUM(payout - payout_source), 0) as benefice,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->first();
 
-        // Période précédente
-        $previous = Call::whereBetween('called_at', [$prevStart, $prevEnd])
+        // Comparaison 1
+        $comp1 = Call::whereBetween('called_at', [$comp1Start, $comp1End])
             ->selectRaw('
                 COUNT(*) as calls,
                 COALESCE(SUM(payout), 0) as ca,
                 COALESCE(SUM(payout_source), 0) as reverse,
-                COALESCE(SUM(payout - payout_source), 0) as benefice,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->first();
+
+        // Comparaison 2
+        $comp2 = Call::whereBetween('called_at', [$comp2Start, $comp2End])
+            ->selectRaw('
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->first();
@@ -49,36 +105,115 @@ class DashboardController extends Controller
                 'benefice' => round((float) $current->benefice, 2),
                 'avg_duration' => round((float) $current->avg_duration),
             ],
-            'previous' => [
-                'calls' => (int) $previous->calls,
-                'ca' => round((float) $previous->ca, 2),
-                'reverse' => round((float) $previous->reverse, 2),
-                'benefice' => round((float) $previous->benefice, 2),
-                'avg_duration' => round((float) $previous->avg_duration),
+            $comp1Label => [
+                'calls' => (int) $comp1->calls,
+                'ca' => round((float) $comp1->ca, 2),
+                'reverse' => round((float) $comp1->reverse, 2),
+                'benefice' => round((float) $comp1->benefice, 2),
+                'avg_duration' => round((float) $comp1->avg_duration),
+            ],
+            $comp2Label => [
+                'calls' => (int) $comp2->calls,
+                'ca' => round((float) $comp2->ca, 2),
+                'reverse' => round((float) $comp2->reverse, 2),
+                'benefice' => round((float) $comp2->benefice, 2),
+                'avg_duration' => round((float) $comp2->avg_duration),
             ],
         ]);
     }
 
     /**
-     * Tableau jour par jour
+     * Parse multi-select filter value
      */
-    public function dailyBreakdown(Request $request): JsonResponse
+    private function parseMultiSelect($value): array
     {
-        $period = $request->input('period', 'this_month');
-        [$start, $end] = $this->getPeriodDates($period);
+        if (is_array($value)) {
+            return $value;
+        }
 
-        $daily = Call::whereBetween('called_at', [$start, $end])
+        if (is_string($value) && str_contains($value, ',')) {
+            return array_map('trim', explode(',', $value));
+        }
+
+        return [$value];
+    }
+
+    /**
+     * Graphique avec mois en cours + mois précédent + filtres
+     */
+    public function chartData(Request $request): JsonResponse
+    {
+        $currentStart = now()->startOfMonth();
+        $currentEnd = now()->endOfMonth();
+        $previousStart = now()->subMonth()->startOfMonth();
+        $previousEnd = now()->subMonth()->endOfMonth();
+
+        // Fonction pour construire la query avec les filtres
+        $applyFilters = function ($query) use ($request) {
+            if ($request->filled('brand_name')) {
+                $brands = $this->parseMultiSelect($request->brand_name);
+                $query->whereIn('brand_name', $brands);
+            }
+
+            if ($request->filled('agent_name')) {
+                $agents = $this->parseMultiSelect($request->agent_name);
+                $query->whereIn('agent_name', $agents);
+            }
+
+            if ($request->filled('callcenter_id')) {
+                $callcenters = $this->parseMultiSelect($request->callcenter_id);
+                $query->whereIn('callcenter_id', $callcenters);
+            }
+
+            if ($request->filled('carrier')) {
+                $carriers = $this->parseMultiSelect($request->carrier);
+                $query->whereIn('carrier', $carriers);
+            }
+
+            if ($request->filled('provider_id')) {
+                $providers = $this->parseMultiSelect($request->provider_id);
+                $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
+                $query->whereIn('called', $calledNumbers);
+            }
+
+            if ($request->filled('company_id')) {
+                $companies = $this->parseMultiSelect($request->company_id);
+                $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
+                $query->whereIn('called', $calledNumbers);
+            }
+
+            if ($request->filled('source_id')) {
+                $sources = $this->parseMultiSelect($request->source_id);
+                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+                $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
+                $calledNumbers = [];
+                foreach ($providerCompanies as $pc) {
+                    $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
+                        ->where('company_id', $pc->company_id)
+                        ->pluck('phonenumber');
+                    $calledNumbers = array_merge($calledNumbers, $nums->toArray());
+                }
+                if (!empty($calledNumbers)) {
+                    $query->whereIn('called', $calledNumbers);
+                }
+            }
+        };
+
+        // Données mois en cours
+        $currentQuery = Call::query();
+        $applyFilters($currentQuery);
+        $currentData = $currentQuery->whereBetween('called_at', [$currentStart, $currentEnd])
             ->selectRaw('
                 DATE(called_at) as date,
                 COUNT(*) as calls,
                 COALESCE(SUM(payout), 0) as ca,
                 COALESCE(SUM(payout_source), 0) as reverse,
-                COALESCE(SUM(payout - payout_source), 0) as benefice,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(SUM(total_duration), 0) as total_duration,
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->groupBy('date')
-            ->orderBy('date', 'desc')
+            ->orderBy('date', 'asc')
             ->get()
             ->map(function ($row) {
                 return [
@@ -87,10 +222,423 @@ class DashboardController extends Controller
                     'ca' => round((float) $row->ca, 2),
                     'reverse' => round((float) $row->reverse, 2),
                     'benefice' => round((float) $row->benefice, 2),
-                    'total_duration' => (int) $row->total_duration,
+                    'total_duration_hours' => round((float) $row->total_duration / 3600, 1),
+                    'avg_duration_minutes' => round((float) $row->avg_duration / 60, 1),
+                ];
+            });
+
+        // Données mois précédent
+        $previousQuery = Call::query();
+        $applyFilters($previousQuery);
+        $previousData = $previousQuery->whereBetween('called_at', [$previousStart, $previousEnd])
+            ->selectRaw('
+                DATE(called_at) as date,
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->groupBy('date')
+            ->orderBy('date', 'asc')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'date' => $row->date,
+                    'calls' => (int) $row->calls,
+                    'ca' => round((float) $row->ca, 2),
+                    'reverse' => round((float) $row->reverse, 2),
+                    'benefice' => round((float) $row->benefice, 2),
+                    'total_duration_hours' => round((float) $row->total_duration / 3600, 1),
+                    'avg_duration_minutes' => round((float) $row->avg_duration / 60, 1),
+                ];
+            });
+
+        return response()->json([
+            'current' => $currentData,
+            'previous' => $previousData,
+        ]);
+    }
+
+    /**
+     * Répartition par marques (mois en cours + filtres)
+     */
+    public function brandDistribution(Request $request): JsonResponse
+    {
+        $start = now()->startOfMonth();
+        $end = now()->endOfMonth();
+
+        $query = Call::query();
+
+        // Appliquer les mêmes filtres
+        if ($request->filled('agent_name')) {
+            $agents = $this->parseMultiSelect($request->agent_name);
+            $query->whereIn('agent_name', $agents);
+        }
+
+        if ($request->filled('callcenter_id')) {
+            $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            $query->whereIn('callcenter_id', $callcenters);
+        }
+
+        if ($request->filled('carrier')) {
+            $carriers = $this->parseMultiSelect($request->carrier);
+            $query->whereIn('carrier', $carriers);
+        }
+
+        if ($request->filled('provider_id')) {
+            $providers = $this->parseMultiSelect($request->provider_id);
+            $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
+            $query->whereIn('called', $calledNumbers);
+        }
+
+        if ($request->filled('company_id')) {
+            $companies = $this->parseMultiSelect($request->company_id);
+            $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
+            $query->whereIn('called', $calledNumbers);
+        }
+
+        if ($request->filled('source_id')) {
+            $sources = $this->parseMultiSelect($request->source_id);
+            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+            $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
+            $calledNumbers = [];
+            foreach ($providerCompanies as $pc) {
+                $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
+                    ->where('company_id', $pc->company_id)
+                    ->pluck('phonenumber');
+                $calledNumbers = array_merge($calledNumbers, $nums->toArray());
+            }
+            if (!empty($calledNumbers)) {
+                $query->whereIn('called', $calledNumbers);
+            }
+        }
+
+        // Ne pas filtrer par brand_name pour le camembert (on veut toutes les marques)
+        $brands = $query->whereBetween('called_at', [$start, $end])
+            ->whereNotNull('brand_name')
+            ->where('brand_name', '!=', '')
+            ->selectRaw('
+                brand_name,
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->groupBy('brand_name')
+            ->orderByDesc('benefice')
+            ->get()
+            ->map(function ($row) {
+                $totalSeconds = (int) $row->total_duration;
+                $totalHours = floor($totalSeconds / 3600);
+                $totalMinutes = floor(($totalSeconds % 3600) / 60);
+
+                return [
+                    'name' => $row->brand_name,
+                    'calls' => (int) $row->calls,
+                    'ca' => round((float) $row->ca, 2),
+                    'reverse' => round((float) $row->reverse, 2),
+                    'benefice' => round((float) $row->benefice, 2),
+                    'total_duration_formatted' => sprintf('%dh%02dm', $totalHours, $totalMinutes),
                     'avg_duration' => round((float) $row->avg_duration),
                 ];
             });
+
+        return response()->json($brands);
+    }
+
+    /**
+     * Tableau jour par jour (toujours le mois en cours) avec filtres + comparaisons
+     */
+    public function dailyBreakdown(Request $request): JsonResponse
+    {
+        $start = now()->startOfMonth();
+        $end = now()->endOfMonth();
+        $previousMonthStart = now()->subMonth()->startOfMonth();
+        $previousMonthEnd = now()->subMonth()->endOfMonth();
+
+        $query = Call::query();
+
+        // Appliquer les filtres
+        if ($request->filled('brand_name')) {
+            $brands = $this->parseMultiSelect($request->brand_name);
+            $query->whereIn('brand_name', $brands);
+        }
+
+        if ($request->filled('agent_name')) {
+            $agents = $this->parseMultiSelect($request->agent_name);
+            $query->whereIn('agent_name', $agents);
+        }
+
+        if ($request->filled('callcenter_id')) {
+            $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            $query->whereIn('callcenter_id', $callcenters);
+        }
+
+        if ($request->filled('carrier')) {
+            $carriers = $this->parseMultiSelect($request->carrier);
+            $query->whereIn('carrier', $carriers);
+        }
+
+        if ($request->filled('provider_id')) {
+            // Via phonenumbers
+            $providers = $this->parseMultiSelect($request->provider_id);
+            $phonenumberIds = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('id');
+            $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
+            $query->where(function ($q) use ($calledNumbers) {
+                $q->whereIn('called', $calledNumbers);
+            });
+        }
+
+        if ($request->filled('company_id')) {
+            // Via phonenumbers
+            $companies = $this->parseMultiSelect($request->company_id);
+            $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
+            $query->where(function ($q) use ($calledNumbers) {
+                $q->whereIn('called', $calledNumbers);
+            });
+        }
+
+        if ($request->filled('source_id')) {
+            // Via source_provider_companies -> provider_companies -> phonenumbers
+            $sources = $this->parseMultiSelect($request->source_id);
+            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+            $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
+            $calledNumbers = [];
+            foreach ($providerCompanies as $pc) {
+                $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
+                    ->where('company_id', $pc->company_id)
+                    ->pluck('phonenumber');
+                $calledNumbers = array_merge($calledNumbers, $nums->toArray());
+            }
+            if (!empty($calledNumbers)) {
+                $query->whereIn('called', $calledNumbers);
+            }
+        }
+
+        // Détecter si on est sur un jour en cours (pas terminé)
+        $today = today();
+        $now = now();
+        $currentDay = (int) $now->format('d');
+
+        // Données mois en cours
+        $daily = $query->whereBetween('called_at', [$start, $end])
+            ->selectRaw('
+                DATE(called_at) as date,
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->groupBy('date')
+            ->orderBy('date', 'asc')
+            ->get();
+
+        // Données mois précédent (mêmes filtres)
+        $previousQuery = Call::query();
+
+        if ($request->filled('brand_name')) {
+            $brands = $this->parseMultiSelect($request->brand_name);
+            $previousQuery->whereIn('brand_name', $brands);
+        }
+
+        if ($request->filled('agent_name')) {
+            $agents = $this->parseMultiSelect($request->agent_name);
+            $previousQuery->whereIn('agent_name', $agents);
+        }
+
+        if ($request->filled('callcenter_id')) {
+            $callcenters = $this->parseMultiSelect($request->callcenter_id);
+            $previousQuery->whereIn('callcenter_id', $callcenters);
+        }
+
+        if ($request->filled('carrier')) {
+            $carriers = $this->parseMultiSelect($request->carrier);
+            $previousQuery->whereIn('carrier', $carriers);
+        }
+
+        if ($request->filled('provider_id')) {
+            $providers = $this->parseMultiSelect($request->provider_id);
+            $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
+            $previousQuery->where(function ($q) use ($calledNumbers) {
+                $q->whereIn('called', $calledNumbers);
+            });
+        }
+
+        if ($request->filled('company_id')) {
+            $companies = $this->parseMultiSelect($request->company_id);
+            $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
+            $previousQuery->where(function ($q) use ($calledNumbers) {
+                $q->whereIn('called', $calledNumbers);
+            });
+        }
+
+        if ($request->filled('source_id')) {
+            $sources = $this->parseMultiSelect($request->source_id);
+            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+            $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
+            $calledNumbers = [];
+            foreach ($providerCompanies as $pc) {
+                $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
+                    ->where('company_id', $pc->company_id)
+                    ->pluck('phonenumber');
+                $calledNumbers = array_merge($calledNumbers, $nums->toArray());
+            }
+            if (!empty($calledNumbers)) {
+                $previousQuery->whereIn('called', $calledNumbers);
+            }
+        }
+
+        $previousDaily = $previousQuery->whereBetween('called_at', [$previousMonthStart, $previousMonthEnd])
+            ->selectRaw('
+                DAY(called_at) as day,
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->groupBy('day')
+            ->get()
+            ->keyBy('day');
+
+        // Pour aujourd'hui (journée incomplète), comparer à la même heure du mois précédent
+        $todayHourComparison = null;
+        if ($now->format('Y-m-d') >= $start->format('Y-m-d') && $now->format('Y-m-d') <= $end->format('Y-m-d')) {
+            // Construire la requête pour le même jour du mois précédent jusqu'à la même heure
+            $previousMonthSameDayStart = $now->copy()->subMonth()->startOfDay();
+            $previousMonthSameDayEnd = $now->copy()->subMonth();
+
+            $todayPreviousQuery = Call::query();
+
+            // Appliquer les mêmes filtres
+            if ($request->filled('brand_name')) {
+                $brands = $this->parseMultiSelect($request->brand_name);
+                $todayPreviousQuery->whereIn('brand_name', $brands);
+            }
+
+            if ($request->filled('agent_name')) {
+                $agents = $this->parseMultiSelect($request->agent_name);
+                $todayPreviousQuery->whereIn('agent_name', $agents);
+            }
+
+            if ($request->filled('callcenter_id')) {
+                $callcenters = $this->parseMultiSelect($request->callcenter_id);
+                $todayPreviousQuery->whereIn('callcenter_id', $callcenters);
+            }
+
+            if ($request->filled('carrier')) {
+                $carriers = $this->parseMultiSelect($request->carrier);
+                $todayPreviousQuery->whereIn('carrier', $carriers);
+            }
+
+            if ($request->filled('provider_id')) {
+                $providers = $this->parseMultiSelect($request->provider_id);
+                $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
+                $todayPreviousQuery->where(function ($q) use ($calledNumbers) {
+                    $q->whereIn('called', $calledNumbers);
+                });
+            }
+
+            if ($request->filled('company_id')) {
+                $companies = $this->parseMultiSelect($request->company_id);
+                $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
+                $todayPreviousQuery->where(function ($q) use ($calledNumbers) {
+                    $q->whereIn('called', $calledNumbers);
+                });
+            }
+
+            if ($request->filled('source_id')) {
+                $sources = $this->parseMultiSelect($request->source_id);
+                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('provider_company_id');
+                $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
+                $calledNumbers = [];
+                foreach ($providerCompanies as $pc) {
+                    $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
+                        ->where('company_id', $pc->company_id)
+                        ->pluck('phonenumber');
+                    $calledNumbers = array_merge($calledNumbers, $nums->toArray());
+                }
+                if (!empty($calledNumbers)) {
+                    $todayPreviousQuery->whereIn('called', $calledNumbers);
+                }
+            }
+
+            $todayHourComparison = $todayPreviousQuery
+                ->whereBetween('called_at', [$previousMonthSameDayStart, $previousMonthSameDayEnd])
+                ->selectRaw('
+                    COUNT(*) as calls,
+                    COALESCE(SUM(payout), 0) as ca,
+                    COALESCE(SUM(payout_source), 0) as reverse,
+                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                    COALESCE(SUM(total_duration), 0) as total_duration,
+                    COALESCE(AVG(total_duration), 0) as avg_duration
+                ')
+                ->first();
+        }
+
+        // Mapper avec comparaisons
+        $daily = $daily->map(function ($row) use ($previousDaily, $todayHourComparison, $currentDay, $now) {
+            $day = (int) date('d', strtotime($row->date));
+            $isToday = ($row->date === $now->format('Y-m-d'));
+
+            // Pour aujourd'hui, utiliser la comparaison horaire. Sinon, utiliser la comparaison journalière complète
+            if ($isToday && $todayHourComparison) {
+                $prev = $todayHourComparison;
+            } else {
+                $prev = $previousDaily->get($day);
+            }
+
+            $calls = (int) $row->calls;
+            $ca = round((float) $row->ca, 2);
+            $reverse = round((float) $row->reverse, 2);
+            $benefice = round((float) $row->benefice, 2);
+            $totalDuration = (int) $row->total_duration;
+            $avgDuration = round((float) $row->avg_duration);
+
+            $prevCalls = $prev ? (int) $prev->calls : null;
+            $prevCa = $prev ? round((float) $prev->ca, 2) : null;
+            $prevReverse = $prev ? round((float) $prev->reverse, 2) : null;
+            $prevBenefice = $prev ? round((float) $prev->benefice, 2) : null;
+            $prevTotalDuration = $prev ? (int) $prev->total_duration : null;
+            $prevAvgDuration = $prev ? round((float) $prev->avg_duration) : null;
+
+            // Calcul des variations
+            $callsVar = ($prevCalls && $prevCalls > 0) ? round((($calls - $prevCalls) / $prevCalls) * 100, 1) : null;
+            $caVar = ($prevCa && $prevCa > 0) ? round((($ca - $prevCa) / $prevCa) * 100, 1) : null;
+            $reverseVar = ($prevReverse && $prevReverse > 0) ? round((($reverse - $prevReverse) / $prevReverse) * 100, 1) : null;
+            $beneficeVar = ($prevBenefice && $prevBenefice > 0) ? round((($benefice - $prevBenefice) / $prevBenefice) * 100, 1) : null;
+            $totalDurationVar = ($prevTotalDuration && $prevTotalDuration > 0) ? round((($totalDuration - $prevTotalDuration) / $prevTotalDuration) * 100, 1) : null;
+            $avgDurationVar = ($prevAvgDuration && $prevAvgDuration > 0) ? round((($avgDuration - $prevAvgDuration) / $prevAvgDuration) * 100, 1) : null;
+
+            return [
+                'date' => $row->date,
+                'calls' => $calls,
+                'ca' => $ca,
+                'reverse' => $reverse,
+                'benefice' => $benefice,
+                'total_duration' => $totalDuration,
+                'avg_duration' => $avgDuration,
+                'prev_calls' => $prevCalls,
+                'prev_ca' => $prevCa,
+                'prev_reverse' => $prevReverse,
+                'prev_benefice' => $prevBenefice,
+                'prev_total_duration' => $prevTotalDuration,
+                'prev_avg_duration' => $prevAvgDuration,
+                'calls_var' => $callsVar,
+                'ca_var' => $caVar,
+                'reverse_var' => $reverseVar,
+                'benefice_var' => $beneficeVar,
+                'total_duration_var' => $totalDurationVar,
+                'avg_duration_var' => $avgDurationVar,
+            ];
+        });
 
         // Calculer les totaux
         $totals = [
@@ -109,45 +657,45 @@ class DashboardController extends Controller
     }
 
     /**
-     * Retourne les dates de début/fin pour une période donnée
+     * Options de filtres
      */
-    private function getPeriodDates(string $period): array
+    public function filterOptions(): JsonResponse
     {
-        return match ($period) {
-            'today' => [
-                today()->startOfDay(),
-                today()->endOfDay(),
-                today()->subDay()->startOfDay(),
-                today()->subDay()->endOfDay(),
-            ],
-            'this_week' => [
-                now()->startOfWeek(),
-                now()->endOfWeek(),
-                now()->subWeek()->startOfWeek(),
-                now()->subWeek()->endOfWeek(),
-            ],
-            'this_month' => [
-                now()->startOfMonth(),
-                now()->endOfMonth(),
-                now()->subMonth()->startOfMonth(),
-                now()->subMonth()->endOfMonth(),
-            ],
-            default => [
-                today()->startOfDay(),
-                today()->endOfDay(),
-                today()->subDay()->startOfDay(),
-                today()->subDay()->endOfDay(),
-            ],
-        };
+        return response()->json(\Cache::remember('dashboard_filter_options', 3600, function () {
+            return [
+                'brands' => Call::select('brand_name')
+                    ->distinct()
+                    ->whereNotNull('brand_name')
+                    ->where('brand_name', '!=', '')
+                    ->orderBy('brand_name')
+                    ->pluck('brand_name'),
+                'agents' => Call::select('agent_name')
+                    ->distinct()
+                    ->whereNotNull('agent_name')
+                    ->where('agent_name', '!=', '')
+                    ->orderBy('agent_name')
+                    ->pluck('agent_name'),
+                'callcenters' => \App\Models\Callcenter::select('id', 'name')
+                    ->where('enabled', true)
+                    ->orderBy('name')
+                    ->get(),
+                'carriers' => Call::select('carrier')
+                    ->distinct()
+                    ->whereNotNull('carrier')
+                    ->where('carrier', '!=', '')
+                    ->orderBy('carrier')
+                    ->pluck('carrier'),
+                'providers' => \App\Models\Provider::select('id', 'name')
+                    ->orderBy('name')
+                    ->get(),
+                'companies' => \App\Models\Company::select('id', 'name')
+                    ->orderBy('name')
+                    ->get(),
+                'sources' => \App\Models\Source::select('id', 'name')
+                    ->orderBy('name')
+                    ->get(),
+            ];
+        }));
     }
 
-    /**
-     * Example paginated + filterable table data.
-     * Replace with your actual model + query.
-     */
-    public function example(Request $request): JsonResponse
-    {
-        // ── Placeholder (remove once you wire up real data) ──────────────────
-        return response()->json(['items' => [], 'total' => 0]);
-    }
 }
