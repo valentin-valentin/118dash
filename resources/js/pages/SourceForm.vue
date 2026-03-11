@@ -144,7 +144,7 @@ function submit() {
                 <!-- Informations de base -->
                 <Card>
                     <CardHeader>
-                        <CardTitle>Informations de base</CardTitle>
+                        <CardTitle>Configuration</CardTitle>
                     </CardHeader>
                     <CardContent class="space-y-4">
                         <div class="grid gap-4 md:grid-cols-2">
