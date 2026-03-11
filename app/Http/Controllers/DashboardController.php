@@ -340,7 +340,7 @@ class DashboardController extends Controller
                 COALESCE(AVG(total_duration), 0) as avg_duration
             ')
             ->groupBy('brand_name')
-            ->havingRaw('COUNT(*) >= 3')
+            ->havingRaw('COUNT(*) >= 5')
             ->orderByDesc('benefice')
             ->get()
             ->map(function ($row) {
