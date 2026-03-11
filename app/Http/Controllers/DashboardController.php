@@ -188,29 +188,29 @@ class DashboardController extends Controller
 
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-                $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
-                $query->whereIn('called', $calledNumbers);
+                $query->whereHas('phonenumber', function ($q) use ($providers) {
+                    $q->whereIn('provider_id', $providers);
+                });
             }
 
             if ($request->filled('company_id')) {
                 $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-                $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
-                $query->whereIn('called', $calledNumbers);
+                $query->whereHas('phonenumber', function ($q) use ($companies) {
+                    $q->whereIn('company_id', $companies);
+                });
             }
 
             if ($request->filled('source_id')) {
                 $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
-                $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
-                $calledNumbers = [];
-                foreach ($providerCompanies as $pc) {
-                    $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
-                        ->where('company_id', $pc->company_id)
-                        ->pluck('phonenumber');
-                    $calledNumbers = array_merge($calledNumbers, $nums->toArray());
-                }
-                // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
-                $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
+                $query->where(function ($q) use ($sources) {
+                    $q->whereIn('source_id', $sources)
+                      ->orWhere(function ($sq) use ($sources) {
+                          $sq->whereNull('source_id')
+                             ->whereHas('phonenumber', function ($psq) use ($sources) {
+                                 $psq->whereIn('source_id', $sources);
+                             });
+                      });
+                });
             }
         };
 
@@ -316,29 +316,29 @@ class DashboardController extends Controller
 
         if ($request->filled('provider_id')) {
             $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-            $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
-            $query->whereIn('called', $calledNumbers);
+            $query->whereHas('phonenumber', function ($q) use ($providers) {
+                $q->whereIn('provider_id', $providers);
+            });
         }
 
         if ($request->filled('company_id')) {
             $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-            $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
-            $query->whereIn('called', $calledNumbers);
+            $query->whereHas('phonenumber', function ($q) use ($companies) {
+                $q->whereIn('company_id', $companies);
+            });
         }
 
         if ($request->filled('source_id')) {
             $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
-            $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
-            $calledNumbers = [];
-            foreach ($providerCompanies as $pc) {
-                $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
-                    ->where('company_id', $pc->company_id)
-                    ->pluck('phonenumber');
-                $calledNumbers = array_merge($calledNumbers, $nums->toArray());
-            }
-            // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
-            $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
+            $query->where(function ($q) use ($sources) {
+                $q->whereIn('source_id', $sources)
+                  ->orWhere(function ($sq) use ($sources) {
+                      $sq->whereNull('source_id')
+                         ->whereHas('phonenumber', function ($psq) use ($sources) {
+                             $psq->whereIn('source_id', $sources);
+                         });
+                  });
+            });
         }
 
         // Compter toutes les marques avec au moins un appel (pour le compteur)
@@ -430,38 +430,30 @@ class DashboardController extends Controller
         }
 
         if ($request->filled('provider_id')) {
-            // Via phonenumbers
             $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-            $phonenumberIds = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('id');
-            $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
-            $query->where(function ($q) use ($calledNumbers) {
-                $q->whereIn('called', $calledNumbers);
+            $query->whereHas('phonenumber', function ($q) use ($providers) {
+                $q->whereIn('provider_id', $providers);
             });
         }
 
         if ($request->filled('company_id')) {
-            // Via phonenumbers
             $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-            $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
-            $query->where(function ($q) use ($calledNumbers) {
-                $q->whereIn('called', $calledNumbers);
+            $query->whereHas('phonenumber', function ($q) use ($companies) {
+                $q->whereIn('company_id', $companies);
             });
         }
 
         if ($request->filled('source_id')) {
-            // Via source_provider_companies -> provider_companies -> phonenumbers
             $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
-            $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
-            $calledNumbers = [];
-            foreach ($providerCompanies as $pc) {
-                $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
-                    ->where('company_id', $pc->company_id)
-                    ->pluck('phonenumber');
-                $calledNumbers = array_merge($calledNumbers, $nums->toArray());
-            }
-            // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
-            $query->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
+            $query->where(function ($q) use ($sources) {
+                $q->whereIn('source_id', $sources)
+                  ->orWhere(function ($sq) use ($sources) {
+                      $sq->whereNull('source_id')
+                         ->whereHas('phonenumber', function ($psq) use ($sources) {
+                             $psq->whereIn('source_id', $sources);
+                         });
+                  });
+            });
         }
 
         // Détecter si on est sur un jour en cours (pas terminé)
@@ -509,33 +501,29 @@ class DashboardController extends Controller
 
         if ($request->filled('provider_id')) {
             $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-            $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
-            $previousQuery->where(function ($q) use ($calledNumbers) {
-                $q->whereIn('called', $calledNumbers);
+            $previousQuery->whereHas('phonenumber', function ($q) use ($providers) {
+                $q->whereIn('provider_id', $providers);
             });
         }
 
         if ($request->filled('company_id')) {
             $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-            $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
-            $previousQuery->where(function ($q) use ($calledNumbers) {
-                $q->whereIn('called', $calledNumbers);
+            $previousQuery->whereHas('phonenumber', function ($q) use ($companies) {
+                $q->whereIn('company_id', $companies);
             });
         }
 
         if ($request->filled('source_id')) {
             $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-            $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
-            $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
-            $calledNumbers = [];
-            foreach ($providerCompanies as $pc) {
-                $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
-                    ->where('company_id', $pc->company_id)
-                    ->pluck('phonenumber');
-                $calledNumbers = array_merge($calledNumbers, $nums->toArray());
-            }
-            // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
-            $previousQuery->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
+            $previousQuery->where(function ($q) use ($sources) {
+                $q->whereIn('source_id', $sources)
+                  ->orWhere(function ($sq) use ($sources) {
+                      $sq->whereNull('source_id')
+                         ->whereHas('phonenumber', function ($psq) use ($sources) {
+                             $psq->whereIn('source_id', $sources);
+                         });
+                  });
+            });
         }
 
         $previousDaily = $previousQuery->whereBetween('called_at', [$previousMonthStart, $previousMonthEnd])
@@ -584,33 +572,29 @@ class DashboardController extends Controller
 
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
-                $calledNumbers = \App\Models\Phonenumber::whereIn('provider_id', $providers)->pluck('phonenumber');
-                $todayPreviousQuery->where(function ($q) use ($calledNumbers) {
-                    $q->whereIn('called', $calledNumbers);
+                $todayPreviousQuery->whereHas('phonenumber', function ($q) use ($providers) {
+                    $q->whereIn('provider_id', $providers);
                 });
             }
 
             if ($request->filled('company_id')) {
                 $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
-                $calledNumbers = \App\Models\Phonenumber::whereIn('company_id', $companies)->pluck('phonenumber');
-                $todayPreviousQuery->where(function ($q) use ($calledNumbers) {
-                    $q->whereIn('called', $calledNumbers);
+                $todayPreviousQuery->whereHas('phonenumber', function ($q) use ($companies) {
+                    $q->whereIn('company_id', $companies);
                 });
             }
 
             if ($request->filled('source_id')) {
                 $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
-                $providerCompanyIds = \App\Models\SourceProviderCompany::whereIn('source_id', $sources)->pluck('providers_companies_id');
-                $providerCompanies = \App\Models\ProviderCompany::whereIn('id', $providerCompanyIds)->get();
-                $calledNumbers = [];
-                foreach ($providerCompanies as $pc) {
-                    $nums = \App\Models\Phonenumber::where('provider_id', $pc->provider_id)
-                        ->where('company_id', $pc->company_id)
-                        ->pluck('phonenumber');
-                    $calledNumbers = array_merge($calledNumbers, $nums->toArray());
-                }
-                // Si aucun numéro trouvé, forcer un résultat vide au lieu de tout afficher
-                $todayPreviousQuery->whereIn('called', !empty($calledNumbers) ? $calledNumbers : [-1]);
+                $todayPreviousQuery->where(function ($q) use ($sources) {
+                    $q->whereIn('source_id', $sources)
+                      ->orWhere(function ($sq) use ($sources) {
+                          $sq->whereNull('source_id')
+                             ->whereHas('phonenumber', function ($psq) use ($sources) {
+                                 $psq->whereIn('source_id', $sources);
+                             });
+                      });
+                });
             }
 
             $todayHourComparison = $todayPreviousQuery

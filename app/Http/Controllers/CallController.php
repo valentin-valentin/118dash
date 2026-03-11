@@ -213,7 +213,7 @@ class CallController extends Controller
             } elseif ($request->blacklist_id === 'none') {
                 $query->whereNull('blacklist_id');
             } else {
-                $query->where('blacklist_id', $request->blacklist_id);
+                $query->where('blacklist_id', (int) $request->blacklist_id);
             }
         }
 
