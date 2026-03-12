@@ -151,7 +151,7 @@ class PhonenumberController extends Controller
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'id';
         $dir = $request->dir === 'desc' ? 'desc' : 'asc';
 
-        $perPage = min($request->input('per_page', 50), 200);
+        $perPage = min($request->input('per_page', 50), 1000);
         $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
 
         return response()->json([
