@@ -222,7 +222,7 @@ class CallController extends Controller
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'called_at';
         $dir = $request->dir === 'asc' ? 'asc' : 'desc';
 
-        $perPage = min($request->input('per_page', 50), 100); // Max 100 par page
+        $perPage = min($request->input('per_page', 50), 1000); // Max 1000 par page
 
         // Si pas de filtres, utiliser simplePaginate pour éviter le COUNT() coûteux
         if (!$hasFilters) {
