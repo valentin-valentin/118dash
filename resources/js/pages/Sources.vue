@@ -63,19 +63,27 @@ function getAssociationStats(associations) {
 }
 
 // Formater les minutes en format lisible
-function formatDuration(minutes) {
-    if (!minutes) return '-'
+function formatDuration(minutes, defaultValue = null) {
+    const actualMinutes = minutes || defaultValue
+    if (!actualMinutes) return '-'
 
-    const days = Math.floor(minutes / 1440)
-    const hours = Math.floor((minutes % 1440) / 60)
-    const mins = minutes % 60
+    const days = Math.floor(actualMinutes / 1440)
+    const hours = Math.floor((actualMinutes % 1440) / 60)
+    const mins = actualMinutes % 60
 
     const parts = []
     if (days > 0) parts.push(`${days}j`)
     if (hours > 0) parts.push(`${hours}h`)
     if (mins > 0 && days === 0) parts.push(`${mins}m`)
 
-    return parts.length > 0 ? parts.join(' ') : '-'
+    const result = parts.length > 0 ? parts.join(' ') : '-'
+
+    // Si on utilise la valeur par défaut, l'indiquer
+    if (!minutes && defaultValue) {
+        return `${result} (défaut)`
+    }
+
+    return result
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -162,14 +170,14 @@ onMounted(() => {
                     </template>
 
                     <template #display_duration_minutes="{ value }">
-                        <span class="text-sm text-gray-700">
-                            {{ formatDuration(value) }}
+                        <span class="text-sm" :class="value ? 'text-gray-700' : 'text-gray-500 italic'">
+                            {{ formatDuration(value, table.data?.default_display_duration) }}
                         </span>
                     </template>
 
                     <template #real_duration_minutes="{ value }">
-                        <span class="text-sm text-gray-700">
-                            {{ formatDuration(value) }}
+                        <span class="text-sm" :class="value ? 'text-gray-700' : 'text-gray-500 italic'">
+                            {{ formatDuration(value, table.data?.default_real_duration) }}
                         </span>
                     </template>
 

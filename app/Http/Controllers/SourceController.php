@@ -23,6 +23,8 @@ class SourceController extends Controller
         return Inertia::render('SourceForm', [
             'source' => null,
             'availableProviderCompanies' => $this->getAvailableProviderCompanies(),
+            'defaultDisplayDuration' => config('voxnode.assignment.display_duration_minutes'),
+            'defaultRealDuration' => config('voxnode.assignment.real_duration_minutes'),
         ]);
     }
 
@@ -82,6 +84,8 @@ class SourceController extends Controller
         return Inertia::render('SourceForm', [
             'source' => $source,
             'availableProviderCompanies' => $this->getAvailableProviderCompanies(),
+            'defaultDisplayDuration' => config('voxnode.assignment.display_duration_minutes'),
+            'defaultRealDuration' => config('voxnode.assignment.real_duration_minutes'),
         ]);
     }
 
@@ -185,6 +189,8 @@ class SourceController extends Controller
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
+            'default_display_duration' => config('voxnode.assignment.display_duration_minutes'),
+            'default_real_duration' => config('voxnode.assignment.real_duration_minutes'),
         ]);
     }
 

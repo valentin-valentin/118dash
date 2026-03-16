@@ -20,6 +20,14 @@ const props = defineProps({
         type: Array,
         required: true,
     },
+    defaultDisplayDuration: {
+        type: Number,
+        required: true,
+    },
+    defaultRealDuration: {
+        type: Number,
+        required: true,
+    },
 })
 
 const isEdit = computed(() => !!props.source)
@@ -60,6 +68,30 @@ const durationShortcuts = [
 function setDuration(field, minutes) {
     form[field] = minutes
 }
+
+// Formater les minutes en format lisible pour les placeholders
+function formatDurationForPlaceholder(minutes) {
+    if (!minutes) return ''
+
+    const days = Math.floor(minutes / 1440)
+    const hours = Math.floor((minutes % 1440) / 60)
+    const mins = minutes % 60
+
+    const parts = []
+    if (days > 0) parts.push(`${days}j`)
+    if (hours > 0) parts.push(`${hours}h`)
+    if (mins > 0 && days === 0) parts.push(`${mins}m`)
+
+    return parts.length > 0 ? parts.join(' ') : ''
+}
+
+const displayDurationPlaceholder = computed(() =>
+    `Défaut: ${formatDurationForPlaceholder(props.defaultDisplayDuration)} (${props.defaultDisplayDuration} min)`
+)
+
+const realDurationPlaceholder = computed(() =>
+    `Défaut: ${formatDurationForPlaceholder(props.defaultRealDuration)} (${props.defaultRealDuration} min)`
+)
 
 // Calculer le total des weights
 const totalWeight = computed(() => {
@@ -283,7 +315,7 @@ function submit() {
                                     v-model.number="form.display_duration_minutes"
                                     type="number"
                                     min="1"
-                                    placeholder="Défaut: config voxnode"
+                                    :placeholder="displayDurationPlaceholder"
                                     :class="{ 'border-red-500': form.errors.display_duration_minutes }"
                                 />
                                 <div class="flex flex-wrap gap-1">
@@ -298,7 +330,7 @@ function submit() {
                                     </button>
                                 </div>
                                 <p class="text-xs text-gray-500">
-                                    Si vide, utilise config('voxnode.assignment.display_duration_minutes')
+                                    Si vide, utilise la valeur par défaut: {{ displayDurationPlaceholder }}
                                 </p>
                                 <p v-if="form.errors.display_duration_minutes" class="text-sm text-red-600">
                                     {{ form.errors.display_duration_minutes }}
@@ -312,7 +344,7 @@ function submit() {
                                     v-model.number="form.real_duration_minutes"
                                     type="number"
                                     min="1"
-                                    placeholder="Défaut: config voxnode"
+                                    :placeholder="realDurationPlaceholder"
                                     :class="{ 'border-red-500': form.errors.real_duration_minutes }"
                                 />
                                 <div class="flex flex-wrap gap-1">
@@ -327,7 +359,7 @@ function submit() {
                                     </button>
                                 </div>
                                 <p class="text-xs text-gray-500">
-                                    Si vide, utilise config réelle d'expiration
+                                    Si vide, utilise la valeur par défaut: {{ realDurationPlaceholder }}
                                 </p>
                                 <p v-if="form.errors.real_duration_minutes" class="text-sm text-red-600">
                                     {{ form.errors.real_duration_minutes }}
