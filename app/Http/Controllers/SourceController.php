@@ -37,6 +37,8 @@ class SourceController extends Controller
             'max_concurrent_numbers' => 'nullable|integer|min:1',
             'payout_call' => 'nullable|numeric',
             'payout_minute' => 'nullable|numeric',
+            'display_duration_minutes' => 'nullable|integer|min:1',
+            'real_duration_minutes' => 'nullable|integer|min:1',
             'associations' => 'nullable|array',
             'associations.*.providers_companies_id' => 'required|exists:providers_companies,id',
             'associations.*.weight' => 'required|integer|min:1',
@@ -53,6 +55,8 @@ class SourceController extends Controller
                 'max_concurrent_numbers' => $validated['max_concurrent_numbers'] ?? null,
                 'payout_call' => $validated['payout_call'] ?? null,
                 'payout_minute' => $validated['payout_minute'] ?? null,
+                'display_duration_minutes' => $validated['display_duration_minutes'] ?? null,
+                'real_duration_minutes' => $validated['real_duration_minutes'] ?? null,
             ]);
 
             if (!empty($validated['associations'])) {
@@ -92,6 +96,8 @@ class SourceController extends Controller
             'max_concurrent_numbers' => 'nullable|integer|min:1',
             'payout_call' => 'nullable|numeric',
             'payout_minute' => 'nullable|numeric',
+            'display_duration_minutes' => 'nullable|integer|min:1',
+            'real_duration_minutes' => 'nullable|integer|min:1',
             'associations' => 'nullable|array',
             'associations.*.providers_companies_id' => 'required|exists:providers_companies,id',
             'associations.*.weight' => 'required|integer|min:1',
@@ -108,6 +114,8 @@ class SourceController extends Controller
                 'max_concurrent_numbers' => $validated['max_concurrent_numbers'] ?? null,
                 'payout_call' => $validated['payout_call'] ?? null,
                 'payout_minute' => $validated['payout_minute'] ?? null,
+                'display_duration_minutes' => $validated['display_duration_minutes'] ?? null,
+                'real_duration_minutes' => $validated['real_duration_minutes'] ?? null,
             ]);
 
             // Supprimer les anciennes associations

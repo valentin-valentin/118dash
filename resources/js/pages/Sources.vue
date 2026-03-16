@@ -46,6 +46,8 @@ const columns = [
     { key: 'name', label: 'Nom', sortable: true },
     { key: 'fingerprint', label: 'Fingerprint' },
     { key: 'only_dedicated_phonenumber', label: 'Numéro dédié' },
+    { key: 'display_duration_minutes', label: 'Durée affichage' },
+    { key: 'real_duration_minutes', label: 'Durée réelle' },
     { key: 'total_assignable', label: 'Numéros assignables' },
     { key: 'associations', label: 'Répartition' },
     { key: 'actions', label: 'Actions' },
@@ -58,6 +60,22 @@ function getAssociationStats(associations) {
         ...assoc,
         percentage: total > 0 ? ((assoc.weight / total) * 100).toFixed(1) : 0,
     }))
+}
+
+// Formater les minutes en format lisible
+function formatDuration(minutes) {
+    if (!minutes) return '-'
+
+    const days = Math.floor(minutes / 1440)
+    const hours = Math.floor((minutes % 1440) / 60)
+    const mins = minutes % 60
+
+    const parts = []
+    if (days > 0) parts.push(`${days}j`)
+    if (hours > 0) parts.push(`${hours}h`)
+    if (mins > 0 && days === 0) parts.push(`${mins}m`)
+
+    return parts.length > 0 ? parts.join(' ') : '-'
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -141,6 +159,18 @@ onMounted(() => {
                     <template #only_dedicated_phonenumber="{ value }">
                         <Check v-if="value" class="h-4 w-4 text-green-600" />
                         <X v-else class="h-4 w-4 text-gray-400" />
+                    </template>
+
+                    <template #display_duration_minutes="{ value }">
+                        <span class="text-sm text-gray-700">
+                            {{ formatDuration(value) }}
+                        </span>
+                    </template>
+
+                    <template #real_duration_minutes="{ value }">
+                        <span class="text-sm text-gray-700">
+                            {{ formatDuration(value) }}
+                        </span>
                     </template>
 
                     <template #total_assignable="{ row }">

@@ -42,8 +42,24 @@ const form = useForm({
     max_concurrent_numbers: props.source?.max_concurrent_numbers || null,
     payout_call: props.source?.payout_call || '',
     payout_minute: props.source?.payout_minute || '',
+    display_duration_minutes: props.source?.display_duration_minutes || '',
+    real_duration_minutes: props.source?.real_duration_minutes || '',
     associations: initialAssociations.length > 0 ? initialAssociations : [],
 })
+
+// Raccourcis de durée (en minutes)
+const durationShortcuts = [
+    { label: '2h', value: 120 },
+    { label: '4h', value: 240 },
+    { label: '8h', value: 480 },
+    { label: '12h', value: 720 },
+    { label: '24h', value: 1440 },
+    { label: '6j', value: 8640 },
+]
+
+function setDuration(field, minutes) {
+    form[field] = minutes
+}
 
 // Calculer le total des weights
 const totalWeight = computed(() => {
@@ -254,6 +270,67 @@ function submit() {
                                 />
                                 <p v-if="form.errors.payout_minute" class="text-sm text-red-600">
                                     {{ form.errors.payout_minute }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Durées d'affichage et d'expiration -->
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div class="space-y-2">
+                                <Label for="display_duration_minutes">Durée d'affichage (minutes)</Label>
+                                <Input
+                                    id="display_duration_minutes"
+                                    v-model.number="form.display_duration_minutes"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Défaut: config voxnode"
+                                    :class="{ 'border-red-500': form.errors.display_duration_minutes }"
+                                />
+                                <div class="flex flex-wrap gap-1">
+                                    <button
+                                        v-for="shortcut in durationShortcuts"
+                                        :key="shortcut.value"
+                                        type="button"
+                                        @click="setDuration('display_duration_minutes', shortcut.value)"
+                                        class="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
+                                    >
+                                        {{ shortcut.label }}
+                                    </button>
+                                </div>
+                                <p class="text-xs text-gray-500">
+                                    Si vide, utilise config('voxnode.assignment.display_duration_minutes')
+                                </p>
+                                <p v-if="form.errors.display_duration_minutes" class="text-sm text-red-600">
+                                    {{ form.errors.display_duration_minutes }}
+                                </p>
+                            </div>
+
+                            <div class="space-y-2">
+                                <Label for="real_duration_minutes">Durée réelle d'expiration (minutes)</Label>
+                                <Input
+                                    id="real_duration_minutes"
+                                    v-model.number="form.real_duration_minutes"
+                                    type="number"
+                                    min="1"
+                                    placeholder="Défaut: config voxnode"
+                                    :class="{ 'border-red-500': form.errors.real_duration_minutes }"
+                                />
+                                <div class="flex flex-wrap gap-1">
+                                    <button
+                                        v-for="shortcut in durationShortcuts"
+                                        :key="shortcut.value"
+                                        type="button"
+                                        @click="setDuration('real_duration_minutes', shortcut.value)"
+                                        class="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
+                                    >
+                                        {{ shortcut.label }}
+                                    </button>
+                                </div>
+                                <p class="text-xs text-gray-500">
+                                    Si vide, utilise config réelle d'expiration
+                                </p>
+                                <p v-if="form.errors.real_duration_minutes" class="text-sm text-red-600">
+                                    {{ form.errors.real_duration_minutes }}
                                 </p>
                             </div>
                         </div>
