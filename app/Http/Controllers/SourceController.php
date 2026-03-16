@@ -20,11 +20,13 @@ class SourceController extends Controller
 
     public function create(): Response
     {
+        $defaults = $this->getAssignmentDefaults();
+
         return Inertia::render('SourceForm', [
             'source' => null,
             'availableProviderCompanies' => $this->getAvailableProviderCompanies(),
-            'defaultDisplayDuration' => config('voxnode.assignment.display_duration_minutes'),
-            'defaultRealDuration' => config('voxnode.assignment.real_duration_minutes'),
+            'defaultDisplayDuration' => $defaults['display_duration_minutes'],
+            'defaultRealDuration' => $defaults['real_duration_minutes'],
         ]);
     }
 
@@ -80,12 +82,13 @@ class SourceController extends Controller
     public function edit(Source $source): Response
     {
         $source->load(['sourceProviderCompanies.providerCompany.provider', 'sourceProviderCompanies.providerCompany.company']);
+        $defaults = $this->getAssignmentDefaults();
 
         return Inertia::render('SourceForm', [
             'source' => $source,
             'availableProviderCompanies' => $this->getAvailableProviderCompanies(),
-            'defaultDisplayDuration' => config('voxnode.assignment.display_duration_minutes'),
-            'defaultRealDuration' => config('voxnode.assignment.real_duration_minutes'),
+            'defaultDisplayDuration' => $defaults['display_duration_minutes'],
+            'defaultRealDuration' => $defaults['real_duration_minutes'],
         ]);
     }
 
@@ -183,14 +186,16 @@ class SourceController extends Controller
             $source->total_assignable = $totalAssignable;
         }
 
+        $defaults = $this->getAssignmentDefaults();
+
         return response()->json([
             'items' => $items,
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
-            'default_display_duration' => config('voxnode.assignment.display_duration_minutes'),
-            'default_real_duration' => config('voxnode.assignment.real_duration_minutes'),
+            'default_display_duration' => $defaults['display_duration_minutes'],
+            'default_real_duration' => $defaults['real_duration_minutes'],
         ]);
     }
 
@@ -217,5 +222,25 @@ class SourceController extends Controller
                 ];
             })
             ->toArray();
+    }
+
+    private function getAssignmentDefaults(): array
+    {
+        return \Cache::remember('assignment_defaults', 3600, function () {
+            try {
+                $response = \Http::get('http://api.118.ae/api/assignment-defaults');
+                if ($response->successful()) {
+                    return $response->json();
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Failed to fetch assignment defaults: ' . $e->getMessage());
+            }
+
+            // Valeurs par défaut en cas d'erreur
+            return [
+                'display_duration_minutes' => 20,
+                'real_duration_minutes' => 40,
+            ];
+        });
     }
 }
