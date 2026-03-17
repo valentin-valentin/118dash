@@ -271,21 +271,21 @@ onMounted(() => {
                                 <td class="px-3 py-2 text-left font-bold text-gray-900">Total</td>
                                 <td class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.calls) }}</div>
-                                    <div v-if="daily.data.totals.prev_calls !== null" class="text-xs text-gray-500">
+                                    <!-- <div v-if="daily.data.totals.prev_calls !== null" class="text-xs text-gray-500">
                                         {{ formatNumber(daily.data.totals.prev_calls) }}
                                         <span v-if="daily.data.totals.calls_var !== null" :class="daily.data.totals.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                             ({{ daily.data.totals.calls_var >= 0 ? '+' : '' }}{{ daily.data.totals.calls_var }}%)
                                         </span>
-                                    </div>
+                                    </div> -->
                                 </td>
                                 <td class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-bold">{{ formatCurrency(daily.data.totals.reverse) }} €</div>
-                                    <div v-if="daily.data.totals.prev_reverse !== null" class="text-xs text-gray-500">
+                                    <!-- <div v-if="daily.data.totals.prev_reverse !== null" class="text-xs text-gray-500">
                                         {{ formatCurrency(daily.data.totals.prev_reverse) }} €
                                         <span v-if="daily.data.totals.reverse_var !== null" :class="daily.data.totals.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                             ({{ daily.data.totals.reverse_var >= 0 ? '+' : '' }}{{ daily.data.totals.reverse_var }}%)
                                         </span>
-                                    </div>
+                                    </div> -->
                                 </td>
                             </tr>
 
@@ -313,25 +313,25 @@ onMounted(() => {
                                 >
                                     <td class="px-3 py-1.5 text-sm">
                                         <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
-                                        <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ row.comparison_label }}</div>
+                                        <!-- <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ row.comparison_label }}</div> -->
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.calls) }}</div>
-                                        <div v-if="row.prev_calls !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                        <!-- <div v-if="row.prev_calls !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatNumber(row.prev_calls) }}
                                             <span :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
                                             </span>
-                                        </div>
+                                        </div> -->
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'font-bold text-gray-400' : 'font-bold text-gray-900'">{{ formatCurrency(row.reverse) }} €</div>
-                                        <div v-if="row.prev_reverse !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                        <!-- <div v-if="row.prev_reverse !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_reverse) }} €
                                             <span :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.reverse_var >= 0 ? '+' : '' }}{{ row.reverse_var }}%)
                                             </span>
-                                        </div>
+                                        </div> -->
                                     </td>
                                 </tr>
                             </template>
@@ -356,9 +356,9 @@ onMounted(() => {
                         <DialogTitle class="text-base font-bold">
                             {{ hourly.data?.date_label || 'Détail de la journée' }}
                         </DialogTitle>
-                        <p class="text-xs text-gray-500">
+                        <!-- <p class="text-xs text-gray-500">
                             Comparaison avec {{ hourly.data?.comparison_label || '' }}
-                        </p>
+                        </p> -->
                     </div>
 
                 <!-- Totals de la journée -->
@@ -367,22 +367,22 @@ onMounted(() => {
                         <div>
                             <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Appels</div>
                             <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatNumber(hourly.data.totals.calls) }}</div>
-                            <div v-if="hourly.data.totals.prev_calls !== null" class="text-[11px] text-gray-500">
+                            <!-- <div v-if="hourly.data.totals.prev_calls !== null" class="text-[11px] text-gray-500">
                                 {{ formatNumber(hourly.data.totals.prev_calls) }}
                                 <span v-if="hourly.data.totals.calls_var !== null" :class="hourly.data.totals.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.calls_var >= 0 ? '+' : '' }}{{ hourly.data.totals.calls_var }}%)
                                 </span>
-                            </div>
+                            </div> -->
                         </div>
                         <div>
                             <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Reverse</div>
                             <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatCurrency(hourly.data.totals.reverse) }} €</div>
-                            <div v-if="hourly.data.totals.prev_reverse !== null" class="text-[11px] text-gray-500">
+                            <!-- <div v-if="hourly.data.totals.prev_reverse !== null" class="text-[11px] text-gray-500">
                                 {{ formatCurrency(hourly.data.totals.prev_reverse) }} €
                                 <span v-if="hourly.data.totals.reverse_var !== null" :class="hourly.data.totals.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.reverse_var >= 0 ? '+' : '' }}{{ hourly.data.totals.reverse_var }}%)
                                 </span>
-                            </div>
+                            </div> -->
                         </div>
                     </div>
                 </div>
@@ -426,21 +426,21 @@ onMounted(() => {
                                     </td>
                                     <td class="px-3 py-1 text-right text-sm">
                                         <div class="text-gray-900">{{ formatNumber(row.calls) }}</div>
-                                        <div v-if="row.prev_calls !== null" class="text-xs text-gray-500">
+                                        <!-- <div v-if="row.prev_calls !== null" class="text-xs text-gray-500">
                                             {{ formatNumber(row.prev_calls) }}
                                             <span v-if="row.calls_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour, hourly.data.current_hour))" :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
                                             </span>
-                                        </div>
+                                        </div> -->
                                     </td>
                                     <td class="px-6 py-1 text-right text-sm">
                                         <div class="font-bold text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
-                                        <div v-if="row.prev_reverse !== null" class="text-xs text-gray-500">
+                                        <!-- <div v-if="row.prev_reverse !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_reverse) }} €
                                             <span v-if="row.reverse_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour, hourly.data.current_hour))" :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.reverse_var >= 0 ? '+' : '' }}{{ row.reverse_var }}%)
                                             </span>
-                                        </div>
+                                        </div> -->
                                     </td>
                                 </tr>
                             </template>
