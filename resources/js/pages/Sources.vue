@@ -107,18 +107,30 @@ function openPartnerUrlModal() {
 async function generateUrl() {
     if (selectedSourceIds.value.length === 0) return
 
-    const response = await fetch('/data/sources/generate-partner-url', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-        },
-        body: JSON.stringify({ source_ids: selectedSourceIds.value })
-    })
+    try {
+        const response = await fetch('/data/sources/generate-partner-url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+            },
+            body: JSON.stringify({ source_ids: selectedSourceIds.value })
+        })
 
-    const data = await response.json()
-    if (data.url) {
-        generatedPartnerUrl.value = data.url
+        if (!response.ok) {
+            throw new Error('Network response was not ok')
+        }
+
+        const data = await response.json()
+        console.log('Received data:', data)
+
+        if (data && data.url) {
+            generatedPartnerUrl.value = data.url
+            console.log('URL set to:', generatedPartnerUrl.value)
+        }
+    } catch (error) {
+        console.error('Error generating URL:', error)
+        alert('Erreur lors de la génération de l\'URL')
     }
 }
 

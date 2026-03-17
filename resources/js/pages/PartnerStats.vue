@@ -210,15 +210,7 @@ onMounted(() => {
     <Head title="Statistiques Partenaire" />
 
     <div class="min-h-screen bg-gray-50">
-        <!-- Header -->
-        <div class="bg-white border-b border-gray-200">
-            <div class="px-6 py-4">
-                <h1 class="text-xl font-bold text-gray-900">Statistiques - {{ sourceTitle }}</h1>
-                <p class="text-sm text-gray-500 mt-1">Vue partenaire</p>
-            </div>
-        </div>
-
-        <div class="max-w-7xl mx-auto p-6 space-y-6">
+        <div class="max-w-4xl mx-auto p-6 space-y-4">
             <!-- Filtres -->
             <FilterBar
                 :has-active-filters="hasFilters"
