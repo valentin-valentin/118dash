@@ -246,6 +246,27 @@ function closeHourlyView() {
     selectedDate.value = null
 }
 
+// ─── Check if hour is current/future ──────────────────────────────────────────
+function isToday(dateString) {
+    const date = new Date(dateString)
+    const today = new Date()
+    return date.toDateString() === today.toDateString()
+}
+
+function getCurrentHour() {
+    return new Date().getHours()
+}
+
+function isCurrentHour(hourString) {
+    const hour = parseInt(hourString.split('h')[0])
+    return hour === getCurrentHour()
+}
+
+function isFutureHour(hourString) {
+    const hour = parseInt(hourString.split('h')[0])
+    return hour > getCurrentHour()
+}
+
 // ─── Watch period changes (KPIs only) ─────────────────────────────────────────
 watch(period, () => {
     stats.load({ period: period.value })
@@ -806,14 +827,23 @@ onMounted(() => {
                                 <tr
                                     v-for="(row, i) in hourly.data.items"
                                     :key="i"
-                                    class="border-b border-gray-50 hover:bg-gray-50"
+                                    :class="[
+                                        'border-b border-gray-50',
+                                        isToday(hourly.data.date) && isCurrentHour(row.hour)
+                                            ? 'bg-blue-50 hover:bg-blue-100'
+                                            : isToday(hourly.data.date) && isFutureHour(row.hour)
+                                            ? 'bg-gray-50 opacity-50'
+                                            : 'hover:bg-gray-50'
+                                    ]"
                                 >
-                                    <td class="px-3 py-1.5 text-sm font-medium text-gray-900">{{ row.hour }}</td>
+                                    <td class="px-3 py-1.5 text-sm font-medium" :class="isToday(hourly.data.date) && isCurrentHour(row.hour) ? 'text-blue-900' : 'text-gray-900'">
+                                        {{ row.hour }}
+                                    </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div class="text-gray-900">{{ formatNumber(row.calls) }}</div>
                                         <div v-if="row.prev_calls !== null" class="text-xs text-gray-500">
                                             {{ formatNumber(row.prev_calls) }}
-                                            <span v-if="row.calls_var !== null" :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            <span v-if="row.calls_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour))" :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
                                             </span>
                                         </div>
@@ -822,7 +852,7 @@ onMounted(() => {
                                         <div class="text-gray-900">{{ formatDurationTotal(row.total_duration) }}</div>
                                         <div v-if="row.prev_total_duration !== null" class="text-xs text-gray-500">
                                             {{ formatDurationTotal(row.prev_total_duration) }}
-                                            <span v-if="row.total_duration_var !== null" :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            <span v-if="row.total_duration_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour))" :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.total_duration_var >= 0 ? '+' : '' }}{{ row.total_duration_var }}%)
                                             </span>
                                         </div>
@@ -831,7 +861,7 @@ onMounted(() => {
                                         <div class="text-gray-900">{{ formatDuration(row.avg_duration) }}</div>
                                         <div v-if="row.prev_avg_duration !== null" class="text-xs text-gray-500">
                                             {{ formatDuration(row.prev_avg_duration) }}
-                                            <span v-if="row.avg_duration_var !== null" :class="row.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            <span v-if="row.avg_duration_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour))" :class="row.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.avg_duration_var >= 0 ? '+' : '' }}{{ row.avg_duration_var }}%)
                                             </span>
                                         </div>
@@ -840,7 +870,7 @@ onMounted(() => {
                                         <div class="text-gray-900">{{ formatCurrency(row.ca) }} €</div>
                                         <div v-if="row.prev_ca !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_ca) }} €
-                                            <span v-if="row.ca_var !== null" :class="row.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            <span v-if="row.ca_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour))" :class="row.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.ca_var >= 0 ? '+' : '' }}{{ row.ca_var }}%)
                                             </span>
                                         </div>
@@ -849,7 +879,7 @@ onMounted(() => {
                                         <div class="text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
                                         <div v-if="row.prev_reverse !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_reverse) }} €
-                                            <span v-if="row.reverse_var !== null" :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            <span v-if="row.reverse_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour))" :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.reverse_var >= 0 ? '+' : '' }}{{ row.reverse_var }}%)
                                             </span>
                                         </div>
@@ -858,7 +888,7 @@ onMounted(() => {
                                         <div class="font-bold text-gray-900">{{ formatCurrency(row.benefice) }} €</div>
                                         <div v-if="row.prev_benefice !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_benefice) }} €
-                                            <span v-if="row.benefice_var !== null" :class="row.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            <span v-if="row.benefice_var !== null && !(isToday(hourly.data.date) && isFutureHour(row.hour))" :class="row.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                                 ({{ row.benefice_var >= 0 ? '+' : '' }}{{ row.benefice_var }}%)
                                             </span>
                                         </div>
