@@ -120,15 +120,6 @@ function openPartnerUrlModal() {
     showPartnerUrlModal.value = true
 }
 
-function toggleSourceSelection(sourceId) {
-    const index = selectedSourceIds.value.indexOf(sourceId)
-    if (index > -1) {
-        selectedSourceIds.value.splice(index, 1)
-    } else {
-        selectedSourceIds.value.push(sourceId)
-    }
-}
-
 function generateUrl() {
     if (selectedSourceIds.value.length === 0) return
 
@@ -339,7 +330,14 @@ onMounted(() => {
                                     <Checkbox
                                         :id="`source-${source.id}`"
                                         :checked="selectedSourceIds.includes(source.id)"
-                                        @update:checked="() => toggleSourceSelection(source.id)"
+                                        @update:checked="(checked) => {
+                                            if (checked && !selectedSourceIds.includes(source.id)) {
+                                                selectedSourceIds.push(source.id)
+                                            } else if (!checked && selectedSourceIds.includes(source.id)) {
+                                                const index = selectedSourceIds.indexOf(source.id)
+                                                selectedSourceIds.splice(index, 1)
+                                            }
+                                        }"
                                     />
                                     <label
                                         :for="`source-${source.id}`"

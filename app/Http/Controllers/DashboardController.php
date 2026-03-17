@@ -743,8 +743,8 @@ class DashboardController extends Controller
             return $query;
         };
 
-        // Générer les heures de 9h à 20h (inclus)
-        $hours = range(9, 20);
+        // Générer les heures de 0h à 23h (toute la journée)
+        $hours = range(0, 23);
         $hourlyData = [];
 
         foreach ($hours as $hour) {
@@ -828,10 +828,10 @@ class DashboardController extends Controller
             ];
         }
 
-        // Calculer les totaux de la journée (9h-20h59) en interrogeant directement la base
+        // Calculer les totaux de la journée (0h-23h59) en interrogeant directement la base
         // Convertir en UTC pour la requête
-        $dayStart = $currentDate->copy()->setTime(9, 0, 0)->utc();
-        $dayEnd = $currentDate->copy()->setTime(20, 59, 59)->utc();
+        $dayStart = $currentDate->copy()->startOfDay()->utc();
+        $dayEnd = $currentDate->copy()->endOfDay()->utc();
 
         $totalQuery = Call::query();
         $applyFilters($totalQuery);
@@ -853,9 +853,9 @@ class DashboardController extends Controller
         $totalDuration = $totalStats ? (int) $totalStats->total_duration : 0;
         $avgDuration = $totalStats ? round((float) $totalStats->avg_duration) : 0;
 
-        // Totaux semaine précédente (9h-20h59) - convertir en UTC
-        $prevDayStart = $previousWeekDate->copy()->setTime(9, 0, 0)->utc();
-        $prevDayEnd = $previousWeekDate->copy()->setTime(20, 59, 59)->utc();
+        // Totaux semaine précédente (0h-23h59) - convertir en UTC
+        $prevDayStart = $previousWeekDate->copy()->startOfDay()->utc();
+        $prevDayEnd = $previousWeekDate->copy()->endOfDay()->utc();
 
         $prevTotalQuery = Call::query();
         $applyFilters($prevTotalQuery);

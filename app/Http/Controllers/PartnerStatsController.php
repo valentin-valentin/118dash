@@ -206,14 +206,14 @@ class PartnerStatsController extends Controller
             $query->whereIn('source_id', $selectedSources);
         };
 
-        // Générer les heures 9-20
-        $hours = range(9, 20);
+        // Générer les heures 0-23 (toute la journée)
+        $hours = range(0, 23);
         $hourlyData = [];
 
         foreach ($hours as $hour) {
             // Créer les dates en Europe/Paris puis convertir en UTC pour la requête
-            $hourStart = $currentDate->copy()->setHour($hour)->setMinute(0)->setSecond(0);
-            $hourEnd = $currentDate->copy()->setHour($hour)->setMinute(59)->setSecond(59);
+            $hourStart = $currentDate->copy()->setHour($hour)->setMinute(0)->setSecond(0)->utc();
+            $hourEnd = $currentDate->copy()->setHour($hour)->setMinute(59)->setSecond(59)->utc();
 
             // Stats heure actuelle
             $currentQuery = Call::whereBetween('called_at', [$hourStart, $hourEnd]);
@@ -223,8 +223,8 @@ class PartnerStatsController extends Controller
             $reverse = $currentQuery->sum('payout_source');
 
             // Stats même heure semaine précédente (convertir en UTC)
-            $prevHourStart = $previousWeekDate->copy()->setHour($hour)->setMinute(0)->setSecond(0);
-            $prevHourEnd = $previousWeekDate->copy()->setHour($hour)->setMinute(59)->setSecond(59);
+            $prevHourStart = $previousWeekDate->copy()->setHour($hour)->setMinute(0)->setSecond(0)->utc();
+            $prevHourEnd = $previousWeekDate->copy()->setHour($hour)->setMinute(59)->setSecond(59)->utc();
 
             $prevQuery = Call::whereBetween('called_at', [$prevHourStart, $prevHourEnd]);
             $applyFilters($prevQuery);
@@ -247,17 +247,17 @@ class PartnerStatsController extends Controller
             ];
         }
 
-        // Totaux de la journée (9h-20h59) - convertir en UTC
-        $dayStart = $currentDate->copy()->setHour(9)->setMinute(0)->setSecond(0);
-        $dayEnd = $currentDate->copy()->setHour(20)->setMinute(59)->setSecond(59);
+        // Totaux de la journée (0h-23h59) - convertir en UTC
+        $dayStart = $currentDate->copy()->startOfDay()->utc();
+        $dayEnd = $currentDate->copy()->endOfDay()->utc();
 
         $totalQuery = Call::whereBetween('called_at', [$dayStart, $dayEnd]);
         $applyFilters($totalQuery);
         $totalCalls = $totalQuery->count();
         $totalReverse = $totalQuery->sum('payout_source');
 
-        $prevDayStart = $previousWeekDate->copy()->setHour(9)->setMinute(0)->setSecond(0);
-        $prevDayEnd = $previousWeekDate->copy()->setHour(20)->setMinute(59)->setSecond(59);
+        $prevDayStart = $previousWeekDate->copy()->startOfDay()->utc();
+        $prevDayEnd = $previousWeekDate->copy()->endOfDay()->utc();
 
         $prevTotalQuery = Call::whereBetween('called_at', [$prevDayStart, $prevDayEnd]);
         $applyFilters($prevTotalQuery);
