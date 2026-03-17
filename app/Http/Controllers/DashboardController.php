@@ -677,6 +677,211 @@ class DashboardController extends Controller
     }
 
     /**
+     * Breakdown heure par heure pour un jour donné (9h-20h FR)
+     * avec comparaison avec le même jour de la semaine précédente
+     */
+    public function hourlyBreakdown(Request $request): JsonResponse
+    {
+        $date = $request->input('date'); // Format: YYYY-MM-DD
+        if (!$date) {
+            return response()->json(['error' => 'Date requise'], 400);
+        }
+
+        $currentDate = \Carbon\Carbon::parse($date)->setTimezone('Europe/Paris');
+        $previousWeekDate = $currentDate->copy()->subDays(7);
+
+        // Créer une closure pour appliquer les filtres (réutilisable)
+        $applyFilters = function($query) use ($request) {
+            if ($request->filled('brand_name')) {
+                $brands = $this->parseMultiSelect($request->brand_name);
+                $query->whereIn('brand_name', $brands);
+            }
+
+            if ($request->filled('agent_name')) {
+                $agents = $this->parseMultiSelect($request->agent_name);
+                $query->whereIn('agent_name', $agents);
+            }
+
+            if ($request->filled('callcenter_id')) {
+                $callcenters = array_map('intval', $this->parseMultiSelect($request->callcenter_id));
+                $query->whereIn('callcenter_id', $callcenters);
+            }
+
+            if ($request->filled('carrier')) {
+                $carriers = $this->parseMultiSelect($request->carrier);
+                $query->whereIn('carrier', $carriers);
+            }
+
+            if ($request->filled('provider_id')) {
+                $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
+                $query->whereHas('phonenumber', function ($q) use ($providers) {
+                    $q->whereIn('provider_id', $providers);
+                });
+            }
+
+            if ($request->filled('company_id')) {
+                $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
+                $query->whereHas('phonenumber', function ($q) use ($companies) {
+                    $q->whereIn('company_id', $companies);
+                });
+            }
+
+            if ($request->filled('source_id')) {
+                $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
+                $query->where(function ($q) use ($sources) {
+                    $q->whereIn('source_id', $sources)
+                      ->orWhere(function ($sq) use ($sources) {
+                          $sq->whereNull('source_id')
+                             ->whereHas('phonenumber', function ($psq) use ($sources) {
+                                 $psq->whereIn('source_id', $sources);
+                             });
+                      });
+                });
+            }
+
+            return $query;
+        };
+
+        // Générer les heures de 9h à 20h (inclus)
+        $hours = range(9, 20);
+        $hourlyData = [];
+
+        foreach ($hours as $hour) {
+            // Période actuelle (heure spécifique du jour sélectionné)
+            $hourStart = $currentDate->copy()->setTime($hour, 0, 0);
+            $hourEnd = $currentDate->copy()->setTime($hour, 59, 59);
+
+            $currentQuery = Call::query();
+            $applyFilters($currentQuery);
+            $currentStats = $currentQuery->whereBetween('called_at', [$hourStart, $hourEnd])
+                ->selectRaw('
+                    COUNT(*) as calls,
+                    COALESCE(SUM(payout), 0) as ca,
+                    COALESCE(SUM(payout_source), 0) as reverse,
+                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                    COALESCE(SUM(total_duration), 0) as total_duration,
+                    COALESCE(AVG(total_duration), 0) as avg_duration
+                ')
+                ->first();
+
+            // Même heure, 7 jours avant
+            $prevHourStart = $previousWeekDate->copy()->setTime($hour, 0, 0);
+            $prevHourEnd = $previousWeekDate->copy()->setTime($hour, 59, 59);
+
+            $prevQuery = Call::query();
+            $applyFilters($prevQuery);
+            $prevStats = $prevQuery->whereBetween('called_at', [$prevHourStart, $prevHourEnd])
+                ->selectRaw('
+                    COUNT(*) as calls,
+                    COALESCE(SUM(payout), 0) as ca,
+                    COALESCE(SUM(payout_source), 0) as reverse,
+                    COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                    COALESCE(SUM(total_duration), 0) as total_duration,
+                    COALESCE(AVG(total_duration), 0) as avg_duration
+                ')
+                ->first();
+
+            $calls = $currentStats ? (int) $currentStats->calls : 0;
+            $ca = $currentStats ? round((float) $currentStats->ca, 2) : 0;
+            $reverse = $currentStats ? round((float) $currentStats->reverse, 2) : 0;
+            $benefice = $currentStats ? round((float) $currentStats->benefice, 2) : 0;
+            $totalDuration = $currentStats ? (int) $currentStats->total_duration : 0;
+            $avgDuration = $currentStats ? round((float) $currentStats->avg_duration) : 0;
+
+            $prevCalls = $prevStats ? (int) $prevStats->calls : 0;
+            $prevCa = $prevStats ? round((float) $prevStats->ca, 2) : 0;
+            $prevReverse = $prevStats ? round((float) $prevStats->reverse, 2) : 0;
+            $prevBenefice = $prevStats ? round((float) $prevStats->benefice, 2) : 0;
+            $prevTotalDuration = $prevStats ? (int) $prevStats->total_duration : 0;
+            $prevAvgDuration = $prevStats ? round((float) $prevStats->avg_duration) : 0;
+
+            // Calcul des variations
+            $callsVar = ($prevCalls > 0) ? round((($calls - $prevCalls) / $prevCalls) * 100, 1) : null;
+            $caVar = ($prevCa > 0) ? round((($ca - $prevCa) / $prevCa) * 100, 1) : null;
+            $reverseVar = ($prevReverse > 0) ? round((($reverse - $prevReverse) / $prevReverse) * 100, 1) : null;
+            $beneficeVar = ($prevBenefice > 0) ? round((($benefice - $prevBenefice) / $prevBenefice) * 100, 1) : null;
+            $totalDurationVar = ($prevTotalDuration > 0) ? round((($totalDuration - $prevTotalDuration) / $prevTotalDuration) * 100, 1) : null;
+            $avgDurationVar = ($prevAvgDuration > 0) ? round((($avgDuration - $prevAvgDuration) / $prevAvgDuration) * 100, 1) : null;
+
+            $hourlyData[] = [
+                'hour' => sprintf('%02d:00', $hour),
+                'calls' => $calls,
+                'ca' => $ca,
+                'reverse' => $reverse,
+                'benefice' => $benefice,
+                'total_duration' => $totalDuration,
+                'avg_duration' => $avgDuration,
+                'prev_calls' => $prevCalls,
+                'prev_ca' => $prevCa,
+                'prev_reverse' => $prevReverse,
+                'prev_benefice' => $prevBenefice,
+                'prev_total_duration' => $prevTotalDuration,
+                'prev_avg_duration' => $prevAvgDuration,
+                'calls_var' => $callsVar,
+                'ca_var' => $caVar,
+                'reverse_var' => $reverseVar,
+                'benefice_var' => $beneficeVar,
+                'total_duration_var' => $totalDurationVar,
+                'avg_duration_var' => $avgDurationVar,
+            ];
+        }
+
+        // Calculer les totaux de la journée
+        $totalCalls = array_sum(array_column($hourlyData, 'calls'));
+        $totalCa = round(array_sum(array_column($hourlyData, 'ca')), 2);
+        $totalReverse = round(array_sum(array_column($hourlyData, 'reverse')), 2);
+        $totalBenefice = round(array_sum(array_column($hourlyData, 'benefice')), 2);
+        $totalDuration = array_sum(array_column($hourlyData, 'total_duration'));
+        $avgDuration = $totalCalls > 0 ? round($totalDuration / $totalCalls) : 0;
+
+        $prevTotalCalls = array_sum(array_column($hourlyData, 'prev_calls'));
+        $prevTotalCa = round(array_sum(array_column($hourlyData, 'prev_ca')), 2);
+        $prevTotalReverse = round(array_sum(array_column($hourlyData, 'prev_reverse')), 2);
+        $prevTotalBenefice = round(array_sum(array_column($hourlyData, 'prev_benefice')), 2);
+        $prevTotalDuration = array_sum(array_column($hourlyData, 'prev_total_duration'));
+        $prevAvgDuration = $prevTotalCalls > 0 ? round($prevTotalDuration / $prevTotalCalls) : 0;
+
+        // Variations totales
+        $callsVar = ($prevTotalCalls > 0) ? round((($totalCalls - $prevTotalCalls) / $prevTotalCalls) * 100, 1) : null;
+        $caVar = ($prevTotalCa > 0) ? round((($totalCa - $prevTotalCa) / $prevTotalCa) * 100, 1) : null;
+        $reverseVar = ($prevTotalReverse > 0) ? round((($totalReverse - $prevTotalReverse) / $prevTotalReverse) * 100, 1) : null;
+        $beneficeVar = ($prevTotalBenefice > 0) ? round((($totalBenefice - $prevTotalBenefice) / $prevTotalBenefice) * 100, 1) : null;
+        $totalDurationVar = ($prevTotalDuration > 0) ? round((($totalDuration - $prevTotalDuration) / $prevTotalDuration) * 100, 1) : null;
+        $avgDurationVar = ($prevAvgDuration > 0) ? round((($avgDuration - $prevAvgDuration) / $prevAvgDuration) * 100, 1) : null;
+
+        $dayName = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][$currentDate->dayOfWeek];
+        $prevDayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][$previousWeekDate->dayOfWeek];
+
+        return response()->json([
+            'date' => $date,
+            'date_label' => $dayName . ' ' . $currentDate->format('d/m/Y'),
+            'comparison_date' => $previousWeekDate->format('Y-m-d'),
+            'comparison_label' => $prevDayName . ' ' . $previousWeekDate->format('d/m/Y'),
+            'items' => $hourlyData,
+            'totals' => [
+                'calls' => $totalCalls,
+                'ca' => $totalCa,
+                'reverse' => $totalReverse,
+                'benefice' => $totalBenefice,
+                'total_duration' => $totalDuration,
+                'avg_duration' => $avgDuration,
+                'prev_calls' => $prevTotalCalls,
+                'prev_ca' => $prevTotalCa,
+                'prev_reverse' => $prevTotalReverse,
+                'prev_benefice' => $prevTotalBenefice,
+                'prev_total_duration' => $prevTotalDuration,
+                'prev_avg_duration' => $prevAvgDuration,
+                'calls_var' => $callsVar,
+                'ca_var' => $caVar,
+                'reverse_var' => $reverseVar,
+                'benefice_var' => $beneficeVar,
+                'total_duration_var' => $totalDurationVar,
+                'avg_duration_var' => $avgDurationVar,
+            ],
+        ]);
+    }
+
+    /**
      * Options de filtres
      */
     public function filterOptions(): JsonResponse

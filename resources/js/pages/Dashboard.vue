@@ -6,6 +6,12 @@ import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import BrandTreemap from '@/components/BrandTreemap.vue'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
@@ -52,6 +58,11 @@ const monthOptions = computed(() => {
 // ─── Daily Breakdown + Treemap + Filtres ─────────────────────────────────────
 const daily = useApi('/data/daily-breakdown')
 const brandDistribution = useApi('/data/brand-distribution')
+
+// ─── Hourly Breakdown (détail d'un jour) ─────────────────────────────────────
+const showHourlyModal = ref(false)
+const selectedDate = ref(null)
+const hourly = useApi('/data/hourly-breakdown')
 
 const { filters, reset } = useFilters(
     {
@@ -217,6 +228,22 @@ function getVariationSymbol(variation) {
 function formatVariation(variation) {
     if (variation === null) return '-'
     return Math.abs(variation).toFixed(1) + '%'
+}
+
+// ─── Handle day click ─────────────────────────────────────────────────────────
+function selectDay(date) {
+    // Ne pas permettre de sélectionner un dimanche
+    if (isSunday(date)) return
+
+    selectedDate.value = date
+    showHourlyModal.value = true
+    // Charger les données horaires avec les mêmes filtres
+    hourly.load({ ...filters, date })
+}
+
+function closeHourlyView() {
+    showHourlyModal.value = false
+    selectedDate.value = null
 }
 
 // ─── Watch period changes (KPIs only) ─────────────────────────────────────────
@@ -592,8 +619,11 @@ onMounted(() => {
                                     :key="i"
                                     :class="[
                                         'border-b border-gray-50 transition-colors',
-                                        isSunday(row.date) ? 'bg-gray-50' : 'hover:bg-gray-100/80'
+                                        isSunday(row.date)
+                                            ? 'bg-gray-50'
+                                            : 'hover:bg-gray-100/80 cursor-pointer'
                                     ]"
+                                    @click="!isSunday(row.date) && selectDay(row.date)"
                                 >
                                     <td class="px-3 py-1.5 text-sm">
                                         <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
@@ -668,6 +698,178 @@ onMounted(() => {
                     </table>
                 </div>
             </div>
+
+            <!-- Modal de détail heure par heure -->
+            <Dialog :open="showHourlyModal" @update:open="closeHourlyView">
+                <DialogContent class="!w-[95vw] md:!w-[90vw] lg:!w-[85vw] xl:!w-[80vw] !max-w-none max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {{ hourly.data?.date_label || 'Détail de la journée' }}
+                        </DialogTitle>
+                        <p class="text-sm text-gray-600">
+                            Comparaison avec {{ hourly.data?.comparison_label || '' }}
+                        </p>
+                    </DialogHeader>
+
+                <!-- Totals de la journée -->
+                <div v-if="hourly.data?.totals" class="border-b border-gray-200 bg-gray-50 px-4 py-3 -mx-6 -mt-4 mb-4">
+                    <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+                        <div>
+                            <div class="text-xs font-medium text-gray-500">Appels</div>
+                            <div class="text-lg font-bold text-gray-900">{{ formatNumber(hourly.data.totals.calls) }}</div>
+                            <div v-if="hourly.data.totals.prev_calls !== null" class="text-xs text-gray-500">
+                                {{ formatNumber(hourly.data.totals.prev_calls) }}
+                                <span v-if="hourly.data.totals.calls_var !== null" :class="hourly.data.totals.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                    ({{ hourly.data.totals.calls_var >= 0 ? '+' : '' }}{{ hourly.data.totals.calls_var }}%)
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-medium text-gray-500">Durée totale</div>
+                            <div class="text-lg font-bold text-gray-900">{{ formatDurationTotal(hourly.data.totals.total_duration) }}</div>
+                            <div v-if="hourly.data.totals.prev_total_duration !== null" class="text-xs text-gray-500">
+                                {{ formatDurationTotal(hourly.data.totals.prev_total_duration) }}
+                                <span v-if="hourly.data.totals.total_duration_var !== null" :class="hourly.data.totals.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                    ({{ hourly.data.totals.total_duration_var >= 0 ? '+' : '' }}{{ hourly.data.totals.total_duration_var }}%)
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-medium text-gray-500">Durée moy.</div>
+                            <div class="text-lg font-bold text-gray-900">{{ formatDuration(hourly.data.totals.avg_duration) }}</div>
+                            <div v-if="hourly.data.totals.prev_avg_duration !== null" class="text-xs text-gray-500">
+                                {{ formatDuration(hourly.data.totals.prev_avg_duration) }}
+                                <span v-if="hourly.data.totals.avg_duration_var !== null" :class="hourly.data.totals.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                    ({{ hourly.data.totals.avg_duration_var >= 0 ? '+' : '' }}{{ hourly.data.totals.avg_duration_var }}%)
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-medium text-gray-500">CA</div>
+                            <div class="text-lg font-bold text-gray-900">{{ formatCurrency(hourly.data.totals.ca) }} €</div>
+                            <div v-if="hourly.data.totals.prev_ca !== null" class="text-xs text-gray-500">
+                                {{ formatCurrency(hourly.data.totals.prev_ca) }} €
+                                <span v-if="hourly.data.totals.ca_var !== null" :class="hourly.data.totals.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                    ({{ hourly.data.totals.ca_var >= 0 ? '+' : '' }}{{ hourly.data.totals.ca_var }}%)
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-medium text-gray-500">Reverse</div>
+                            <div class="text-lg font-bold text-gray-900">{{ formatCurrency(hourly.data.totals.reverse) }} €</div>
+                            <div v-if="hourly.data.totals.prev_reverse !== null" class="text-xs text-gray-500">
+                                {{ formatCurrency(hourly.data.totals.prev_reverse) }} €
+                                <span v-if="hourly.data.totals.reverse_var !== null" :class="hourly.data.totals.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                    ({{ hourly.data.totals.reverse_var >= 0 ? '+' : '' }}{{ hourly.data.totals.reverse_var }}%)
+                                </span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-medium text-gray-500">Bénéfice</div>
+                            <div class="text-lg font-bold text-gray-900">{{ formatCurrency(hourly.data.totals.benefice) }} €</div>
+                            <div v-if="hourly.data.totals.prev_benefice !== null" class="text-xs text-gray-500">
+                                {{ formatCurrency(hourly.data.totals.prev_benefice) }} €
+                                <span v-if="hourly.data.totals.benefice_var !== null" :class="hourly.data.totals.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                    ({{ hourly.data.totals.benefice_var >= 0 ? '+' : '' }}{{ hourly.data.totals.benefice_var }}%)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table heure par heure -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="whitespace-nowrap px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400">Heure</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Appels</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Durée totale</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Durée moy.</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">CA (€)</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Reverse (€)</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Bénéfice (€)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Loading -->
+                            <template v-if="hourly.loading">
+                                <tr v-for="n in 12" :key="n" class="border-b border-gray-50">
+                                    <td v-for="col in 7" :key="col" class="px-3 py-2">
+                                        <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Lignes horaires -->
+                            <template v-else-if="hourly.data?.items && hourly.data.items.length > 0">
+                                <tr
+                                    v-for="(row, i) in hourly.data.items"
+                                    :key="i"
+                                    class="border-b border-gray-50 hover:bg-gray-50"
+                                >
+                                    <td class="px-3 py-1.5 text-sm font-medium text-gray-900">{{ row.hour }}</td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatNumber(row.calls) }}</div>
+                                        <div v-if="row.prev_calls !== null" class="text-xs text-gray-500">
+                                            {{ formatNumber(row.prev_calls) }}
+                                            <span v-if="row.calls_var !== null" :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatDurationTotal(row.total_duration) }}</div>
+                                        <div v-if="row.prev_total_duration !== null" class="text-xs text-gray-500">
+                                            {{ formatDurationTotal(row.prev_total_duration) }}
+                                            <span v-if="row.total_duration_var !== null" :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.total_duration_var >= 0 ? '+' : '' }}{{ row.total_duration_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatDuration(row.avg_duration) }}</div>
+                                        <div v-if="row.prev_avg_duration !== null" class="text-xs text-gray-500">
+                                            {{ formatDuration(row.prev_avg_duration) }}
+                                            <span v-if="row.avg_duration_var !== null" :class="row.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.avg_duration_var >= 0 ? '+' : '' }}{{ row.avg_duration_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatCurrency(row.ca) }} €</div>
+                                        <div v-if="row.prev_ca !== null" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_ca) }} €
+                                            <span v-if="row.ca_var !== null" :class="row.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.ca_var >= 0 ? '+' : '' }}{{ row.ca_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
+                                        <div v-if="row.prev_reverse !== null" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_reverse) }} €
+                                            <span v-if="row.reverse_var !== null" :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.reverse_var >= 0 ? '+' : '' }}{{ row.reverse_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="font-bold text-gray-900">{{ formatCurrency(row.benefice) }} €</div>
+                                        <div v-if="row.prev_benefice !== null" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_benefice) }} €
+                                            <span v-if="row.benefice_var !== null" :class="row.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.benefice_var >= 0 ? '+' : '' }}{{ row.benefice_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                </DialogContent>
+            </Dialog>
 
             <!-- Treemap des marques (après le tableau) -->
             <BrandTreemap

@@ -66,6 +66,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/chart-data', [DashboardController::class, 'chartData']);
         Route::get('/brand-distribution', [DashboardController::class, 'brandDistribution']);
         Route::get('/daily-breakdown', [DashboardController::class, 'dailyBreakdown']);
+        Route::get('/hourly-breakdown', [DashboardController::class, 'hourlyBreakdown']);
         Route::get('/dashboard/filter-options', [DashboardController::class, 'filterOptions']);
         Route::get('/calls/stats', [CallController::class, 'stats']);
         Route::get('/calls/filter-options', [CallController::class, 'filterOptions']);
