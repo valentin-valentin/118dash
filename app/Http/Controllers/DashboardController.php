@@ -743,8 +743,8 @@ class DashboardController extends Controller
             return $query;
         };
 
-        // Générer les heures de 0h à 23h (toute la journée)
-        $hours = range(0, 23);
+        // Générer les heures de 8h à 21h (heures d'ouverture)
+        $hours = range(8, 21);
         $hourlyData = [];
 
         foreach ($hours as $hour) {

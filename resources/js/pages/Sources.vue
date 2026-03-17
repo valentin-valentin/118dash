@@ -325,27 +325,24 @@ onMounted(() => {
                                 <div
                                     v-for="source in table.data?.items ?? []"
                                     :key="source.id"
-                                    class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded"
+                                    class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                    @click="() => {
+                                        const index = selectedSourceIds.indexOf(source.id)
+                                        if (index > -1) {
+                                            selectedSourceIds.splice(index, 1)
+                                        } else {
+                                            selectedSourceIds.push(source.id)
+                                        }
+                                    }"
                                 >
                                     <Checkbox
                                         :id="`source-${source.id}`"
                                         :checked="selectedSourceIds.includes(source.id)"
-                                        @update:checked="(checked) => {
-                                            if (checked && !selectedSourceIds.includes(source.id)) {
-                                                selectedSourceIds.push(source.id)
-                                            } else if (!checked && selectedSourceIds.includes(source.id)) {
-                                                const index = selectedSourceIds.indexOf(source.id)
-                                                selectedSourceIds.splice(index, 1)
-                                            }
-                                        }"
                                     />
-                                    <label
-                                        :for="`source-${source.id}`"
-                                        class="flex items-center gap-2 cursor-pointer flex-1"
-                                    >
+                                    <div class="flex items-center gap-2 flex-1">
                                         <ColorBadge :color="source.color" :label="source.name" />
                                         <span class="text-xs text-gray-500">#{{ source.id }}</span>
-                                    </label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
