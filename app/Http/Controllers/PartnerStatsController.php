@@ -117,8 +117,25 @@ class PartnerStatsController extends Controller
             $dayQuery = Call::whereBetween('called_at', [$dayStart, $dayEnd]);
             $applyFilters($dayQuery);
 
+            // DEBUG
+            \Log::info("DEBUG Partner Stats - Date: $date", [
+                'dayStart_paris' => $dayDate->copy()->startOfDay()->format('Y-m-d H:i:s T'),
+                'dayEnd_paris' => $dayDate->copy()->endOfDay()->format('Y-m-d H:i:s T'),
+                'dayStart_utc' => $dayStart->format('Y-m-d H:i:s T'),
+                'dayEnd_utc' => $dayEnd->format('Y-m-d H:i:s T'),
+                'sourceIds' => $sourceIds,
+                'sql' => $dayQuery->toSql(),
+                'bindings' => $dayQuery->getBindings(),
+            ]);
+
             $calls = $dayQuery->count();
             $reverse = $dayQuery->sum('payout_source');
+
+            \Log::info("DEBUG Partner Stats - Results", [
+                'date' => $date,
+                'calls' => $calls,
+                'reverse' => $reverse,
+            ]);
 
             // Stats du même jour mois précédent (convertir en UTC)
             $prevDayStart = $prevDate->copy()->startOfDay()->utc();
