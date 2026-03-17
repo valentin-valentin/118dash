@@ -6,6 +6,7 @@ import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import BrandTreemap from '@/components/BrandTreemap.vue'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import {
     Dialog,
     DialogContent,
@@ -287,7 +288,10 @@ onMounted(() => {
     <AppLayout>
         <div class="space-y-6 p-6">
             <!-- En-tête -->
-            <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <div class="flex items-center gap-3">
+                <SidebarTrigger class="lg:hidden" />
+                <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+            </div>
 
             <!-- Sélecteur de période + Hero KPIs -->
             <div class="lg:flex items-start gap-4">

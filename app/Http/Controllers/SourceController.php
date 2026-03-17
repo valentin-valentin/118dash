@@ -56,11 +56,11 @@ class SourceController extends Controller
                 'fingerprint' => $validated['fingerprint'] ?? false,
                 'only_dedicated_phonenumber' => $validated['only_dedicated_phonenumber'] ?? false,
                 'color' => $validated['color'] ?? 'cyan',
-                'max_concurrent_numbers' => $validated['max_concurrent_numbers'] ?? null,
-                'payout_call' => $validated['payout_call'] ?? null,
-                'payout_minute' => $validated['payout_minute'] ?? null,
-                'display_duration_minutes' => $validated['display_duration_minutes'] ?? null,
-                'real_duration_minutes' => $validated['real_duration_minutes'] ?? null,
+                'max_concurrent_numbers' => !empty($validated['max_concurrent_numbers']) ? $validated['max_concurrent_numbers'] : null,
+                'payout_call' => !empty($validated['payout_call']) ? $validated['payout_call'] : null,
+                'payout_minute' => !empty($validated['payout_minute']) ? $validated['payout_minute'] : null,
+                'display_duration_minutes' => !empty($validated['display_duration_minutes']) ? $validated['display_duration_minutes'] : null,
+                'real_duration_minutes' => !empty($validated['real_duration_minutes']) ? $validated['real_duration_minutes'] : null,
             ]);
 
             if (!empty($validated['associations'])) {
@@ -118,11 +118,11 @@ class SourceController extends Controller
                 'fingerprint' => $validated['fingerprint'] ?? false,
                 'only_dedicated_phonenumber' => $validated['only_dedicated_phonenumber'] ?? false,
                 'color' => $validated['color'] ?? 'cyan',
-                'max_concurrent_numbers' => $validated['max_concurrent_numbers'] ?? null,
-                'payout_call' => $validated['payout_call'] ?? null,
-                'payout_minute' => $validated['payout_minute'] ?? null,
-                'display_duration_minutes' => $validated['display_duration_minutes'] ?? null,
-                'real_duration_minutes' => $validated['real_duration_minutes'] ?? null,
+                'max_concurrent_numbers' => !empty($validated['max_concurrent_numbers']) ? $validated['max_concurrent_numbers'] : null,
+                'payout_call' => !empty($validated['payout_call']) ? $validated['payout_call'] : null,
+                'payout_minute' => !empty($validated['payout_minute']) ? $validated['payout_minute'] : null,
+                'display_duration_minutes' => !empty($validated['display_duration_minutes']) ? $validated['display_duration_minutes'] : null,
+                'real_duration_minutes' => !empty($validated['real_duration_minutes']) ? $validated['real_duration_minutes'] : null,
             ]);
 
             // Supprimer les anciennes associations

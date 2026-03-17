@@ -9,19 +9,21 @@ const props = defineProps({
     variant: {
         type: String,
         default: 'default',
-        validator: (value) => ['default', 'danger', 'success'].includes(value),
+        validator: (value) => ['default', 'danger', 'success', 'warning'].includes(value),
     },
 })
 
 const textColorClass = computed(() => {
     if (props.variant === 'danger') return 'text-red-600'
     if (props.variant === 'success') return 'text-green-600'
+    if (props.variant === 'warning') return 'text-yellow-600'
     return 'text-gray-900'
 })
 
 const borderColorClass = computed(() => {
     if (props.variant === 'danger') return 'border-red-100'
     if (props.variant === 'success') return 'border-green-100'
+    if (props.variant === 'warning') return 'border-yellow-100'
     return 'border-gray-100'
 })
 </script>
