@@ -852,11 +852,16 @@ class DashboardController extends Controller
         $dayName = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][$currentDate->dayOfWeek];
         $prevDayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][$previousWeekDate->dayOfWeek];
 
+        // Heure actuelle en France pour le highlighting
+        $nowInFrance = \Carbon\Carbon::now('Europe/Paris');
+        $currentHour = $nowInFrance->hour;
+
         return response()->json([
             'date' => $date,
             'date_label' => $dayName . ' ' . $currentDate->format('d/m/Y'),
             'comparison_date' => $previousWeekDate->format('Y-m-d'),
             'comparison_label' => $prevDayName . ' ' . $previousWeekDate->format('d/m/Y'),
+            'current_hour' => $currentHour,
             'items' => $hourlyData,
             'totals' => [
                 'calls' => $totalCalls,
