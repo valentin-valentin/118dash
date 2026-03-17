@@ -720,23 +720,23 @@ onMounted(() => {
 
             <!-- Modal de détail heure par heure -->
             <Dialog :open="showHourlyModal" @update:open="closeHourlyView">
-                <DialogContent class="!w-[95vw] md:!w-[90vw] lg:!w-[85vw] xl:!w-[80vw] !max-w-none max-h-[90vh] overflow-y-auto">
-                    <DialogHeader class="pb-4">
-                        <DialogTitle class="text-xl">
+                <DialogContent class="!w-[95vw] md:!w-[85vw] lg:!w-[75vw] xl:!w-[65vw] !max-w-none max-h-[90vh] overflow-y-auto !p-0">
+                    <div class="px-6 pt-4">
+                        <DialogTitle class="text-base font-bold">
                             {{ hourly.data?.date_label || 'Détail de la journée' }}
                         </DialogTitle>
-                        <p class="text-sm text-gray-500 mt-1">
+                        <p class="text-xs text-gray-500">
                             Comparaison avec {{ hourly.data?.comparison_label || '' }}
                         </p>
-                    </DialogHeader>
+                    </div>
 
                 <!-- Totals de la journée -->
-                <div v-if="hourly.data?.totals" class="border-y border-gray-200 bg-gray-50 px-6 py-4 -mx-6 mb-6">
-                    <div class="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-6">
+                <div v-if="hourly.data?.totals" class="border-y border-gray-200 bg-gray-50 px-6 py-2 mb-0">
+                    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
                         <div>
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Appels</div>
-                            <div class="text-xl font-bold text-gray-900">{{ formatNumber(hourly.data.totals.calls) }}</div>
-                            <div v-if="hourly.data.totals.prev_calls !== null" class="text-xs text-gray-500 mt-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Appels</div>
+                            <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatNumber(hourly.data.totals.calls) }}</div>
+                            <div v-if="hourly.data.totals.prev_calls !== null" class="text-[11px] text-gray-500">
                                 {{ formatNumber(hourly.data.totals.prev_calls) }}
                                 <span v-if="hourly.data.totals.calls_var !== null" :class="hourly.data.totals.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.calls_var >= 0 ? '+' : '' }}{{ hourly.data.totals.calls_var }}%)
@@ -744,9 +744,9 @@ onMounted(() => {
                             </div>
                         </div>
                         <div>
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Durée totale</div>
-                            <div class="text-xl font-bold text-gray-900">{{ formatDurationTotal(hourly.data.totals.total_duration) }}</div>
-                            <div v-if="hourly.data.totals.prev_total_duration !== null" class="text-xs text-gray-500 mt-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Durée totale</div>
+                            <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatDurationTotal(hourly.data.totals.total_duration) }}</div>
+                            <div v-if="hourly.data.totals.prev_total_duration !== null" class="text-[11px] text-gray-500">
                                 {{ formatDurationTotal(hourly.data.totals.prev_total_duration) }}
                                 <span v-if="hourly.data.totals.total_duration_var !== null" :class="hourly.data.totals.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.total_duration_var >= 0 ? '+' : '' }}{{ hourly.data.totals.total_duration_var }}%)
@@ -754,9 +754,9 @@ onMounted(() => {
                             </div>
                         </div>
                         <div>
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Durée moy.</div>
-                            <div class="text-xl font-bold text-gray-900">{{ formatDuration(hourly.data.totals.avg_duration) }}</div>
-                            <div v-if="hourly.data.totals.prev_avg_duration !== null" class="text-xs text-gray-500 mt-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Durée moy.</div>
+                            <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatDuration(hourly.data.totals.avg_duration) }}</div>
+                            <div v-if="hourly.data.totals.prev_avg_duration !== null" class="text-[11px] text-gray-500">
                                 {{ formatDuration(hourly.data.totals.prev_avg_duration) }}
                                 <span v-if="hourly.data.totals.avg_duration_var !== null" :class="hourly.data.totals.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.avg_duration_var >= 0 ? '+' : '' }}{{ hourly.data.totals.avg_duration_var }}%)
@@ -764,9 +764,9 @@ onMounted(() => {
                             </div>
                         </div>
                         <div>
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">CA</div>
-                            <div class="text-xl font-bold text-gray-900">{{ formatCurrency(hourly.data.totals.ca) }} €</div>
-                            <div v-if="hourly.data.totals.prev_ca !== null" class="text-xs text-gray-500 mt-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">CA</div>
+                            <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatCurrency(hourly.data.totals.ca) }} €</div>
+                            <div v-if="hourly.data.totals.prev_ca !== null" class="text-[11px] text-gray-500">
                                 {{ formatCurrency(hourly.data.totals.prev_ca) }} €
                                 <span v-if="hourly.data.totals.ca_var !== null" :class="hourly.data.totals.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.ca_var >= 0 ? '+' : '' }}{{ hourly.data.totals.ca_var }}%)
@@ -774,9 +774,9 @@ onMounted(() => {
                             </div>
                         </div>
                         <div>
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Reverse</div>
-                            <div class="text-xl font-bold text-gray-900">{{ formatCurrency(hourly.data.totals.reverse) }} €</div>
-                            <div v-if="hourly.data.totals.prev_reverse !== null" class="text-xs text-gray-500 mt-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Reverse</div>
+                            <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatCurrency(hourly.data.totals.reverse) }} €</div>
+                            <div v-if="hourly.data.totals.prev_reverse !== null" class="text-[11px] text-gray-500">
                                 {{ formatCurrency(hourly.data.totals.prev_reverse) }} €
                                 <span v-if="hourly.data.totals.reverse_var !== null" :class="hourly.data.totals.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.reverse_var >= 0 ? '+' : '' }}{{ hourly.data.totals.reverse_var }}%)
@@ -784,9 +784,9 @@ onMounted(() => {
                             </div>
                         </div>
                         <div>
-                            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Bénéfice</div>
-                            <div class="text-xl font-bold text-gray-900">{{ formatCurrency(hourly.data.totals.benefice) }} €</div>
-                            <div v-if="hourly.data.totals.prev_benefice !== null" class="text-xs text-gray-500 mt-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Bénéfice</div>
+                            <div class="text-base font-bold text-gray-900 mt-0.5">{{ formatCurrency(hourly.data.totals.benefice) }} €</div>
+                            <div v-if="hourly.data.totals.prev_benefice !== null" class="text-[11px] text-gray-500">
                                 {{ formatCurrency(hourly.data.totals.prev_benefice) }} €
                                 <span v-if="hourly.data.totals.benefice_var !== null" :class="hourly.data.totals.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
                                     ({{ hourly.data.totals.benefice_var >= 0 ? '+' : '' }}{{ hourly.data.totals.benefice_var }}%)
@@ -797,25 +797,25 @@ onMounted(() => {
                 </div>
 
                 <!-- Table heure par heure -->
-                <div class="overflow-x-auto -mx-6">
+                <div class="overflow-x-auto">
                     <table class="w-full text-sm">
-                        <thead class="bg-gray-50">
-                            <tr class="border-y border-gray-200">
-                                <th class="whitespace-nowrap px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Heure</th>
-                                <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Appels</th>
-                                <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Durée totale</th>
-                                <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Durée moy.</th>
-                                <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">CA (€)</th>
-                                <th class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Reverse (€)</th>
-                                <th class="whitespace-nowrap px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Bénéfice (€)</th>
+                        <thead class="bg-gray-50 border-t border-gray-200">
+                            <tr>
+                                <th class="whitespace-nowrap px-6 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Heure</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Appels</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Durée totale</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Durée moy.</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">CA (€)</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Reverse (€)</th>
+                                <th class="whitespace-nowrap px-6 py-1.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-600">Bénéfice (€)</th>
                             </tr>
                         </thead>
                         <tbody>
                             <!-- Loading -->
                             <template v-if="hourly.loading">
-                                <tr v-for="n in 12" :key="n" class="border-b border-gray-100">
-                                    <td v-for="col in 7" :key="col" class="px-6 py-3">
-                                        <div class="h-4 animate-pulse rounded bg-gray-100" style="width: 65%" />
+                                <tr v-for="n in 12" :key="n" class="border-b border-gray-50">
+                                    <td v-for="col in 7" :key="col" class="px-4 py-1">
+                                        <div class="h-3 animate-pulse rounded bg-gray-100" style="width: 65%" />
                                     </td>
                                 </tr>
                             </template>
@@ -826,18 +826,18 @@ onMounted(() => {
                                     v-for="(row, i) in hourly.data.items"
                                     :key="i"
                                     :class="[
-                                        'border-b border-gray-100 transition-colors',
+                                        'border-b border-gray-50 transition-colors',
                                         isToday(hourly.data.date) && isCurrentHour(row.hour, hourly.data.current_hour)
                                             ? 'bg-blue-50 hover:bg-blue-100'
                                             : isToday(hourly.data.date) && isFutureHour(row.hour, hourly.data.current_hour)
                                             ? 'bg-gray-50 opacity-50'
-                                            : 'hover:bg-gray-50'
+                                            : 'hover:bg-gray-100/80'
                                     ]"
                                 >
-                                    <td class="px-6 py-3 text-sm font-semibold" :class="isToday(hourly.data.date) && isCurrentHour(row.hour, hourly.data.current_hour) ? 'text-blue-900' : 'text-gray-900'">
+                                    <td class="px-6 py-1 text-sm font-semibold" :class="isToday(hourly.data.date) && isCurrentHour(row.hour, hourly.data.current_hour) ? 'text-blue-900' : 'text-gray-900'">
                                         {{ row.hour }}
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm">
+                                    <td class="px-3 py-1 text-right text-sm">
                                         <div class="text-gray-900">{{ formatNumber(row.calls) }}</div>
                                         <div v-if="row.prev_calls !== null" class="text-xs text-gray-500">
                                             {{ formatNumber(row.prev_calls) }}
@@ -846,7 +846,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm">
+                                    <td class="px-3 py-1 text-right text-sm">
                                         <div class="text-gray-900">{{ formatDurationTotal(row.total_duration) }}</div>
                                         <div v-if="row.prev_total_duration !== null" class="text-xs text-gray-500">
                                             {{ formatDurationTotal(row.prev_total_duration) }}
@@ -855,7 +855,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm">
+                                    <td class="px-3 py-1 text-right text-sm">
                                         <div class="text-gray-900">{{ formatDuration(row.avg_duration) }}</div>
                                         <div v-if="row.prev_avg_duration !== null" class="text-xs text-gray-500">
                                             {{ formatDuration(row.prev_avg_duration) }}
@@ -864,7 +864,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm">
+                                    <td class="px-3 py-1 text-right text-sm">
                                         <div class="text-gray-900">{{ formatCurrency(row.ca) }} €</div>
                                         <div v-if="row.prev_ca !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_ca) }} €
@@ -873,7 +873,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-4 py-3 text-right text-sm">
+                                    <td class="px-3 py-1 text-right text-sm">
                                         <div class="text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
                                         <div v-if="row.prev_reverse !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_reverse) }} €
@@ -882,7 +882,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-6 py-3 text-right text-sm">
+                                    <td class="px-6 py-1 text-right text-sm">
                                         <div class="font-bold text-gray-900">{{ formatCurrency(row.benefice) }} €</div>
                                         <div v-if="row.prev_benefice !== null" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_benefice) }} €
