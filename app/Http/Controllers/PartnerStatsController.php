@@ -98,16 +98,10 @@ class PartnerStatsController extends Controller
         };
 
         // Récupérer les jours du mois
-        $days = [];
+        $items = [];
         $currentDay = $startDate->copy();
         while ($currentDay <= $endDate) {
-            $days[] = $currentDay->format('Y-m-d');
-            $currentDay->addDay();
-        }
-
-        $items = [];
-        foreach ($days as $date) {
-            $dayDate = \Carbon\Carbon::parse($date, 'Europe/Paris');
+            $dayDate = $currentDay->copy();
             $prevDate = $dayDate->copy()->subMonth();
 
             // Stats du jour actuel (convertir en UTC pour la requête)
@@ -117,25 +111,8 @@ class PartnerStatsController extends Controller
             $dayQuery = Call::whereBetween('called_at', [$dayStart, $dayEnd]);
             $applyFilters($dayQuery);
 
-            // DEBUG
-            \Log::info("DEBUG Partner Stats - Date: $date", [
-                'dayStart_paris' => $dayDate->copy()->startOfDay()->format('Y-m-d H:i:s T'),
-                'dayEnd_paris' => $dayDate->copy()->endOfDay()->format('Y-m-d H:i:s T'),
-                'dayStart_utc' => $dayStart->format('Y-m-d H:i:s T'),
-                'dayEnd_utc' => $dayEnd->format('Y-m-d H:i:s T'),
-                'sourceIds' => $sourceIds,
-                'sql' => $dayQuery->toSql(),
-                'bindings' => $dayQuery->getBindings(),
-            ]);
-
             $calls = $dayQuery->count();
             $reverse = $dayQuery->sum('payout_source');
-
-            \Log::info("DEBUG Partner Stats - Results", [
-                'date' => $date,
-                'calls' => $calls,
-                'reverse' => $reverse,
-            ]);
 
             // Stats du même jour mois précédent (convertir en UTC)
             $prevDayStart = $prevDate->copy()->startOfDay()->utc();
@@ -155,7 +132,7 @@ class PartnerStatsController extends Controller
             $prevDayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][$prevDate->dayOfWeek];
 
             $items[] = [
-                'date' => $date,
+                'date' => $dayDate->format('Y-m-d'),
                 'date_label' => $dayName . ' ' . $dayDate->format('d/m'),
                 'comparison_label' => $prevDayName . ' ' . $prevDate->format('d/m'),
                 'calls' => $calls,
@@ -165,6 +142,8 @@ class PartnerStatsController extends Controller
                 'calls_var' => $callsVar,
                 'reverse_var' => $reverseVar,
             ];
+
+            $currentDay->addDay();
         }
 
         // Calculer les totaux du mois (convertir en UTC)
@@ -211,7 +190,7 @@ class PartnerStatsController extends Controller
             return response()->json(['error' => 'Date requise'], 400);
         }
 
-        $currentDate = \Carbon\Carbon::parse($date, 'Europe/Paris');
+        $currentDate = \Carbon\Carbon::createFromFormat('Y-m-d', $date, 'Europe/Paris')->startOfDay();
         $previousWeekDate = $currentDate->copy()->subDays(7);
 
         // Closure pour appliquer les filtres
@@ -229,8 +208,8 @@ class PartnerStatsController extends Controller
 
         foreach ($hours as $hour) {
             // Créer les dates en Europe/Paris puis convertir en UTC pour la requête
-            $hourStart = $currentDate->copy()->setHour($hour)->setMinute(0)->setSecond(0)->utc();
-            $hourEnd = $currentDate->copy()->setHour($hour)->setMinute(59)->setSecond(59)->utc();
+            $hourStart = $currentDate->copy()->setTime($hour, 0, 0)->utc();
+            $hourEnd = $currentDate->copy()->setTime($hour, 59, 59)->utc();
 
             // Stats heure actuelle
             $currentQuery = Call::whereBetween('called_at', [$hourStart, $hourEnd]);
@@ -240,8 +219,8 @@ class PartnerStatsController extends Controller
             $reverse = $currentQuery->sum('payout_source');
 
             // Stats même heure semaine précédente (convertir en UTC)
-            $prevHourStart = $previousWeekDate->copy()->setHour($hour)->setMinute(0)->setSecond(0)->utc();
-            $prevHourEnd = $previousWeekDate->copy()->setHour($hour)->setMinute(59)->setSecond(59)->utc();
+            $prevHourStart = $previousWeekDate->copy()->setTime($hour, 0, 0)->utc();
+            $prevHourEnd = $previousWeekDate->copy()->setTime($hour, 59, 59)->utc();
 
             $prevQuery = Call::whereBetween('called_at', [$prevHourStart, $prevHourEnd]);
             $applyFilters($prevQuery);
