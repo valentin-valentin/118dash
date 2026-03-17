@@ -96,17 +96,28 @@ function formatDuration(minutes, defaultValue = null) {
 // ─── Partner URL Generator ────────────────────────────────────────────────────
 const showPartnerUrlModal = ref(false)
 const selectedSourceIds = ref([])
-const generatedPartnerUrl = ref('')
+const generatedUrl = ref('')
+const isGenerating = ref(false)
 
 function openPartnerUrlModal() {
     selectedSourceIds.value = []
-    generatedPartnerUrl.value = ''
+    generatedUrl.value = ''
     showPartnerUrlModal.value = true
+}
+
+function toggleSource(sourceId) {
+    const index = selectedSourceIds.value.indexOf(sourceId)
+    if (index > -1) {
+        selectedSourceIds.value.splice(index, 1)
+    } else {
+        selectedSourceIds.value.push(sourceId)
+    }
 }
 
 async function generateUrl() {
     if (selectedSourceIds.value.length === 0) return
 
+    isGenerating.value = true
     try {
         const response = await fetch('/data/sources/generate-partner-url', {
             method: 'POST',
@@ -118,27 +129,21 @@ async function generateUrl() {
         })
 
         if (!response.ok) {
-            throw new Error('Network response was not ok')
+            throw new Error('Erreur lors de la génération')
         }
 
         const data = await response.json()
-        console.log('Received data:', data)
-
-        if (data && data.url) {
-            generatedPartnerUrl.value = data.url
-            console.log('URL set to:', generatedPartnerUrl.value)
-        }
+        generatedUrl.value = data.url
     } catch (error) {
-        console.error('Error generating URL:', error)
         alert('Erreur lors de la génération de l\'URL')
+    } finally {
+        isGenerating.value = false
     }
 }
 
-function copyToClipboard() {
-    navigator.clipboard.writeText(generatedPartnerUrl.value)
-        .then(() => {
-            alert('URL copiée dans le presse-papier!')
-        })
+function copyUrl() {
+    navigator.clipboard.writeText(generatedUrl.value)
+    alert('URL copiée!')
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -317,66 +322,58 @@ onMounted(() => {
 
             <!-- Modal génération URL partenaire -->
             <Dialog :open="showPartnerUrlModal" @update:open="(val) => showPartnerUrlModal = val">
-                <DialogContent class="max-w-2xl">
+                <DialogContent class="max-w-xl">
                     <DialogHeader>
                         <DialogTitle>Générer URL Partenaire</DialogTitle>
                     </DialogHeader>
 
                     <div class="space-y-4">
-                        <!-- Sélection des sources -->
-                        <div>
-                            <p class="text-sm font-medium text-gray-700 mb-3">Sélectionnez les sources :</p>
-                            <div class="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-md p-3">
+                        <!-- Liste des sources -->
+                        <div class="space-y-2">
+                            <label class="text-sm font-medium text-gray-900">Sélectionnez les sources :</label>
+                            <div class="border rounded-lg max-h-80 overflow-y-auto p-2 space-y-1">
                                 <div
                                     v-for="source in table.data?.items ?? []"
                                     :key="source.id"
-                                    class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                                    @click="() => {
-                                        const index = selectedSourceIds.indexOf(source.id)
-                                        if (index > -1) {
-                                            selectedSourceIds.splice(index, 1)
-                                        } else {
-                                            selectedSourceIds.push(source.id)
-                                        }
-                                    }"
+                                    class="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer"
+                                    @click="toggleSource(source.id)"
                                 >
-                                    <Checkbox
-                                        :id="`source-${source.id}`"
+                                    <input
+                                        type="checkbox"
                                         :checked="selectedSourceIds.includes(source.id)"
+                                        class="h-4 w-4 rounded border-gray-300"
                                     />
-                                    <div class="flex items-center gap-2 flex-1">
-                                        <ColorBadge :color="source.color" :label="source.name" />
-                                        <span class="text-xs text-gray-500">#{{ source.id }}</span>
-                                    </div>
+                                    <ColorBadge :color="source.color" :label="source.name" />
+                                    <span class="text-xs text-gray-500">#{{ source.id }}</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Bouton générer -->
-                        <div class="flex justify-end">
-                            <Button
-                                :disabled="selectedSourceIds.length === 0"
-                                @click="generateUrl"
-                            >
-                                Générer l'URL
-                            </Button>
-                        </div>
+                        <Button
+                            :disabled="selectedSourceIds.length === 0 || isGenerating"
+                            @click="generateUrl"
+                            class="w-full"
+                        >
+                            {{ isGenerating ? 'Génération...' : 'Générer l\'URL' }}
+                        </Button>
 
                         <!-- URL générée -->
-                        <div v-if="generatedPartnerUrl" class="space-y-2">
-                            <p class="text-sm font-medium text-gray-700">URL générée :</p>
+                        <div v-if="generatedUrl" class="space-y-2 p-3 bg-gray-50 rounded-lg">
+                            <label class="text-sm font-medium text-gray-900">URL générée :</label>
                             <div class="flex gap-2">
-                                <Input
-                                    :value="generatedPartnerUrl"
+                                <input
+                                    type="text"
+                                    :value="generatedUrl"
                                     readonly
-                                    class="font-mono text-xs"
+                                    class="flex-1 px-3 py-2 text-xs font-mono bg-white border rounded-md"
                                 />
-                                <Button variant="outline" @click="copyToClipboard">
+                                <Button variant="outline" size="sm" @click="copyUrl">
                                     <Copy class="h-4 w-4" />
                                 </Button>
                             </div>
-                            <p class="text-xs text-gray-500">
-                                Cette URL donne accès aux statistiques de {{ selectedSourceIds.length }} source{{ selectedSourceIds.length > 1 ? 's' : '' }}.
+                            <p class="text-xs text-gray-600">
+                                Accès aux stats de {{ selectedSourceIds.length }} source{{ selectedSourceIds.length > 1 ? 's' : '' }}
                             </p>
                         </div>
                     </div>

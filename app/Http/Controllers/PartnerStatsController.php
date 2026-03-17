@@ -107,7 +107,7 @@ class PartnerStatsController extends Controller
 
         $items = [];
         foreach ($days as $date) {
-            $dayDate = \Carbon\Carbon::parse($date)->setTimezone('Europe/Paris');
+            $dayDate = \Carbon\Carbon::parse($date, 'Europe/Paris');
             $prevDate = $dayDate->copy()->subMonth();
 
             // Stats du jour actuel (convertir en UTC pour la requête)
@@ -156,7 +156,7 @@ class PartnerStatsController extends Controller
         $totalCalls = $totalQuery->count();
         $totalReverse = $totalQuery->sum('payout_source');
 
-        $prevTotalQuery = Call::whereBetween('called_at', [$prevStartDate->copy(), $prevEndDate->copy()]);
+        $prevTotalQuery = Call::whereBetween('called_at', [$prevStartDate->copy()->utc(), $prevEndDate->copy()->utc()]);
         $applyFilters($prevTotalQuery);
         $prevTotalCalls = $prevTotalQuery->count();
         $prevTotalReverse = $prevTotalQuery->sum('payout_source');
@@ -194,7 +194,7 @@ class PartnerStatsController extends Controller
             return response()->json(['error' => 'Date requise'], 400);
         }
 
-        $currentDate = \Carbon\Carbon::parse($date)->setTimezone('Europe/Paris');
+        $currentDate = \Carbon\Carbon::parse($date, 'Europe/Paris');
         $previousWeekDate = $currentDate->copy()->subDays(7);
 
         // Closure pour appliquer les filtres
