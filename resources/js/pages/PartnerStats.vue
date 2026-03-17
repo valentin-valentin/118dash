@@ -209,7 +209,7 @@ onMounted(() => {
     <Head title="Statistiques Partenaire" />
 
     <div class="min-h-screen bg-gray-50">
-        <div class="max-w-3xl mx-auto p-6 space-y-4">
+        <div class="max-w-2xl mx-auto p-6 space-y-4">
             <!-- Filtres -->
             <FilterBar
                 :has-active-filters="hasFilters"
@@ -345,7 +345,7 @@ onMounted(() => {
 
             <!-- Modal de détail heure par heure -->
             <Dialog :open="showHourlyModal" @update:open="closeHourlyView">
-                <DialogContent class="!w-[90vw] md:!w-[70vw] lg:!w-[60vw] xl:!w-[50vw] !max-w-3xl max-h-[90vh] overflow-y-auto !p-0">
+                <DialogContent class="!w-[90vw] md:!w-[70vw] lg:!w-[60vw] xl:!w-[50vw] !max-w-2xl max-h-[90vh] overflow-y-auto !p-0">
                     <div class="px-6 pt-4">
                         <DialogTitle class="text-base font-bold">
                             {{ hourly.data?.date_label || 'Détail de la journée' }}

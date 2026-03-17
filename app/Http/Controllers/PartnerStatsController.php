@@ -246,8 +246,8 @@ class PartnerStatsController extends Controller
             $query->where('total_duration', '>=', 10);
         };
 
-        // Générer les heures 9-21 (heures d'ouverture partenaires)
-        $hours = range(9, 21);
+        // Générer les heures 8-21 (heures d'ouverture)
+        $hours = range(8, 21);
         $hourlyData = [];
 
         foreach ($hours as $hour) {

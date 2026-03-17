@@ -548,7 +548,7 @@ onMounted(() => {
                             class="h-4 w-4 rounded border-gray-300"
                         />
                         <label for="min-duration" class="text-sm text-gray-700 cursor-pointer select-none">
-                            Appels ≥ 10 secondes
+                            ≥ 10 secondes
                         </label>
                     </div>
                 </div>
