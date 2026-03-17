@@ -74,6 +74,7 @@ const { filters, reset } = useFilters(
         carrier: [],
         callcenter_id: [],
         agent_name: [],
+        min_duration: false,
     },
     (f) => {
         daily.load(f)
@@ -89,7 +90,8 @@ const hasFilters = computed(() =>
     (Array.isArray(filters.brand_name) && filters.brand_name.length > 0) ||
     (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
     (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
-    (Array.isArray(filters.agent_name) && filters.agent_name.length > 0)
+    (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
+    filters.min_duration
 )
 
 // ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
@@ -536,6 +538,19 @@ onMounted(() => {
                         searchable
                         multiple
                     />
+
+                    <!-- Filtre durée minimum -->
+                    <div class="flex items-center gap-2 px-3 py-2 bg-white rounded-md border border-gray-200">
+                        <input
+                            type="checkbox"
+                            id="min-duration"
+                            v-model="filters.min_duration"
+                            class="h-4 w-4 rounded border-gray-300"
+                        />
+                        <label for="min-duration" class="text-sm text-gray-700 cursor-pointer select-none">
+                            Appels ≥ 10 secondes
+                        </label>
+                    </div>
                 </div>
             </FilterBar>
 

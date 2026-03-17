@@ -456,6 +456,11 @@ class DashboardController extends Controller
                 });
             }
 
+            // Filtre optionnel : appels >= 10 secondes
+            if ($request->filled('min_duration') && $request->min_duration == 'true') {
+                $query->where('total_duration', '>=', 10);
+            }
+
             return $query;
         };
 
@@ -738,6 +743,11 @@ class DashboardController extends Controller
                              });
                       });
                 });
+            }
+
+            // Filtre optionnel : appels >= 10 secondes
+            if ($request->filled('min_duration') && $request->min_duration == 'true') {
+                $query->where('total_duration', '>=', 10);
             }
 
             return $query;

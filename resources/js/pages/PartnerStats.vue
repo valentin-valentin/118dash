@@ -101,6 +101,24 @@ const sortedRows = computed(() => {
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function isToday(dateString) {
+    const date = new Date(dateString)
+    const today = new Date()
+    return date.toDateString() === today.toDateString()
+}
+
+function isCurrentHour(hourString, currentHourFR) {
+    if (currentHourFR === undefined || currentHourFR === null) return false
+    const hour = parseInt(hourString.split('h')[0])
+    return hour === currentHourFR
+}
+
+function isFutureHour(hourString, currentHourFR) {
+    if (currentHourFR === undefined || currentHourFR === null) return false
+    const hour = parseInt(hourString.split('h')[0])
+    return hour > currentHourFR
+}
+
 function formatDayName(dateString) {
     const date = new Date(dateString)
     const dayName = date.toLocaleDateString('fr-FR', { weekday: 'long' })
@@ -173,25 +191,6 @@ function closeHourlyView() {
     selectedDate.value = null
 }
 
-// ─── Check if hour is current/future ──────────────────────────────────────────
-function isToday(dateString) {
-    const date = new Date(dateString)
-    const today = new Date()
-    return date.toDateString() === today.toDateString()
-}
-
-function isCurrentHour(hourString, currentHourFR) {
-    if (currentHourFR === undefined || currentHourFR === null) return false
-    const hour = parseInt(hourString.split('h')[0])
-    return hour === currentHourFR
-}
-
-function isFutureHour(hourString, currentHourFR) {
-    if (currentHourFR === undefined || currentHourFR === null) return false
-    const hour = parseInt(hourString.split('h')[0])
-    return hour > currentHourFR
-}
-
 // ─── Source title ─────────────────────────────────────────────────────────────
 const sourceTitle = computed(() => {
     if (props.sources.length === 1) {
@@ -210,7 +209,7 @@ onMounted(() => {
     <Head title="Statistiques Partenaire" />
 
     <div class="min-h-screen bg-gray-50">
-        <div class="max-w-4xl mx-auto p-6 space-y-4">
+        <div class="max-w-3xl mx-auto p-6 space-y-4">
             <!-- Filtres -->
             <FilterBar
                 :has-active-filters="hasFilters"
@@ -346,7 +345,7 @@ onMounted(() => {
 
             <!-- Modal de détail heure par heure -->
             <Dialog :open="showHourlyModal" @update:open="closeHourlyView">
-                <DialogContent class="!w-[95vw] md:!w-[85vw] lg:!w-[75vw] xl:!w-[65vw] !max-w-none max-h-[90vh] overflow-y-auto !p-0">
+                <DialogContent class="!w-[90vw] md:!w-[70vw] lg:!w-[60vw] xl:!w-[50vw] !max-w-3xl max-h-[90vh] overflow-y-auto !p-0">
                     <div class="px-6 pt-4">
                         <DialogTitle class="text-base font-bold">
                             {{ hourly.data?.date_label || 'Détail de la journée' }}

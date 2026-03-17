@@ -87,6 +87,8 @@ class PartnerStatsController extends Controller
         $prevStartDate = $startDate->copy()->subMonth();
         $prevEndDate = $endDate->copy()->subMonth();
 
+        $today = \Carbon\Carbon::now('Europe/Paris');
+
         // Créer closure pour appliquer les filtres
         $applyFilters = function($query) use ($request, $sourceIds) {
             // Filtrer par sources autorisées
@@ -103,12 +105,16 @@ class PartnerStatsController extends Controller
                          });
                   });
             });
+
+            // PARTENAIRES : Uniquement les appels >= 10 secondes
+            $query->where('total_duration', '>=', 10);
         };
 
-        // Récupérer les jours du mois
+        // Générer les jours du mois jusqu'à aujourd'hui (pas au-delà)
+        $lastDay = $today->lt($endDate) ? $today : $endDate;
         $allDays = collect();
         $currentDay = $startDate->copy();
-        while ($currentDay <= $endDate) {
+        while ($currentDay->lte($lastDay)) {
             $allDays->push($currentDay->format('Y-m-d'));
             $currentDay->addDay();
         }
@@ -235,6 +241,9 @@ class PartnerStatsController extends Controller
                          });
                   });
             });
+
+            // PARTENAIRES : Uniquement les appels >= 10 secondes
+            $query->where('total_duration', '>=', 10);
         };
 
         // Générer les heures 9-21 (heures d'ouverture partenaires)
