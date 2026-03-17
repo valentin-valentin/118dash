@@ -90,6 +90,7 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/sources/stats', [SourceController::class, 'stats']);
         Route::get('/sources', [SourceController::class, 'data']);
+        Route::post('/sources/generate-partner-url', [SourceController::class, 'generatePartnerUrl']);
 
         Route::get('/phonenumbers/stats', [PhonenumberController::class, 'stats']);
         Route::get('/phonenumbers/filter-options', [PhonenumberController::class, 'filterOptions']);

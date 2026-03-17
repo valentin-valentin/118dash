@@ -243,4 +243,13 @@ class SourceController extends Controller
             ];
         });
     }
+
+    public function generatePartnerUrl(Request $request)
+    {
+        $sourceIds = $request->input('source_ids', []);
+        sort($sourceIds);
+        $sourcesParam = implode(',', $sourceIds);
+        $hash = \App\Http\Controllers\PartnerStatsController::generateHash($sourcesParam);
+        return response()->json(['url' => url("/partners/{$sourcesParam}/{$hash}")]);
+    }
 }
