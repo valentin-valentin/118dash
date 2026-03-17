@@ -6,12 +6,21 @@ use App\Http\Controllers\BlacklistController;
 use App\Http\Controllers\CallController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\PartnerStatsController;
 use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\SourceController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+// ── Routes publiques partenaires ──────────────────────────────────────────────
+Route::get('/partners/{sources}/{hash}', [PartnerStatsController::class, 'show']);
+Route::prefix('partners/{sources}/{hash}/data')->group(function () {
+    Route::get('/daily-breakdown', [PartnerStatsController::class, 'dailyBreakdown']);
+    Route::get('/hourly-breakdown', [PartnerStatsController::class, 'hourlyBreakdown']);
+    Route::get('/filter-options', [PartnerStatsController::class, 'filterOptions']);
+});
 
 Route::redirect('/', '/dashboard');
 

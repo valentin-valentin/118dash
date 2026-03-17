@@ -393,17 +393,18 @@ class DashboardController extends Controller
     public function dailyBreakdown(Request $request): JsonResponse
     {
         // Parse month filter (format: YYYY-MM)
+        // Interpréter les dates en timezone Europe/Paris
         if ($request->filled('month')) {
             [$year, $month] = explode('-', $request->month);
-            $start = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
-            $end = \Carbon\Carbon::createFromDate($year, $month, 1)->endOfMonth();
-            $previousMonthStart = \Carbon\Carbon::createFromDate($year, $month, 1)->subMonth()->startOfMonth();
-            $previousMonthEnd = \Carbon\Carbon::createFromDate($year, $month, 1)->subMonth()->endOfMonth();
+            $start = \Carbon\Carbon::createFromDate($year, $month, 1, 'Europe/Paris')->startOfMonth();
+            $end = \Carbon\Carbon::createFromDate($year, $month, 1, 'Europe/Paris')->endOfMonth();
+            $previousMonthStart = \Carbon\Carbon::createFromDate($year, $month, 1, 'Europe/Paris')->subMonth()->startOfMonth();
+            $previousMonthEnd = \Carbon\Carbon::createFromDate($year, $month, 1, 'Europe/Paris')->subMonth()->endOfMonth();
         } else {
-            $start = now()->startOfMonth();
-            $end = now()->endOfMonth();
-            $previousMonthStart = now()->subMonth()->startOfMonth();
-            $previousMonthEnd = now()->subMonth()->endOfMonth();
+            $start = now('Europe/Paris')->startOfMonth();
+            $end = now('Europe/Paris')->endOfMonth();
+            $previousMonthStart = now('Europe/Paris')->subMonth()->startOfMonth();
+            $previousMonthEnd = now('Europe/Paris')->subMonth()->endOfMonth();
         }
 
         // Créer une closure pour appliquer les filtres (réutilisable)
@@ -458,8 +459,8 @@ class DashboardController extends Controller
             return $query;
         };
 
-        $today = \Carbon\Carbon::now();
-        $now = \Carbon\Carbon::now();
+        $today = \Carbon\Carbon::now('Europe/Paris');
+        $now = \Carbon\Carbon::now('Europe/Paris');
 
         // Générer les jours du mois jusqu'à aujourd'hui (pas au-delà)
         $lastDay = $today->lt($end) ? $today : $end;
@@ -472,18 +473,19 @@ class DashboardController extends Controller
 
         // Récupérer les données pour chaque jour
         $daily = $allDays->map(function($dateStr) use ($applyFilters, $today, $now) {
-            $date = \Carbon\Carbon::parse($dateStr);
+            // Parser la date en timezone Europe/Paris puis convertir en UTC pour la requête
+            $date = \Carbon\Carbon::parse($dateStr, 'Europe/Paris');
 
             $dayQuery = Call::query();
             $applyFilters($dayQuery);
 
             // Si c'est aujourd'hui, limiter à maintenant
             if ($date->isSameDay($today)) {
-                $dayStart = $date->copy()->startOfDay();
-                $dayEnd = $now;
+                $dayStart = $date->copy()->startOfDay()->utc();
+                $dayEnd = $now->copy()->utc();
             } else {
-                $dayStart = $date->copy()->startOfDay();
-                $dayEnd = $date->copy()->endOfDay();
+                $dayStart = $date->copy()->startOfDay()->utc();
+                $dayEnd = $date->copy()->endOfDay()->utc();
             }
 
             $data = $dayQuery->whereBetween('called_at', [$dayStart, $dayEnd])
@@ -514,23 +516,24 @@ class DashboardController extends Controller
 
         // Pour chaque jour, récupérer les données de 7 jours avant
         foreach ($daily as $dayData) {
-            $currentDate = \Carbon\Carbon::parse($dayData->date);
+            // Parser en timezone Europe/Paris
+            $currentDate = \Carbon\Carbon::parse($dayData->date, 'Europe/Paris');
             $previousWeekDate = $currentDate->copy()->subDays(7);
 
             $prevQuery = Call::query();
             $applyFilters($prevQuery);
 
-            // Si c'est aujourd'hui, comparer jusqu'à la même heure
+            // Si c'est aujourd'hui, comparer jusqu'à la même heure (convertir en UTC)
             if ($currentDate->isToday()) {
                 $prevQuery->whereBetween('called_at', [
-                    $previousWeekDate->copy()->startOfDay(),
-                    $previousWeekDate->copy()->setTime($now->hour, $now->minute, $now->second)
+                    $previousWeekDate->copy()->startOfDay()->utc(),
+                    $previousWeekDate->copy()->setTime($now->hour, $now->minute, $now->second)->utc()
                 ]);
             } else {
-                // Jour complet
+                // Jour complet (convertir en UTC)
                 $prevQuery->whereBetween('called_at', [
-                    $previousWeekDate->copy()->startOfDay(),
-                    $previousWeekDate->copy()->endOfDay()
+                    $previousWeekDate->copy()->startOfDay()->utc(),
+                    $previousWeekDate->copy()->endOfDay()->utc()
                 ]);
             }
 
@@ -748,8 +751,9 @@ class DashboardController extends Controller
 
         foreach ($hours as $hour) {
             // Période actuelle (heure spécifique du jour sélectionné)
-            $hourStart = $currentDate->copy()->setTime($hour, 0, 0);
-            $hourEnd = $currentDate->copy()->setTime($hour, 59, 59);
+            // Créer les dates en Europe/Paris puis convertir en UTC pour la requête
+            $hourStart = $currentDate->copy()->setTime($hour, 0, 0)->utc();
+            $hourEnd = $currentDate->copy()->setTime($hour, 59, 59)->utc();
 
             $currentQuery = Call::query();
             $applyFilters($currentQuery);
@@ -764,9 +768,9 @@ class DashboardController extends Controller
                 ')
                 ->first();
 
-            // Même heure, 7 jours avant
-            $prevHourStart = $previousWeekDate->copy()->setTime($hour, 0, 0);
-            $prevHourEnd = $previousWeekDate->copy()->setTime($hour, 59, 59);
+            // Même heure, 7 jours avant (convertir en UTC)
+            $prevHourStart = $previousWeekDate->copy()->setTime($hour, 0, 0)->utc();
+            $prevHourEnd = $previousWeekDate->copy()->setTime($hour, 59, 59)->utc();
 
             $prevQuery = Call::query();
             $applyFilters($prevQuery);
@@ -826,20 +830,54 @@ class DashboardController extends Controller
             ];
         }
 
-        // Calculer les totaux de la journée
-        $totalCalls = array_sum(array_column($hourlyData, 'calls'));
-        $totalCa = round(array_sum(array_column($hourlyData, 'ca')), 2);
-        $totalReverse = round(array_sum(array_column($hourlyData, 'reverse')), 2);
-        $totalBenefice = round(array_sum(array_column($hourlyData, 'benefice')), 2);
-        $totalDuration = array_sum(array_column($hourlyData, 'total_duration'));
-        $avgDuration = $totalCalls > 0 ? round($totalDuration / $totalCalls) : 0;
+        // Calculer les totaux de la journée (9h-20h59) en interrogeant directement la base
+        // Convertir en UTC pour la requête
+        $dayStart = $currentDate->copy()->setTime(9, 0, 0)->utc();
+        $dayEnd = $currentDate->copy()->setTime(20, 59, 59)->utc();
 
-        $prevTotalCalls = array_sum(array_column($hourlyData, 'prev_calls'));
-        $prevTotalCa = round(array_sum(array_column($hourlyData, 'prev_ca')), 2);
-        $prevTotalReverse = round(array_sum(array_column($hourlyData, 'prev_reverse')), 2);
-        $prevTotalBenefice = round(array_sum(array_column($hourlyData, 'prev_benefice')), 2);
-        $prevTotalDuration = array_sum(array_column($hourlyData, 'prev_total_duration'));
-        $prevAvgDuration = $prevTotalCalls > 0 ? round($prevTotalDuration / $prevTotalCalls) : 0;
+        $totalQuery = Call::query();
+        $applyFilters($totalQuery);
+        $totalStats = $totalQuery->whereBetween('called_at', [$dayStart, $dayEnd])
+            ->selectRaw('
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->first();
+
+        $totalCalls = $totalStats ? (int) $totalStats->calls : 0;
+        $totalCa = $totalStats ? round((float) $totalStats->ca, 2) : 0;
+        $totalReverse = $totalStats ? round((float) $totalStats->reverse, 2) : 0;
+        $totalBenefice = $totalStats ? round((float) $totalStats->benefice, 2) : 0;
+        $totalDuration = $totalStats ? (int) $totalStats->total_duration : 0;
+        $avgDuration = $totalStats ? round((float) $totalStats->avg_duration) : 0;
+
+        // Totaux semaine précédente (9h-20h59) - convertir en UTC
+        $prevDayStart = $previousWeekDate->copy()->setTime(9, 0, 0)->utc();
+        $prevDayEnd = $previousWeekDate->copy()->setTime(20, 59, 59)->utc();
+
+        $prevTotalQuery = Call::query();
+        $applyFilters($prevTotalQuery);
+        $prevTotalStats = $prevTotalQuery->whereBetween('called_at', [$prevDayStart, $prevDayEnd])
+            ->selectRaw('
+                COUNT(*) as calls,
+                COALESCE(SUM(payout), 0) as ca,
+                COALESCE(SUM(payout_source), 0) as reverse,
+                COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
+                COALESCE(SUM(total_duration), 0) as total_duration,
+                COALESCE(AVG(total_duration), 0) as avg_duration
+            ')
+            ->first();
+
+        $prevTotalCalls = $prevTotalStats ? (int) $prevTotalStats->calls : 0;
+        $prevTotalCa = $prevTotalStats ? round((float) $prevTotalStats->ca, 2) : 0;
+        $prevTotalReverse = $prevTotalStats ? round((float) $prevTotalStats->reverse, 2) : 0;
+        $prevTotalBenefice = $prevTotalStats ? round((float) $prevTotalStats->benefice, 2) : 0;
+        $prevTotalDuration = $prevTotalStats ? (int) $prevTotalStats->total_duration : 0;
+        $prevAvgDuration = $prevTotalStats ? round((float) $prevTotalStats->avg_duration) : 0;
 
         // Variations totales
         $callsVar = ($prevTotalCalls > 0) ? round((($totalCalls - $prevTotalCalls) / $prevTotalCalls) * 100, 1) : null;
