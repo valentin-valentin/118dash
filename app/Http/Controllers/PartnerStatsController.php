@@ -111,8 +111,8 @@ class PartnerStatsController extends Controller
             $prevDate = $dayDate->copy()->subMonth();
 
             // Stats du jour actuel (convertir en UTC pour la requête)
-            $dayStart = $dayDate->copy()->startOfDay()->utc();
-            $dayEnd = $dayDate->copy()->endOfDay()->utc();
+            $dayStart = $dayDate->copy()->startOfDay();
+            $dayEnd = $dayDate->copy()->endOfDay();
 
             $dayQuery = Call::whereBetween('called_at', [$dayStart, $dayEnd]);
             $applyFilters($dayQuery);
@@ -121,8 +121,8 @@ class PartnerStatsController extends Controller
             $reverse = $dayQuery->sum('payout_source');
 
             // Stats du même jour mois précédent (convertir en UTC)
-            $prevDayStart = $prevDate->copy()->startOfDay()->utc();
-            $prevDayEnd = $prevDate->copy()->endOfDay()->utc();
+            $prevDayStart = $prevDate->copy()->startOfDay();
+            $prevDayEnd = $prevDate->copy()->endOfDay();
 
             $prevDayQuery = Call::whereBetween('called_at', [$prevDayStart, $prevDayEnd]);
             $applyFilters($prevDayQuery);
@@ -151,12 +151,12 @@ class PartnerStatsController extends Controller
         }
 
         // Calculer les totaux du mois (convertir en UTC)
-        $totalQuery = Call::whereBetween('called_at', [$startDate->copy()->utc(), $endDate->copy()->utc()]);
+        $totalQuery = Call::whereBetween('called_at', [$startDate->copy(), $endDate->copy()]);
         $applyFilters($totalQuery);
         $totalCalls = $totalQuery->count();
         $totalReverse = $totalQuery->sum('payout_source');
 
-        $prevTotalQuery = Call::whereBetween('called_at', [$prevStartDate->copy()->utc(), $prevEndDate->copy()->utc()]);
+        $prevTotalQuery = Call::whereBetween('called_at', [$prevStartDate->copy(), $prevEndDate->copy()]);
         $applyFilters($prevTotalQuery);
         $prevTotalCalls = $prevTotalQuery->count();
         $prevTotalReverse = $prevTotalQuery->sum('payout_source');
@@ -212,8 +212,8 @@ class PartnerStatsController extends Controller
 
         foreach ($hours as $hour) {
             // Créer les dates en Europe/Paris puis convertir en UTC pour la requête
-            $hourStart = $currentDate->copy()->setHour($hour)->setMinute(0)->setSecond(0)->utc();
-            $hourEnd = $currentDate->copy()->setHour($hour)->setMinute(59)->setSecond(59)->utc();
+            $hourStart = $currentDate->copy()->setHour($hour)->setMinute(0)->setSecond(0);
+            $hourEnd = $currentDate->copy()->setHour($hour)->setMinute(59)->setSecond(59);
 
             // Stats heure actuelle
             $currentQuery = Call::whereBetween('called_at', [$hourStart, $hourEnd]);
@@ -223,8 +223,8 @@ class PartnerStatsController extends Controller
             $reverse = $currentQuery->sum('payout_source');
 
             // Stats même heure semaine précédente (convertir en UTC)
-            $prevHourStart = $previousWeekDate->copy()->setHour($hour)->setMinute(0)->setSecond(0)->utc();
-            $prevHourEnd = $previousWeekDate->copy()->setHour($hour)->setMinute(59)->setSecond(59)->utc();
+            $prevHourStart = $previousWeekDate->copy()->setHour($hour)->setMinute(0)->setSecond(0);
+            $prevHourEnd = $previousWeekDate->copy()->setHour($hour)->setMinute(59)->setSecond(59);
 
             $prevQuery = Call::whereBetween('called_at', [$prevHourStart, $prevHourEnd]);
             $applyFilters($prevQuery);
@@ -248,16 +248,16 @@ class PartnerStatsController extends Controller
         }
 
         // Totaux de la journée (9h-20h59) - convertir en UTC
-        $dayStart = $currentDate->copy()->setHour(9)->setMinute(0)->setSecond(0)->utc();
-        $dayEnd = $currentDate->copy()->setHour(20)->setMinute(59)->setSecond(59)->utc();
+        $dayStart = $currentDate->copy()->setHour(9)->setMinute(0)->setSecond(0);
+        $dayEnd = $currentDate->copy()->setHour(20)->setMinute(59)->setSecond(59);
 
         $totalQuery = Call::whereBetween('called_at', [$dayStart, $dayEnd]);
         $applyFilters($totalQuery);
         $totalCalls = $totalQuery->count();
         $totalReverse = $totalQuery->sum('payout_source');
 
-        $prevDayStart = $previousWeekDate->copy()->setHour(9)->setMinute(0)->setSecond(0)->utc();
-        $prevDayEnd = $previousWeekDate->copy()->setHour(20)->setMinute(59)->setSecond(59)->utc();
+        $prevDayStart = $previousWeekDate->copy()->setHour(9)->setMinute(0)->setSecond(0);
+        $prevDayEnd = $previousWeekDate->copy()->setHour(20)->setMinute(59)->setSecond(59);
 
         $prevTotalQuery = Call::whereBetween('called_at', [$prevDayStart, $prevDayEnd]);
         $applyFilters($prevTotalQuery);

@@ -527,14 +527,12 @@ class DashboardController extends Controller
             if ($currentDate->isToday()) {
                 $prevQuery->whereBetween('called_at', [
                     $previousWeekDate->copy()->startOfDay()->utc(),
-                    $previousWeekDate->copy()->setTime($now->hour, $now->minute, $now->second)->utc()
-                ]);
+                    $previousWeekDate->copy()->setTime($now->hour, $now->minute, $now->second)                ]);
             } else {
                 // Jour complet (convertir en UTC)
                 $prevQuery->whereBetween('called_at', [
                     $previousWeekDate->copy()->startOfDay()->utc(),
-                    $previousWeekDate->copy()->endOfDay()->utc()
-                ]);
+                    $previousWeekDate->copy()->endOfDay()                ]);
             }
 
             $prevData = $prevQuery->selectRaw('
