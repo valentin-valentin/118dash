@@ -210,6 +210,12 @@ onMounted(() => {
 
     <div class="min-h-screen bg-gray-50">
         <div class="max-w-2xl mx-auto p-6 space-y-4">
+            <!-- Titre -->
+            <div class="text-center">
+                <h1 class="text-2xl font-bold text-gray-900">{{ sourceTitle }}</h1>
+                <p class="text-sm text-gray-500 mt-1">Statistiques partenaire</p>
+            </div>
+
             <!-- Filtres -->
             <FilterBar
                 :has-active-filters="hasFilters"
