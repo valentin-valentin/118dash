@@ -18,7 +18,14 @@ import {
 } from '@/components/ui/dialog'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Pencil, Check, X, Link as LinkIcon, Copy } from 'lucide-vue-next'
+import { Plus, Pencil, Check, X, Link as LinkIcon, Copy, FileText } from 'lucide-vue-next'
+
+// ─── Documentation API ─────────────────────────────────────────────────────────
+function copyDocLink(source) {
+    const url = window.location.origin + '/api-documentation/' + source.api_key
+    navigator.clipboard.writeText(url)
+    alert('Lien de documentation copié !')
+}
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/sources/stats')
@@ -283,6 +290,14 @@ onMounted(() => {
                     </template>
 
                     <template #actions="{ row }">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            @click="copyDocLink(row)"
+                            title="Copier lien documentation"
+                        >
+                            <FileText class="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="sm" as-child>
                             <Link :href="`/sources/${row.id}/edit`">
                                 <Pencil class="h-4 w-4" />

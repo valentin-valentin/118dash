@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ApiDocumentationController;
 use App\Http\Controllers\ApiTesterController;
 use App\Http\Controllers\AssignmentHistoryController;
 use App\Http\Controllers\BlacklistController;
@@ -14,7 +15,11 @@ use App\Http\Controllers\SourceController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// ── Routes publiques partenaires ──────────────────────────────────────────────
+// ── Routes publiques ───────────────────────────────────────────────────────────
+// Documentation API (publique)
+Route::get('/api-documentation/{apiKey}', [ApiDocumentationController::class, 'show']);
+
+// Stats partenaires
 Route::get('/partners/{sources}/{hash}', [PartnerStatsController::class, 'show']);
 Route::prefix('partners/{sources}/{hash}/data')->group(function () {
     Route::get('/daily-breakdown', [PartnerStatsController::class, 'dailyBreakdown']);
