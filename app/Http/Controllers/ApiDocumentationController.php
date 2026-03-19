@@ -67,8 +67,9 @@ class ApiDocumentationController extends Controller
                 ],
                 'response' => [
                     'success' => true,
-                    'phonenumber' => '0123456789',
-                    'expires_at' => '2024-01-15T14:30:00Z',
+                    'phonenumber' => '+33890000000',
+                    'display_expires_at' => '2026-03-20T21:44:16.000000Z',
+                    'real_expires_at' => '2026-03-20T21:44:16.000000Z',
                 ],
             ],
             [
