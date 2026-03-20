@@ -159,6 +159,14 @@ function submit() {
         form.max_concurrent_numbers = null
     }
 
+    // Convertir les champs vides en null pour les durées
+    if (!form.display_duration_minutes || form.display_duration_minutes === '' || form.display_duration_minutes === 0) {
+        form.display_duration_minutes = null
+    }
+    if (!form.real_duration_minutes || form.real_duration_minutes === '' || form.real_duration_minutes === 0) {
+        form.real_duration_minutes = null
+    }
+
     if (isEdit.value) {
         form.put(`/sources/${props.source.id}`)
     } else {
@@ -312,7 +320,7 @@ function submit() {
                                 <Label for="display_duration_minutes">Durée d'affichage (minutes)</Label>
                                 <Input
                                     id="display_duration_minutes"
-                                    v-model.number="form.display_duration_minutes"
+                                    v-model="form.display_duration_minutes"
                                     type="number"
                                     min="1"
                                     :placeholder="displayDurationPlaceholder"
@@ -341,7 +349,7 @@ function submit() {
                                 <Label for="real_duration_minutes">Durée réelle d'expiration (minutes)</Label>
                                 <Input
                                     id="real_duration_minutes"
-                                    v-model.number="form.real_duration_minutes"
+                                    v-model="form.real_duration_minutes"
                                     type="number"
                                     min="1"
                                     :placeholder="realDurationPlaceholder"
