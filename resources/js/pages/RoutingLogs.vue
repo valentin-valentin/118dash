@@ -18,7 +18,6 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Copy, Check } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/routing-logs/stats')
@@ -128,44 +127,6 @@ function closeDetails() {
 
 function formatJSON(obj) {
     return JSON.stringify(obj, null, 2)
-}
-
-// ─── cURL Generation ──────────────────────────────────────────────────────────
-const copiedCurl = ref(false)
-
-function generateCurl(log) {
-    if (!log || !log.endpoint) return ''
-
-    // Déterminer la méthode HTTP à partir du request_data ou utiliser POST par défaut
-    const method = log.request_data?.method || 'POST'
-
-    let curl = `curl -X ${method} '${log.endpoint}'`
-
-    // Ajouter les headers si disponibles
-    if (log.request_data?.headers) {
-        Object.entries(log.request_data.headers).forEach(([key, value]) => {
-            curl += ` \\\n  -H '${key}: ${value}'`
-        })
-    }
-
-    // Ajouter le body si disponible (et si c'est POST/PUT/PATCH)
-    if (['POST', 'PUT', 'PATCH'].includes(method) && log.request_data?.body) {
-        const body = typeof log.request_data.body === 'string'
-            ? log.request_data.body
-            : JSON.stringify(log.request_data.body)
-        curl += ` \\\n  -d '${body}'`
-    }
-
-    return curl
-}
-
-function copyCurl() {
-    if (!selectedLog.value) return
-
-    const curl = generateCurl(selectedLog.value)
-    navigator.clipboard.writeText(curl)
-    copiedCurl.value = true
-    setTimeout(() => copiedCurl.value = false, 2000)
 }
 
 // Pas de groupement - juste les données brutes
@@ -462,24 +423,6 @@ onMounted(() => {
                     <div v-if="selectedLog.response_data" class="space-y-2">
                         <p class="text-xs font-medium text-gray-500">Response Data</p>
                         <pre class="max-h-64 overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100"><code>{{ formatJSON(selectedLog.response_data) }}</code></pre>
-                    </div>
-
-                    <!-- cURL Command -->
-                    <div v-if="selectedLog.endpoint" class="space-y-2">
-                        <div class="flex items-center justify-between">
-                            <p class="text-xs font-medium text-gray-500">Commande cURL pour tester</p>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                @click="copyCurl"
-                                class="h-7 text-xs"
-                            >
-                                <Check v-if="copiedCurl" class="mr-1 h-3 w-3" />
-                                <Copy v-else class="mr-1 h-3 w-3" />
-                                {{ copiedCurl ? 'Copié !' : 'Copier' }}
-                            </Button>
-                        </div>
-                        <pre class="overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100"><code>{{ generateCurl(selectedLog) }}</code></pre>
                     </div>
                 </div>
             </DialogContent>
