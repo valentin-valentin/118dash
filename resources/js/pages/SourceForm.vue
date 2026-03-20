@@ -157,14 +157,35 @@ function submit() {
     // S'assurer que max_concurrent_numbers est null si désactivé
     if (!enableMaxConcurrent.value) {
         form.max_concurrent_numbers = null
+    } else if (form.max_concurrent_numbers) {
+        form.max_concurrent_numbers = parseInt(form.max_concurrent_numbers, 10)
     }
 
-    // Convertir les champs vides en null pour les durées
+    // Convertir payout_call : soit null si vide, soit float si rempli
+    if (!form.payout_call || form.payout_call === '') {
+        form.payout_call = null
+    } else {
+        form.payout_call = parseFloat(form.payout_call)
+    }
+
+    // Convertir payout_minute : soit null si vide, soit float si rempli
+    if (!form.payout_minute || form.payout_minute === '') {
+        form.payout_minute = null
+    } else {
+        form.payout_minute = parseFloat(form.payout_minute)
+    }
+
+    // Convertir les durées : soit null si vide, soit integer si rempli
     if (!form.display_duration_minutes || form.display_duration_minutes === '' || form.display_duration_minutes === 0) {
         form.display_duration_minutes = null
+    } else {
+        form.display_duration_minutes = parseInt(form.display_duration_minutes, 10)
     }
+
     if (!form.real_duration_minutes || form.real_duration_minutes === '' || form.real_duration_minutes === 0) {
         form.real_duration_minutes = null
+    } else {
+        form.real_duration_minutes = parseInt(form.real_duration_minutes, 10)
     }
 
     if (isEdit.value) {
