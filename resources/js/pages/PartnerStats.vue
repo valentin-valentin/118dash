@@ -18,6 +18,9 @@ const props = defineProps({
     hash: String,
 })
 
+// ─── View mode ────────────────────────────────────────────────────────────────
+const viewMode = ref('month') // 'month' | 'year'
+
 // ─── Month Selection ──────────────────────────────────────────────────────────
 const monthOptions = computed(() => {
     const months = []
@@ -35,8 +38,21 @@ const monthOptions = computed(() => {
     return months
 })
 
+// ─── Year Selection ───────────────────────────────────────────────────────────
+const yearOptions = computed(() => {
+    const years = []
+    const currentYear = new Date().getFullYear()
+    for (let i = 0; i < 3; i++) {
+        years.push({ value: String(currentYear - i), label: String(currentYear - i) })
+    }
+    return years
+})
+
 // ─── Daily Breakdown ──────────────────────────────────────────────────────────
 const daily = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/daily-breakdown`)
+
+// ─── Monthly Breakdown ────────────────────────────────────────────────────────
+const monthly = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/monthly-breakdown`)
 
 // ─── Hourly Breakdown ─────────────────────────────────────────────────────────
 const showHourlyModal = ref(false)
@@ -46,17 +62,40 @@ const hourly = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/hourly
 const { filters, reset } = useFilters(
     {
         month: monthOptions.value[0].value,
+        year: String(new Date().getFullYear()),
         source_id: props.sources.length > 1 ? [] : [props.sources[0].value],
     },
     (f) => {
-        daily.load(f)
+        if (viewMode.value === 'month') {
+            daily.load(f)
+        } else {
+            monthly.load(f)
+        }
     },
 )
 
-const hasFilters = computed(() =>
-    (filters.month !== monthOptions.value[0].value) ||
-    (Array.isArray(filters.source_id) && filters.source_id.length > 0)
-)
+watch(viewMode, (mode) => {
+    if (mode === 'month') {
+        daily.load(filters)
+    } else {
+        monthly.load(filters)
+    }
+})
+
+function resetAll() {
+    viewMode.value = 'month'
+    reset()
+}
+
+const hasFilters = computed(() => {
+    if (viewMode.value === 'month') {
+        return (filters.month !== monthOptions.value[0].value) ||
+            (Array.isArray(filters.source_id) && filters.source_id.length > 0)
+    } else {
+        return (filters.year !== String(new Date().getFullYear())) ||
+            (Array.isArray(filters.source_id) && filters.source_id.length > 0)
+    }
+})
 
 // ─── Colonnes tableau ─────────────────────────────────────────────────────────
 const columns = [
@@ -203,6 +242,12 @@ const sourceTitle = computed(() => {
 onMounted(() => {
     daily.load(filters)
 })
+
+// ─── Monthly sorted rows ──────────────────────────────────────────────────────
+const sortedMonthlyRows = computed(() => {
+    if (!monthly.data?.items) return []
+    return [...monthly.data.items]
+})
 </script>
 
 <template>
@@ -220,30 +265,54 @@ onMounted(() => {
             <FilterBar
                 :has-active-filters="hasFilters"
                 :is-loading="false"
-                @reset="reset"
+                @reset="resetAll"
             >
-                <div class="grid grid-cols-2 gap-3">
-                    <!-- Mois -->
-                    <FilterSelect
-                        v-model="filters.month"
-                        :options="monthOptions"
-                        placeholder="Mois"
-                        :searchable="false"
-                    />
+                <div class="flex flex-col gap-3">
+                    <!-- Toggle Mois / Année -->
+                    <div class="flex rounded-lg border border-gray-200 overflow-hidden text-sm font-medium">
+                        <button
+                            class="flex-1 px-3 py-1.5 transition-colors"
+                            :class="viewMode === 'month' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                            @click="viewMode = 'month'"
+                        >Par mois</button>
+                        <button
+                            class="flex-1 px-3 py-1.5 transition-colors border-l border-gray-200"
+                            :class="viewMode === 'year' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                            @click="viewMode = 'year'"
+                        >Par année</button>
+                    </div>
 
-                    <!-- Sources (si plusieurs) -->
-                    <FilterSelect
-                        v-if="sources.length > 1"
-                        v-model="filters.source_id"
-                        :options="sources"
-                        placeholder="Sources"
-                        multiple
-                    />
+                    <div class="grid grid-cols-2 gap-3">
+                        <!-- Mois ou Année -->
+                        <FilterSelect
+                            v-if="viewMode === 'month'"
+                            v-model="filters.month"
+                            :options="monthOptions"
+                            placeholder="Mois"
+                            :searchable="false"
+                        />
+                        <FilterSelect
+                            v-else
+                            v-model="filters.year"
+                            :options="yearOptions"
+                            placeholder="Année"
+                            :searchable="false"
+                        />
+
+                        <!-- Sources (si plusieurs) -->
+                        <FilterSelect
+                            v-if="sources.length > 1"
+                            v-model="filters.source_id"
+                            :options="sources"
+                            placeholder="Sources"
+                            multiple
+                        />
+                    </div>
                 </div>
             </FilterBar>
 
             <!-- Tableau jour par jour -->
-            <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div v-if="viewMode === 'month'" class="rounded-lg border border-gray-200 bg-white overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead>
@@ -340,6 +409,64 @@ onMounted(() => {
                             <template v-else>
                                 <tr>
                                     <td :colspan="columns.length" class="px-3 py-8 text-center text-sm text-gray-300">
+                                        Aucune donnée
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tableau mois par mois (vue annuelle) -->
+            <div v-if="viewMode === 'year'" class="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="whitespace-nowrap px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400 text-left">Mois</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400 text-right">Appels</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400 text-right">Reverse (€)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Total en haut -->
+                            <tr v-if="monthly.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
+                                <td class="px-3 py-2 text-left font-bold text-gray-900">Total</td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatNumber(monthly.data.totals.calls) }}</div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-bold">{{ formatCurrency(monthly.data.totals.reverse) }} €</div>
+                                </td>
+                            </tr>
+
+                            <!-- Skeleton loading -->
+                            <template v-if="monthly.loading">
+                                <tr v-for="n in 6" :key="n" class="border-b border-gray-50">
+                                    <td v-for="col in 3" :key="col" class="px-3 py-2">
+                                        <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Lignes -->
+                            <template v-else-if="sortedMonthlyRows.length > 0">
+                                <tr
+                                    v-for="(row, i) in sortedMonthlyRows"
+                                    :key="i"
+                                    class="border-b border-gray-50"
+                                >
+                                    <td class="px-3 py-1.5 text-sm font-medium text-gray-900">{{ row.month_label }}</td>
+                                    <td class="px-3 py-1.5 text-right text-sm text-gray-900">{{ formatNumber(row.calls) }}</td>
+                                    <td class="px-3 py-1.5 text-right text-sm font-bold text-gray-900">{{ formatCurrency(row.reverse) }} €</td>
+                                </tr>
+                            </template>
+
+                            <!-- Vide -->
+                            <template v-else>
+                                <tr>
+                                    <td colspan="3" class="px-3 py-8 text-center text-sm text-gray-300">
                                         Aucune donnée
                                     </td>
                                 </tr>

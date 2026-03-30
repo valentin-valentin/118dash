@@ -24,6 +24,7 @@ Route::get('/partners/{sources}/{hash}', [PartnerStatsController::class, 'show']
 Route::prefix('partners/{sources}/{hash}/data')->group(function () {
     Route::get('/daily-breakdown', [PartnerStatsController::class, 'dailyBreakdown']);
     Route::get('/hourly-breakdown', [PartnerStatsController::class, 'hourlyBreakdown']);
+    Route::get('/monthly-breakdown', [PartnerStatsController::class, 'monthlyBreakdown']);
     Route::get('/filter-options', [PartnerStatsController::class, 'filterOptions']);
 });
 

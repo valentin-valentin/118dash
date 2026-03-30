@@ -347,6 +347,106 @@ class PartnerStatsController extends Controller
     }
 
     /**
+     * Breakdown mois par mois pour l'année sélectionnée
+     */
+    public function monthlyBreakdown(Request $request, string $sources, string $hash): JsonResponse
+    {
+        if (!$this->validateHash($sources, $hash)) {
+            abort(403, 'Invalid access token');
+        }
+
+        $sourceIds = $this->parseSourceIds($sources);
+
+        $year = (int) $request->input('year', now()->year);
+
+        $today = \Carbon\Carbon::now('Europe/Paris');
+
+        $applyFilters = function($query) use ($request, $sourceIds) {
+            $selectedSources = $request->filled('source_id')
+                ? array_intersect($this->parseMultiSelect($request->source_id), $sourceIds)
+                : $sourceIds;
+
+            $query->where(function ($q) use ($selectedSources) {
+                $q->whereIn('source_id', $selectedSources)
+                  ->orWhere(function ($sq) use ($selectedSources) {
+                      $sq->whereNull('source_id')
+                         ->whereHas('phonenumber', function ($psq) use ($selectedSources) {
+                             $psq->whereIn('source_id', $selectedSources);
+                         });
+                  });
+            });
+
+            $query->where('total_duration', '>=', 10);
+        };
+
+        $monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+        $items = [];
+        $totalCalls = 0;
+        $totalReverse = 0.0;
+
+        for ($monthNum = 1; $monthNum <= 12; $monthNum++) {
+            $monthStart = \Carbon\Carbon::createFromDate($year, $monthNum, 1, 'Europe/Paris')->startOfDay();
+
+            // Ne pas inclure les mois futurs
+            if ($monthStart->gt($today)) {
+                break;
+            }
+
+            $monthEnd = $monthStart->copy()->endOfMonth()->endOfDay();
+            $effectiveEnd = $today->lt($monthEnd) ? $today->copy()->endOfDay() : $monthEnd;
+
+            // Stats du mois
+            $monthQuery = Call::query();
+            $applyFilters($monthQuery);
+            $monthData = $monthQuery->whereBetween('called_at', [$monthStart->copy()->utc(), $effectiveEnd->copy()->utc()])
+                ->selectRaw('COUNT(*) as calls, COALESCE(SUM(payout_source), 0) as reverse')
+                ->first();
+
+            $calls = $monthData ? (int) $monthData->calls : 0;
+            $reverse = $monthData ? (float) $monthData->reverse : 0.0;
+
+            // Stats même mois année précédente
+            $prevMonthStart = $monthStart->copy()->subYear();
+            $prevMonthEnd = $monthEnd->copy()->subYear();
+
+            $prevMonthQuery = Call::query();
+            $applyFilters($prevMonthQuery);
+            $prevMonthData = $prevMonthQuery->whereBetween('called_at', [$prevMonthStart->copy()->utc(), $prevMonthEnd->copy()->utc()])
+                ->selectRaw('COUNT(*) as calls, COALESCE(SUM(payout_source), 0) as reverse')
+                ->first();
+
+            $prevCalls = $prevMonthData ? (int) $prevMonthData->calls : 0;
+            $prevReverse = $prevMonthData ? (float) $prevMonthData->reverse : 0.0;
+
+            $callsVar = ($prevCalls > 0) ? round((($calls - $prevCalls) / $prevCalls) * 100, 1) : null;
+            $reverseVar = ($prevReverse > 0) ? round((($reverse - $prevReverse) / $prevReverse) * 100, 1) : null;
+
+            $items[] = [
+                'month' => sprintf('%04d-%02d', $year, $monthNum),
+                'month_label' => $monthNames[$monthNum - 1],
+                'calls' => $calls,
+                'reverse' => $reverse,
+                'prev_calls' => $prevCalls,
+                'prev_reverse' => $prevReverse,
+                'calls_var' => $callsVar,
+                'reverse_var' => $reverseVar,
+            ];
+
+            $totalCalls += $calls;
+            $totalReverse += $reverse;
+        }
+
+        return response()->json([
+            'items' => $items,
+            'totals' => [
+                'calls' => $totalCalls,
+                'reverse' => $totalReverse,
+            ],
+        ]);
+    }
+
+    /**
      * Options de filtres disponibles
      */
     public function filterOptions(string $sources, string $hash): JsonResponse
