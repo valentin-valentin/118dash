@@ -110,6 +110,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/bulk-import', [PhonenumberController::class, 'bulkImport']);
         Route::post('/phonenumbers/manual-route', [PhonenumberController::class, 'manualRoute']);
         Route::post('/phonenumbers/cancel-deletion', [PhonenumberController::class, 'cancelDeletion']);
+        Route::post('/phonenumbers/force-delete', [PhonenumberController::class, 'forceDelete']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
         Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);

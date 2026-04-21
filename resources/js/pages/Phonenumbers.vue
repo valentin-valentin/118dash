@@ -393,6 +393,32 @@ async function cancelDeletion(id) {
     }
 }
 
+async function forceDelete(id) {
+    if (!confirm('Supprimer ce numero maintenant ? Des appels seront perdu puisqu\'il a ete affiche a des clients')) return
+
+    try {
+        const response = await fetch('/data/phonenumbers/force-delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+            body: JSON.stringify({ id }),
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+            table.load(filters)
+            stats.load()
+        } else {
+            alert(data.message || 'Erreur lors de la suppression forcée')
+        }
+    } catch (error) {
+        alert('Erreur lors de la suppression forcée')
+    }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     stats.load()
@@ -582,6 +608,14 @@ onUnmounted(() => {
                                     class="h-5 px-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                                 >
                                     Annuler
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    @click="forceDelete(row.id)"
+                                    class="h-5 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
+                                >
+                                    Supprimer maintenant
                                 </Button>
                             </div>
                             <div v-if="!row.sip_registered">
