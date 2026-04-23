@@ -54,7 +54,7 @@ class AssignmentHistoryController extends Controller
         if ($request->filled('search')) {
             $search = $request->search;
             $query->whereHas('phonenumber', function ($q) use ($search) {
-                $q->where('phonenumber', 'like', "%{$search}%");
+                $q->withTrashed()->where('phonenumber', 'like', "%{$search}%");
             });
         }
 

@@ -189,14 +189,14 @@ class DashboardController extends Controller
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
                 $query->whereHas('phonenumber', function ($q) use ($providers) {
-                    $q->whereIn('provider_id', $providers);
+                    $q->withTrashed()->whereIn('provider_id', $providers);
                 });
             }
 
             if ($request->filled('company_id')) {
                 $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
                 $query->whereHas('phonenumber', function ($q) use ($companies) {
-                    $q->whereIn('company_id', $companies);
+                    $q->withTrashed()->whereIn('company_id', $companies);
                 });
             }
 
@@ -207,7 +207,7 @@ class DashboardController extends Controller
                       ->orWhere(function ($sq) use ($sources) {
                           $sq->whereNull('source_id')
                              ->whereHas('phonenumber', function ($psq) use ($sources) {
-                                 $psq->whereIn('source_id', $sources);
+                                 $psq->withTrashed()->whereIn('source_id', $sources);
                              });
                       });
                 });
@@ -317,14 +317,14 @@ class DashboardController extends Controller
         if ($request->filled('provider_id')) {
             $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
             $query->whereHas('phonenumber', function ($q) use ($providers) {
-                $q->whereIn('provider_id', $providers);
+                $q->withTrashed()->whereIn('provider_id', $providers);
             });
         }
 
         if ($request->filled('company_id')) {
             $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
             $query->whereHas('phonenumber', function ($q) use ($companies) {
-                $q->whereIn('company_id', $companies);
+                $q->withTrashed()->whereIn('company_id', $companies);
             });
         }
 
@@ -335,7 +335,7 @@ class DashboardController extends Controller
                   ->orWhere(function ($sq) use ($sources) {
                       $sq->whereNull('source_id')
                          ->whereHas('phonenumber', function ($psq) use ($sources) {
-                             $psq->whereIn('source_id', $sources);
+                             $psq->withTrashed()->whereIn('source_id', $sources);
                          });
                   });
             });
@@ -432,14 +432,14 @@ class DashboardController extends Controller
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
                 $query->whereHas('phonenumber', function ($q) use ($providers) {
-                    $q->whereIn('provider_id', $providers);
+                    $q->withTrashed()->whereIn('provider_id', $providers);
                 });
             }
 
             if ($request->filled('company_id')) {
                 $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
                 $query->whereHas('phonenumber', function ($q) use ($companies) {
-                    $q->whereIn('company_id', $companies);
+                    $q->withTrashed()->whereIn('company_id', $companies);
                 });
             }
 
@@ -450,7 +450,7 @@ class DashboardController extends Controller
                       ->orWhere(function ($sq) use ($sources) {
                           $sq->whereNull('source_id')
                              ->whereHas('phonenumber', function ($psq) use ($sources) {
-                                 $psq->whereIn('source_id', $sources);
+                                 $psq->withTrashed()->whereIn('source_id', $sources);
                              });
                       });
                 });
@@ -721,14 +721,14 @@ class DashboardController extends Controller
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
                 $query->whereHas('phonenumber', function ($q) use ($providers) {
-                    $q->whereIn('provider_id', $providers);
+                    $q->withTrashed()->whereIn('provider_id', $providers);
                 });
             }
 
             if ($request->filled('company_id')) {
                 $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
                 $query->whereHas('phonenumber', function ($q) use ($companies) {
-                    $q->whereIn('company_id', $companies);
+                    $q->withTrashed()->whereIn('company_id', $companies);
                 });
             }
 
@@ -739,7 +739,7 @@ class DashboardController extends Controller
                       ->orWhere(function ($sq) use ($sources) {
                           $sq->whereNull('source_id')
                              ->whereHas('phonenumber', function ($psq) use ($sources) {
-                                 $psq->whereIn('source_id', $sources);
+                                 $psq->withTrashed()->whereIn('source_id', $sources);
                              });
                       });
                 });

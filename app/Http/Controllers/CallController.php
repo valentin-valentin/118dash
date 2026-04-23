@@ -101,7 +101,7 @@ class CallController extends Controller
             // Convert to integers to ensure proper comparison
             $providers = array_map('intval', $providers);
             $query->whereHas('phonenumber', function ($q) use ($providers) {
-                $q->whereIn('provider_id', $providers);
+                $q->withTrashed()->whereIn('provider_id', $providers);
             });
         }
 
@@ -111,7 +111,7 @@ class CallController extends Controller
             // Convert to integers to ensure proper comparison
             $companies = array_map('intval', $companies);
             $query->whereHas('phonenumber', function ($q) use ($companies) {
-                $q->whereIn('company_id', $companies);
+                $q->withTrashed()->whereIn('company_id', $companies);
             });
         }
 
@@ -129,7 +129,7 @@ class CallController extends Controller
                   ->orWhere(function ($sq) use ($sources) {
                       $sq->whereNull('source_id')
                          ->whereHas('phonenumber', function ($psq) use ($sources) {
-                             $psq->whereIn('source_id', $sources);
+                             $psq->withTrashed()->whereIn('source_id', $sources);
                          });
                   });
             });
