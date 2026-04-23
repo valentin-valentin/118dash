@@ -101,7 +101,7 @@ class PartnerStatsController extends Controller
                   ->orWhere(function ($sq) use ($selectedSources) {
                       $sq->whereNull('source_id')
                          ->whereHas('phonenumber', function ($psq) use ($selectedSources) {
-                             $psq->withTrashed()->whereIn('source_id', $selectedSources);
+                             $psq->whereIn('source_id', $selectedSources);
                          });
                   });
             });
@@ -237,7 +237,7 @@ class PartnerStatsController extends Controller
                   ->orWhere(function ($sq) use ($selectedSources) {
                       $sq->whereNull('source_id')
                          ->whereHas('phonenumber', function ($psq) use ($selectedSources) {
-                             $psq->withTrashed()->whereIn('source_id', $selectedSources);
+                             $psq->whereIn('source_id', $selectedSources);
                          });
                   });
             });
@@ -371,7 +371,7 @@ class PartnerStatsController extends Controller
                   ->orWhere(function ($sq) use ($selectedSources) {
                       $sq->whereNull('source_id')
                          ->whereHas('phonenumber', function ($psq) use ($selectedSources) {
-                             $psq->withTrashed()->whereIn('source_id', $selectedSources);
+                             $psq->whereIn('source_id', $selectedSources);
                          });
                   });
             });
