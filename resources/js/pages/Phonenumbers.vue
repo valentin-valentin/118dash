@@ -599,7 +599,7 @@ onUnmounted(() => {
                     <template #phonenumber="{ row, value }">
                         <div class="space-y-1">
                             <span class="font-mono font-semibold text-gray-900">{{ value }}</span>
-                            <div v-if="row.will_be_deleted" class="flex items-center gap-2">
+                            <div v-if="row.will_be_deleted && !row.deleted_at" class="flex items-center gap-2">
                                 <span class="text-xs font-medium text-red-600">Sera supprimé</span>
                                 <Button
                                     variant="ghost"
@@ -618,7 +618,7 @@ onUnmounted(() => {
                                     Supprimer maintenant
                                 </Button>
                             </div>
-                            <div v-if="!row.sip_registered">
+                            <div v-if="!row.sip_registered && !row.will_be_deleted">
                                 <span class="text-xs font-medium text-orange-600">Pas encore ajouté sur le SIP</span>
                             </div>
                         </div>

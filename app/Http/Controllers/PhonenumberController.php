@@ -387,6 +387,8 @@ class PhonenumberController extends Controller
         ]);
 
         $phonenumber = Phonenumber::find($validated['id']);
+        $phonenumber->will_be_deleted = false;
+        $phonenumber->save();
         $phonenumber->delete();
 
         return response()->json([
