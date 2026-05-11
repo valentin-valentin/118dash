@@ -41,7 +41,7 @@ function toggleBalancesSort(key) {
 const balancesColumns = [
     { key: 'name', label: 'Source', sortable: true },
     { key: 'solde', label: 'Solde', sortable: true },
-    { key: 'last_payment_at', label: 'Dernier paiement', sortable: true },
+    // { key: 'last_payment_at', label: 'Dernier paiement', sortable: true },
     { key: 'actions', label: '' },
 ]
 
@@ -380,9 +380,9 @@ onMounted(() => {
                             </span>
                         </template>
 
-                        <template #last_payment_at="{ value }">
+                        <!-- <template #last_payment_at="{ value }">
                             <span class="text-sm text-gray-600">{{ formatDate(value) }}</span>
-                        </template>
+                        </template> -->
 
                         <template #actions="{ row }">
                             <div class="flex flex-wrap items-center gap-1.5 justify-end">
