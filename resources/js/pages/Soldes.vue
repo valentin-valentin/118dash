@@ -42,7 +42,7 @@ const balancesColumns = [
     { key: 'name', label: 'Source', sortable: true },
     { key: 'solde', label: 'Solde', sortable: true },
     { key: 'last_payment_at', label: 'Dernier paiement', sortable: true },
-    { key: 'actions', label: 'Actions' },
+    { key: 'actions', label: '' },
 ]
 
 // ─── Historique des paiements ─────────────────────────────────────────────────
@@ -385,7 +385,7 @@ onMounted(() => {
                         </template>
 
                         <template #actions="{ row }">
-                            <div class="flex flex-wrap items-center gap-1.5">
+                            <div class="flex flex-wrap items-center gap-1.5 justify-end">
                                 <Button
                                     size="sm"
                                     class="h-7 gap-1 px-2 text-xs"
