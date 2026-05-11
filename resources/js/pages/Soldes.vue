@@ -22,7 +22,7 @@ import { Plus, Calculator, ArrowDownCircle, ArrowUpCircle, ArrowRightLeft } from
 // ─── Soldes par source ────────────────────────────────────────────────────────
 const balances = useApi('/data/sources/balances')
 
-const balancesSort = ref({ sort: 'id', dir: 'asc' })
+const balancesSort = ref({ sort: 'name', dir: 'asc' })
 
 function loadBalances() {
     balances.load(balancesSort.value)

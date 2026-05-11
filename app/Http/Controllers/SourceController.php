@@ -211,7 +211,7 @@ class SourceController extends Controller
     public function balances(Request $request): JsonResponse
     {
         $sortable = ['id', 'name', 'solde', 'last_payment_at'];
-        $sort = in_array($request->sort, $sortable, true) ? $request->sort : 'id';
+        $sort = in_array($request->sort, $sortable, true) ? $request->sort : 'name';
         $dir = $request->dir === 'desc' ? 'desc' : 'asc';
 
         $sortColumn = $sort === 'last_payment_at' ? 'last_payment_at' : 'sources.' . $sort;
