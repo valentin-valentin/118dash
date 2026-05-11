@@ -44,6 +44,12 @@ const responseStatusClass = computed(() => {
     return ''
 })
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function xsrfToken() {
+    const m = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
+    return m ? decodeURIComponent(m[1]) : ''
+}
+
 // ─── Methods ─────────────────────────────────────────────────────────────────
 async function loadSources() {
     try {
@@ -70,7 +76,7 @@ async function sendRequest() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({
                 api_url: apiUrl.value,
