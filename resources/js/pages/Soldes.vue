@@ -385,29 +385,31 @@ onMounted(() => {
                         </template>
 
                         <template #actions="{ row }">
-                            <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-1.5">
                                 <Button
-                                    variant="outline"
                                     size="sm"
+                                    class="h-7 gap-1 px-2 text-xs"
                                     @click="openPaymentModal(row.id)"
                                 >
-                                    <Plus class="mr-1.5 h-3.5 w-3.5" />
+                                    <Plus class="size-3" />
                                     Paiement
                                 </Button>
                                 <Button
-                                    variant="outline"
+                                    variant="secondary"
                                     size="sm"
+                                    class="h-7 gap-1 px-2 text-xs"
                                     @click="openTransferModal(row)"
                                 >
-                                    <ArrowRightLeft class="mr-1.5 h-3.5 w-3.5" />
+                                    <ArrowRightLeft class="size-3" />
                                     Transférer
                                 </Button>
                                 <Button
-                                    variant="outline"
+                                    variant="secondary"
                                     size="sm"
+                                    class="h-7 gap-1 px-2 text-xs"
                                     @click="openRecalcModal(row)"
                                 >
-                                    <Calculator class="mr-1.5 h-3.5 w-3.5" />
+                                    <Calculator class="size-3" />
                                     Recalculer
                                 </Button>
                             </div>
