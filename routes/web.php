@@ -107,6 +107,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/source-payments', [SourcePaymentController::class, 'data']);
         Route::get('/source-payments/filter-options', [SourcePaymentController::class, 'filterOptions']);
         Route::post('/source-payments', [SourcePaymentController::class, 'store']);
+        Route::post('/source-payments/transfer', [SourcePaymentController::class, 'transfer']);
 
         Route::get('/phonenumbers/stats', [PhonenumberController::class, 'stats']);
         Route::get('/phonenumbers/filter-options', [PhonenumberController::class, 'filterOptions']);

@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Calculator, ArrowDownCircle, ArrowUpCircle } from 'lucide-vue-next'
+import { Plus, Calculator, ArrowDownCircle, ArrowUpCircle, ArrowRightLeft } from 'lucide-vue-next'
 
 // ─── Soldes par source ────────────────────────────────────────────────────────
 const balances = useApi('/data/sources/balances')
@@ -188,6 +188,94 @@ async function submitPayment() {
     }
 }
 
+// ─── Modal: Transférer le solde ───────────────────────────────────────────────
+const showTransferModal = ref(false)
+const transferForm = ref({
+    from_source_id: '',
+    to_source_id: '',
+    amount: '',
+    description: '',
+})
+const transferErrors = ref({})
+const isTransferring = ref(false)
+
+const fromSourceForTransfer = computed(() => {
+    if (!transferForm.value.from_source_id) return null
+    return (balances.data?.items ?? []).find(s => s.id === transferForm.value.from_source_id) ?? null
+})
+
+const transferTargetOptions = computed(() => {
+    const all = filterOptions.data?.sources ?? []
+    if (!transferForm.value.from_source_id) return all
+    return all.filter(s => s.id !== transferForm.value.from_source_id)
+})
+
+function openTransferModal(source) {
+    transferForm.value = {
+        from_source_id: source.id,
+        to_source_id: '',
+        amount: source.solde && Number(source.solde) > 0 ? Number(source.solde).toFixed(2) : '',
+        description: '',
+    }
+    transferErrors.value = {}
+    showTransferModal.value = true
+}
+
+async function submitTransfer() {
+    transferErrors.value = {}
+
+    if (!transferForm.value.to_source_id) {
+        transferErrors.value.to_source_id = 'Source de destination requise'
+        return
+    }
+    if (transferForm.value.to_source_id === transferForm.value.from_source_id) {
+        transferErrors.value.to_source_id = 'Les sources doivent être différentes'
+        return
+    }
+    if (!transferForm.value.amount || Number(transferForm.value.amount) <= 0) {
+        transferErrors.value.amount = 'Montant > 0 requis'
+        return
+    }
+
+    isTransferring.value = true
+    try {
+        const res = await fetch('/data/source-payments/transfer', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+            },
+            body: JSON.stringify({
+                from_source_id: transferForm.value.from_source_id,
+                to_source_id: transferForm.value.to_source_id,
+                amount: Number(transferForm.value.amount),
+                description: transferForm.value.description || null,
+            }),
+        })
+
+        if (!res.ok) {
+            if (res.status === 422) {
+                const body = await res.json()
+                transferErrors.value = Object.fromEntries(
+                    Object.entries(body.errors || {}).map(([k, v]) => [k, v[0]])
+                )
+                return
+            }
+            throw new Error('HTTP ' + res.status)
+        }
+
+        showTransferModal.value = false
+        loadBalances()
+        payments.load(filters)
+    } catch (e) {
+        alert('Erreur lors du transfert')
+    } finally {
+        isTransferring.value = false
+    }
+}
+
 // ─── Modal: Recalculer le solde ───────────────────────────────────────────────
 const showRecalcModal = ref(false)
 const recalcLoading = ref(false)
@@ -286,8 +374,7 @@ onMounted(() => {
 
                         <template #solde="{ value }">
                             <span
-                                class="font-semibold tabular-nums"
-                                :class="Number(value) > 0 ? 'text-orange-600' : Number(value) < 0 ? 'text-red-600' : 'text-gray-400'"
+                                class="font-semibold tabular-nums text-gray-700"
                             >
                                 {{ formatMoney(value) }}
                             </span>
@@ -298,22 +385,30 @@ onMounted(() => {
                         </template>
 
                         <template #actions="{ row }">
-                            <div class="flex items-center gap-1">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <Button
-                                    variant="ghost"
+                                    variant="outline"
                                     size="sm"
                                     @click="openPaymentModal(row.id)"
-                                    title="Ajouter un paiement"
                                 >
-                                    <Plus class="h-4 w-4" />
+                                    <Plus class="mr-1.5 h-3.5 w-3.5" />
+                                    Paiement
                                 </Button>
                                 <Button
-                                    variant="ghost"
+                                    variant="outline"
+                                    size="sm"
+                                    @click="openTransferModal(row)"
+                                >
+                                    <ArrowRightLeft class="mr-1.5 h-3.5 w-3.5" />
+                                    Transférer
+                                </Button>
+                                <Button
+                                    variant="outline"
                                     size="sm"
                                     @click="openRecalcModal(row)"
-                                    title="Recalculer le solde"
                                 >
-                                    <Calculator class="h-4 w-4" />
+                                    <Calculator class="mr-1.5 h-3.5 w-3.5" />
+                                    Recalculer
                                 </Button>
                             </div>
                         </template>
@@ -490,7 +585,7 @@ onMounted(() => {
                                         : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'"
                                 >
                                     <ArrowDownCircle class="h-4 w-4" />
-                                    Debit (virement à la source)
+                                    Debit
                                 </button>
                                 <button
                                     type="button"
@@ -501,7 +596,7 @@ onMounted(() => {
                                         : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'"
                                 >
                                     <ArrowUpCircle class="h-4 w-4" />
-                                    Credit (ajout au solde)
+                                    Credit
                                 </button>
                             </div>
                         </div>
@@ -528,7 +623,7 @@ onMounted(() => {
                                 v-model="paymentForm.description"
                                 type="text"
                                 maxlength="255"
-                                placeholder="Référence virement, motif, etc."
+                                placeholder=""
                             />
                             <p v-if="paymentErrors.description" class="mt-1 text-xs text-red-600">
                                 {{ paymentErrors.description }}
@@ -539,6 +634,87 @@ onMounted(() => {
                             <Button variant="outline" @click="showPaymentModal = false">Annuler</Button>
                             <Button :disabled="isSavingPayment" @click="submitPayment">
                                 {{ isSavingPayment ? 'Enregistrement...' : 'Enregistrer' }}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <!-- ─── Modal: Transférer le solde ────────────────────────────── -->
+            <Dialog :open="showTransferModal" @update:open="(val) => showTransferModal = val">
+                <DialogContent class="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Transférer le solde</DialogTitle>
+                    </DialogHeader>
+
+                    <div class="space-y-4">
+                        <!-- Source d'origine (read-only) -->
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-900">Depuis</label>
+                            <div class="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                                <ColorBadge
+                                    v-if="fromSourceForTransfer"
+                                    :color="fromSourceForTransfer.color"
+                                    :label="fromSourceForTransfer.name"
+                                />
+                                <span class="font-mono text-sm font-medium text-gray-700">
+                                    Solde : {{ fromSourceForTransfer ? formatMoney(fromSourceForTransfer.solde) : '-' }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Source de destination -->
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-900">Vers</label>
+                            <FilterSelect
+                                v-model="transferForm.to_source_id"
+                                :options="transferTargetOptions"
+                                placeholder="Choisir une source de destination..."
+                                searchable
+                            />
+                            <p v-if="transferErrors.to_source_id" class="mt-1 text-xs text-red-600">
+                                {{ transferErrors.to_source_id }}
+                            </p>
+                        </div>
+
+                        <!-- Montant -->
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-900">Montant (€)</label>
+                            <Input
+                                v-model="transferForm.amount"
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                placeholder="0.00"
+                            />
+                            <p v-if="transferErrors.amount" class="mt-1 text-xs text-red-600">
+                                {{ transferErrors.amount }}
+                            </p>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Le solde de la source d'origine sera débité, celui de la destination sera crédité du même montant.
+                            </p>
+                        </div>
+
+                        <!-- Description -->
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-gray-900">
+                                Description <span class="text-xs text-gray-400">(optionnel)</span>
+                            </label>
+                            <Input
+                                v-model="transferForm.description"
+                                type="text"
+                                maxlength="255"
+                                placeholder="Motif du transfert"
+                            />
+                            <p v-if="transferErrors.description" class="mt-1 text-xs text-red-600">
+                                {{ transferErrors.description }}
+                            </p>
+                        </div>
+
+                        <div class="flex justify-end gap-2 pt-2">
+                            <Button variant="outline" @click="showTransferModal = false">Annuler</Button>
+                            <Button :disabled="isTransferring" @click="submitTransfer">
+                                {{ isTransferring ? 'Transfert...' : 'Transférer' }}
                             </Button>
                         </div>
                     </div>

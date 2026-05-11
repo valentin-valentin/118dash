@@ -114,6 +114,65 @@ class SourcePaymentController extends Controller
         ]);
     }
 
+    public function transfer(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'from_source_id' => 'required|exists:sources,id',
+            'to_source_id' => 'required|exists:sources,id|different:from_source_id',
+            'amount' => 'required|numeric|min:0.01',
+            'description' => 'nullable|string|max:255',
+        ]);
+
+        $result = DB::transaction(function () use ($validated) {
+            $from = Source::lockForUpdate()->findOrFail($validated['from_source_id']);
+            $to = Source::lockForUpdate()->findOrFail($validated['to_source_id']);
+
+            $amount = $validated['amount'];
+            $baseDescription = $validated['description'] ?? null;
+
+            $debitDescription = trim(sprintf(
+                'Transfert vers %s%s',
+                $to->name,
+                $baseDescription ? ' — ' . $baseDescription : ''
+            ));
+
+            $creditDescription = trim(sprintf(
+                'Transfert depuis %s%s',
+                $from->name,
+                $baseDescription ? ' — ' . $baseDescription : ''
+            ));
+
+            $from->solde = (float) $from->solde - $amount;
+            $from->save();
+
+            $to->solde = (float) $to->solde + $amount;
+            $to->save();
+
+            $debit = SourcePayment::create([
+                'source_id' => $from->id,
+                'amount' => $amount,
+                'type' => SourcePayment::TYPE_DEBIT,
+                'description' => $debitDescription,
+            ]);
+
+            $credit = SourcePayment::create([
+                'source_id' => $to->id,
+                'amount' => $amount,
+                'type' => SourcePayment::TYPE_CREDIT,
+                'description' => $creditDescription,
+            ]);
+
+            return [
+                'debit' => $debit,
+                'credit' => $credit,
+                'from_solde' => $from->solde,
+                'to_solde' => $to->solde,
+            ];
+        });
+
+        return response()->json($result);
+    }
+
     public function recalculatePreview(Source $source): JsonResponse
     {
         set_time_limit(300);
