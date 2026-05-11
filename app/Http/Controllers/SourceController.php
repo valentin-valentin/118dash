@@ -208,6 +208,36 @@ class SourceController extends Controller
         ]);
     }
 
+    public function balances(Request $request): JsonResponse
+    {
+        $sortable = ['name', 'solde', 'last_payment_at'];
+        $sort = in_array($request->sort, $sortable, true) ? $request->sort : 'solde';
+        $dir = $request->dir === 'asc' ? 'asc' : 'desc';
+
+        $sources = Source::query()
+            ->leftJoin('source_payments', 'source_payments.source_id', '=', 'sources.id')
+            ->select(
+                'sources.id',
+                'sources.name',
+                'sources.color',
+                'sources.solde',
+                DB::raw('MAX(source_payments.created_at) as last_payment_at')
+            )
+            ->groupBy('sources.id', 'sources.name', 'sources.color', 'sources.solde');
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $sources->where('sources.name', 'like', "%{$search}%");
+        }
+
+        $sources = $sources->orderBy($sort, $dir)->get();
+
+        return response()->json([
+            'items' => $sources,
+            'total' => $sources->count(),
+        ]);
+    }
+
     private function getAvailableProviderCompanies(): array
     {
         return ProviderCompany::with(['provider', 'company'])

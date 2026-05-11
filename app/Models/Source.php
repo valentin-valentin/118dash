@@ -21,6 +21,7 @@ class Source extends Model
         'payout_minute',
         'display_duration_minutes',
         'real_duration_minutes',
+        'solde',
     ];
 
     protected $casts = [
@@ -31,10 +32,16 @@ class Source extends Model
         'max_concurrent_numbers' => 'integer',
         'display_duration_minutes' => 'integer',
         'real_duration_minutes' => 'integer',
+        'solde' => 'decimal:2',
     ];
 
     public function sourceProviderCompanies(): HasMany
     {
         return $this->hasMany(SourceProviderCompany::class);
+    }
+
+    public function sourcePayments(): HasMany
+    {
+        return $this->hasMany(SourcePayment::class);
     }
 }

@@ -12,6 +12,7 @@ use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\SourceController;
+use App\Http\Controllers\SourcePaymentController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -74,6 +75,8 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/api-tester', [ApiTesterController::class, 'index'])->name('api-tester.index');
 
+    Route::get('/soldes', [SourcePaymentController::class, 'index'])->name('soldes.index');
+
     // ── Data endpoints (XHR / JSON) ───────────────────────────────────────────
     // All return JSON for Vue XHR calls. Add your routes here.
     Route::prefix('data')->group(function () {
@@ -95,8 +98,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/companies', [CompanyController::class, 'data']);
 
         Route::get('/sources/stats', [SourceController::class, 'stats']);
+        Route::get('/sources/balances', [SourceController::class, 'balances']);
         Route::get('/sources', [SourceController::class, 'data']);
         Route::post('/sources/generate-partner-url', [SourceController::class, 'generatePartnerUrl']);
+        Route::get('/sources/{source}/recalculate', [SourcePaymentController::class, 'recalculatePreview']);
+        Route::post('/sources/{source}/sync-solde', [SourcePaymentController::class, 'syncSolde']);
+
+        Route::get('/source-payments', [SourcePaymentController::class, 'data']);
+        Route::get('/source-payments/filter-options', [SourcePaymentController::class, 'filterOptions']);
+        Route::post('/source-payments', [SourcePaymentController::class, 'store']);
 
         Route::get('/phonenumbers/stats', [PhonenumberController::class, 'stats']);
         Route::get('/phonenumbers/filter-options', [PhonenumberController::class, 'filterOptions']);

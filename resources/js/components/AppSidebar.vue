@@ -1,7 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
 import { onMounted, ref } from 'vue'
-import { Building2, Clock, FileText, FlaskConical, Hash, LayoutGrid, Phone, ShieldAlert, Users, Workflow } from 'lucide-vue-next'
+import { Building2, Clock, FileText, FlaskConical, Hash, LayoutGrid, Phone, ShieldAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
 import NavUser from '@/components/NavUser.vue'
 import {
@@ -55,6 +55,7 @@ const navItems = [
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
     { title: 'Sources', href: '/sources', icon: Workflow },
+    { title: 'Soldes', href: '/soldes', icon: Wallet },
     { title: 'Numéros', href: '/phonenumbers', icon: Hash, badge: () => hasInvalidRouting.value ? 'error' : null },
     { title: 'Blacklists', href: '/blacklists', icon: ShieldAlert },
     { title: 'Assignment History', href: '/assignment-history', icon: Clock },
