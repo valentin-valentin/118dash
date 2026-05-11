@@ -210,9 +210,11 @@ class SourceController extends Controller
 
     public function balances(Request $request): JsonResponse
     {
-        $sortable = ['name', 'solde', 'last_payment_at'];
-        $sort = in_array($request->sort, $sortable, true) ? $request->sort : 'solde';
-        $dir = $request->dir === 'asc' ? 'asc' : 'desc';
+        $sortable = ['id', 'name', 'solde', 'last_payment_at'];
+        $sort = in_array($request->sort, $sortable, true) ? $request->sort : 'id';
+        $dir = $request->dir === 'desc' ? 'desc' : 'asc';
+
+        $sortColumn = $sort === 'last_payment_at' ? 'last_payment_at' : 'sources.' . $sort;
 
         $sources = Source::query()
             ->leftJoin('source_payments', 'source_payments.source_id', '=', 'sources.id')
@@ -230,7 +232,7 @@ class SourceController extends Controller
             $sources->where('sources.name', 'like', "%{$search}%");
         }
 
-        $sources = $sources->orderBy($sort, $dir)->get();
+        $sources = $sources->orderBy($sortColumn, $dir)->get();
 
         return response()->json([
             'items' => $sources,
