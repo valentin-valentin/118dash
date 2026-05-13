@@ -59,6 +59,7 @@ const monthOptions = computed(() => {
 // ─── Daily Breakdown + Treemap + Filtres ─────────────────────────────────────
 const daily = useApi('/data/daily-breakdown')
 const brandDistribution = useApi('/data/brand-distribution')
+const companyBreakdown = useApi('/data/company-breakdown')
 
 // ─── Hourly Breakdown (détail d'un jour) ─────────────────────────────────────
 const showHourlyModal = ref(false)
@@ -80,6 +81,7 @@ const { filters, reset } = useFilters(
     (f) => {
         daily.load(f)
         brandDistribution.load(f)
+        companyBreakdown.load(f)
     },
 )
 
@@ -132,6 +134,52 @@ const sortedRows = computed(() => {
         }
 
         if (sortDir.value === 'asc') {
+            return aVal > bVal ? 1 : -1
+        } else {
+            return aVal < bVal ? 1 : -1
+        }
+    })
+
+    return rows
+})
+
+// ─── Tableau companies ────────────────────────────────────────────────────────
+const companyColumns = [
+    { key: 'company_name', label: 'Company', sortable: true },
+    { key: 'calls', label: 'Appels', sortable: true, headerClass: 'text-right' },
+    { key: 'total_duration', label: 'Durée totale', sortable: true, headerClass: 'text-right' },
+    { key: 'avg_duration', label: 'Durée moy.', sortable: true, headerClass: 'text-right' },
+    { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
+    { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
+    { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
+]
+
+const companySortKey = ref('benefice')
+const companySortDir = ref('desc')
+
+function toggleCompanySort(key) {
+    if (companySortKey.value === key) {
+        companySortDir.value = companySortDir.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        companySortKey.value = key
+        companySortDir.value = key === 'company_name' ? 'asc' : 'desc'
+    }
+}
+
+const sortedCompanyRows = computed(() => {
+    if (!companyBreakdown.data?.items) return []
+
+    const rows = [...companyBreakdown.data.items]
+    rows.sort((a, b) => {
+        let aVal = a[companySortKey.value]
+        let bVal = b[companySortKey.value]
+
+        if (companySortKey.value === 'company_name') {
+            aVal = (aVal ?? '').toString().toLowerCase()
+            bVal = (bVal ?? '').toString().toLowerCase()
+        }
+
+        if (companySortDir.value === 'asc') {
             return aVal > bVal ? 1 : -1
         } else {
             return aVal < bVal ? 1 : -1
@@ -279,6 +327,7 @@ onMounted(() => {
     loadFilterOptions()
     daily.load(filters)
     brandDistribution.load(filters)
+    companyBreakdown.load(filters)
 })
 </script>
 
@@ -924,6 +973,185 @@ onMounted(() => {
                 :total-count="brandDistribution.data?.total_count || 0"
                 :loading="brandDistribution.loading"
             />
+
+            <!-- Tableau par company (mois complet) -->
+            <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th
+                                    v-for="col in companyColumns"
+                                    :key="col.key"
+                                    class="whitespace-nowrap px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400"
+                                    :class="[col.headerClass || 'text-left', col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
+                                    @click="col.sortable && toggleCompanySort(col.key)"
+                                >
+                                    {{ col.label }}
+                                    <template v-if="col.sortable">
+                                        <span v-if="companySortKey === col.key && companySortDir === 'asc'">↑</span>
+                                        <span v-else-if="companySortKey === col.key && companySortDir === 'desc'">↓</span>
+                                        <span v-else class="opacity-20">⇅</span>
+                                    </template>
+                                </th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <!-- Total -->
+                            <tr v-if="companyBreakdown.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
+                                <td class="px-3 py-2 text-left font-bold text-gray-900">Total</td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatNumber(companyBreakdown.data.totals.calls) }}</div>
+                                    <div v-if="companyBreakdown.data.totals.prev_calls !== null" class="text-xs text-gray-500">
+                                        {{ formatNumber(companyBreakdown.data.totals.prev_calls) }}
+                                        <span v-if="companyBreakdown.data.totals.calls_var !== null" :class="companyBreakdown.data.totals.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ companyBreakdown.data.totals.calls_var >= 0 ? '+' : '' }}{{ companyBreakdown.data.totals.calls_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatDurationTotal(companyBreakdown.data.totals.total_duration) }}</div>
+                                    <div v-if="companyBreakdown.data.totals.prev_total_duration !== null" class="text-xs text-gray-500">
+                                        {{ formatDurationTotal(companyBreakdown.data.totals.prev_total_duration) }}
+                                        <span v-if="companyBreakdown.data.totals.total_duration_var !== null" :class="companyBreakdown.data.totals.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ companyBreakdown.data.totals.total_duration_var >= 0 ? '+' : '' }}{{ companyBreakdown.data.totals.total_duration_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatDuration(companyBreakdown.data.totals.avg_duration) }}</div>
+                                    <div v-if="companyBreakdown.data.totals.prev_avg_duration !== null" class="text-xs text-gray-500">
+                                        {{ formatDuration(companyBreakdown.data.totals.prev_avg_duration) }}
+                                        <span v-if="companyBreakdown.data.totals.avg_duration_var !== null" :class="companyBreakdown.data.totals.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ companyBreakdown.data.totals.avg_duration_var >= 0 ? '+' : '' }}{{ companyBreakdown.data.totals.avg_duration_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatCurrency(companyBreakdown.data.totals.ca) }} €</div>
+                                    <div v-if="companyBreakdown.data.totals.prev_ca !== null" class="text-xs text-gray-500">
+                                        {{ formatCurrency(companyBreakdown.data.totals.prev_ca) }} €
+                                        <span v-if="companyBreakdown.data.totals.ca_var !== null" :class="companyBreakdown.data.totals.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ companyBreakdown.data.totals.ca_var >= 0 ? '+' : '' }}{{ companyBreakdown.data.totals.ca_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatCurrency(companyBreakdown.data.totals.reverse) }} €</div>
+                                    <div v-if="companyBreakdown.data.totals.prev_reverse !== null" class="text-xs text-gray-500">
+                                        {{ formatCurrency(companyBreakdown.data.totals.prev_reverse) }} €
+                                        <span v-if="companyBreakdown.data.totals.reverse_var !== null" :class="companyBreakdown.data.totals.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ companyBreakdown.data.totals.reverse_var >= 0 ? '+' : '' }}{{ companyBreakdown.data.totals.reverse_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-bold">{{ formatCurrency(companyBreakdown.data.totals.benefice) }} €</div>
+                                    <div v-if="companyBreakdown.data.totals.prev_benefice !== null" class="text-xs text-gray-500">
+                                        {{ formatCurrency(companyBreakdown.data.totals.prev_benefice) }} €
+                                        <span v-if="companyBreakdown.data.totals.benefice_var !== null" :class="companyBreakdown.data.totals.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            ({{ companyBreakdown.data.totals.benefice_var >= 0 ? '+' : '' }}{{ companyBreakdown.data.totals.benefice_var }}%)
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+
+                            <!-- Skeleton loading -->
+                            <template v-if="companyBreakdown.loading">
+                                <tr v-for="n in 6" :key="n" class="border-b border-gray-50">
+                                    <td v-for="col in companyColumns" :key="col.key" class="px-3 py-2">
+                                        <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Lignes -->
+                            <template v-else-if="sortedCompanyRows.length > 0">
+                                <tr
+                                    v-for="row in sortedCompanyRows"
+                                    :key="row.company_id"
+                                    class="border-b border-gray-50 transition-colors hover:bg-gray-100/80"
+                                >
+                                    <td class="px-3 py-1.5 text-sm">
+                                        <div class="flex items-center gap-2">
+                                            <span
+                                                v-if="row.company_color"
+                                                class="inline-block h-2.5 w-2.5 rounded-full shrink-0"
+                                                :style="{ backgroundColor: row.company_color }"
+                                            />
+                                            <span class="font-medium text-gray-900">{{ row.company_name }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatNumber(row.calls) }}</div>
+                                        <div v-if="row.prev_calls !== null" class="text-xs text-gray-500">
+                                            {{ formatNumber(row.prev_calls) }}
+                                            <span v-if="row.calls_var !== null" :class="row.calls_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatDurationTotal(row.total_duration) }}</div>
+                                        <div v-if="row.prev_total_duration !== null" class="text-xs text-gray-500">
+                                            {{ formatDurationTotal(row.prev_total_duration) }}
+                                            <span v-if="row.total_duration_var !== null" :class="row.total_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.total_duration_var >= 0 ? '+' : '' }}{{ row.total_duration_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatDuration(row.avg_duration) }}</div>
+                                        <div v-if="row.prev_avg_duration !== null" class="text-xs text-gray-500">
+                                            {{ formatDuration(row.prev_avg_duration) }}
+                                            <span v-if="row.avg_duration_var !== null" :class="row.avg_duration_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.avg_duration_var >= 0 ? '+' : '' }}{{ row.avg_duration_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatCurrency(row.ca) }} €</div>
+                                        <div v-if="row.prev_ca !== null" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_ca) }} €
+                                            <span v-if="row.ca_var !== null" :class="row.ca_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.ca_var >= 0 ? '+' : '' }}{{ row.ca_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="text-gray-900">{{ formatCurrency(row.reverse) }} €</div>
+                                        <div v-if="row.prev_reverse !== null" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_reverse) }} €
+                                            <span v-if="row.reverse_var !== null" :class="row.reverse_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.reverse_var >= 0 ? '+' : '' }}{{ row.reverse_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div class="font-bold text-gray-900">{{ formatCurrency(row.benefice) }} €</div>
+                                        <div v-if="row.prev_benefice !== null" class="text-xs text-gray-500">
+                                            {{ formatCurrency(row.prev_benefice) }} €
+                                            <span v-if="row.benefice_var !== null" :class="row.benefice_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ row.benefice_var >= 0 ? '+' : '' }}{{ row.benefice_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Vide -->
+                            <template v-else>
+                                <tr>
+                                    <td :colspan="companyColumns.length" class="px-3 py-8 text-center text-sm text-gray-300">
+                                        Aucune donnée
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </AppLayout>
 </template>
