@@ -59,6 +59,17 @@ const showHourlyModal = ref(false)
 const selectedDate = ref(null)
 const hourly = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/hourly-breakdown`)
 
+// ─── Soldes & paiements ──────────────────────────────────────────────────────
+const balances = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/balances`)
+const payments = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/payments`)
+const paymentsPage = ref(1)
+
+function loadBalancesAndPayments(sourceFilter) {
+    const payload = { source_id: sourceFilter }
+    balances.load(payload)
+    payments.load({ ...payload, page: paymentsPage.value, per_page: 20 })
+}
+
 const { filters, reset } = useFilters(
     {
         month: monthOptions.value[0].value,
@@ -71,8 +82,18 @@ const { filters, reset } = useFilters(
         } else {
             monthly.load(f)
         }
+        paymentsPage.value = 1
+        loadBalancesAndPayments(f.source_id)
     },
 )
+
+watch(paymentsPage, () => {
+    payments.load({
+        source_id: filters.source_id,
+        page: paymentsPage.value,
+        per_page: 20,
+    })
+})
 
 watch(viewMode, (mode) => {
     if (mode === 'month') {
@@ -189,6 +210,16 @@ function formatCurrency(value) {
     return formatted.replace(/,/g, ' ')
 }
 
+function formatPaymentDate(value) {
+    if (!value) return '-'
+    const d = new Date(value)
+    return d.toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    })
+}
+
 function getVariation(current, previous) {
     if (!previous || previous === 0) {
         if (current === 0) return null
@@ -241,6 +272,7 @@ const sourceTitle = computed(() => {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     daily.load(filters)
+    loadBalancesAndPayments(filters.source_id)
 })
 
 // ─── Monthly sorted rows ──────────────────────────────────────────────────────
@@ -259,6 +291,46 @@ const sortedMonthlyRows = computed(() => {
             <div class="text-center">
                 <h1 class="text-2xl font-bold text-gray-900">{{ sourceTitle }}</h1>
                 <p class="text-sm text-gray-500 mt-1">Statistiques partenaire</p>
+            </div>
+
+            <!-- Soldes -->
+            <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div class="border-b border-gray-200 bg-gray-50 px-4 py-2">
+                    <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        {{ balances.data?.items && balances.data.items.length > 1 ? 'Soldes' : 'Solde' }}
+                    </h2>
+                </div>
+                <template v-if="balances.loading">
+                    <div class="px-4 py-3">
+                        <div class="h-5 w-32 animate-pulse rounded bg-gray-100" />
+                    </div>
+                </template>
+                <template v-else-if="balances.data?.items && balances.data.items.length > 0">
+                    <ul class="divide-y divide-gray-100">
+                        <li
+                            v-for="item in balances.data.items"
+                            :key="item.id"
+                            class="flex items-center justify-between px-4 py-2"
+                        >
+                            <span class="text-sm text-gray-700">{{ item.name }}</span>
+                            <span class="font-mono text-sm font-semibold tabular-nums text-gray-900">
+                                {{ formatCurrency(item.solde) }} €
+                            </span>
+                        </li>
+                        <li
+                            v-if="balances.data.items.length > 1"
+                            class="flex items-center justify-between bg-gray-50 px-4 py-2"
+                        >
+                            <span class="text-sm font-bold text-gray-900">Total</span>
+                            <span class="font-mono text-sm font-bold tabular-nums text-gray-900">
+                                {{ formatCurrency(balances.data.total) }} €
+                            </span>
+                        </li>
+                    </ul>
+                </template>
+                <template v-else>
+                    <div class="px-4 py-3 text-sm text-gray-400">Aucun solde</div>
+                </template>
             </div>
 
             <!-- Filtres -->
@@ -473,6 +545,95 @@ const sortedMonthlyRows = computed(() => {
                             </template>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Historique des paiements -->
+            <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <div class="border-b border-gray-200 bg-gray-50 px-4 py-2">
+                    <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Historique des paiements
+                    </h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200">
+                                <th class="whitespace-nowrap px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400">Date</th>
+                                <th
+                                    v-if="sources.length > 1"
+                                    class="whitespace-nowrap px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400"
+                                >Source</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400">Description</th>
+                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Montant</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Skeleton -->
+                            <template v-if="payments.loading">
+                                <tr v-for="n in 5" :key="n" class="border-b border-gray-50">
+                                    <td v-for="col in (sources.length > 1 ? 4 : 3)" :key="col" class="px-3 py-2">
+                                        <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Lignes -->
+                            <template v-else-if="payments.data?.items && payments.data.items.length > 0">
+                                <tr
+                                    v-for="row in payments.data.items"
+                                    :key="row.id"
+                                    class="border-b border-gray-50"
+                                >
+                                    <td class="px-3 py-1.5 text-sm text-gray-700 whitespace-nowrap">
+                                        {{ formatPaymentDate(row.created_at) }}
+                                    </td>
+                                    <td v-if="sources.length > 1" class="px-3 py-1.5 text-sm text-gray-700">
+                                        {{ row.source?.name || '-' }}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-sm text-gray-700">
+                                        {{ row.description || '-' }}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-right text-sm font-semibold tabular-nums whitespace-nowrap"
+                                        :class="row.type === 'credit' ? 'text-green-700' : 'text-red-700'"
+                                    >
+                                        {{ row.type === 'credit' ? '+' : '−' }}{{ formatCurrency(row.amount) }} €
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Vide -->
+                            <template v-else>
+                                <tr>
+                                    <td :colspan="sources.length > 1 ? 4 : 3" class="px-3 py-8 text-center text-sm text-gray-300">
+                                        Aucun paiement
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div
+                    v-if="payments.data?.last_page > 1"
+                    class="flex items-center justify-between border-t border-gray-100 px-4 py-2 text-xs text-gray-500"
+                >
+                    <span>
+                        Page {{ payments.data.current_page }} / {{ payments.data.last_page }}
+                        · {{ payments.data.total }} paiement{{ payments.data.total !== 1 ? 's' : '' }}
+                    </span>
+                    <div class="flex gap-1">
+                        <button
+                            class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 disabled:opacity-40 hover:bg-gray-50"
+                            :disabled="payments.data.current_page <= 1"
+                            @click="paymentsPage = paymentsPage - 1"
+                        >Précédent</button>
+                        <button
+                            class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 disabled:opacity-40 hover:bg-gray-50"
+                            :disabled="payments.data.current_page >= payments.data.last_page"
+                            @click="paymentsPage = paymentsPage + 1"
+                        >Suivant</button>
+                    </div>
                 </div>
             </div>
 

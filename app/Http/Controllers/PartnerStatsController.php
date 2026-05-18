@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Call;
 use App\Models\Source;
+use App\Models\SourcePayment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -443,6 +444,68 @@ class PartnerStatsController extends Controller
                 'calls' => $totalCalls,
                 'reverse' => $totalReverse,
             ],
+        ]);
+    }
+
+    /**
+     * Soldes des sources autorisées (filtré par source_id si fourni)
+     */
+    public function balances(Request $request, string $sources, string $hash): JsonResponse
+    {
+        if (!$this->validateHash($sources, $hash)) {
+            abort(403, 'Invalid access token');
+        }
+
+        $sourceIds = $this->parseSourceIds($sources);
+
+        $selectedSources = $request->filled('source_id')
+            ? array_values(array_intersect($this->parseMultiSelect($request->source_id), $sourceIds))
+            : $sourceIds;
+
+        $items = Source::whereIn('id', $selectedSources)
+            ->orderBy('name')
+            ->get(['id', 'name', 'color', 'solde'])
+            ->map(fn ($s) => [
+                'id' => $s->id,
+                'name' => $s->name,
+                'color' => $s->color,
+                'solde' => (float) $s->solde,
+            ]);
+
+        return response()->json([
+            'items' => $items,
+            'total' => round($items->sum('solde'), 2),
+        ]);
+    }
+
+    /**
+     * Historique des paiements pour les sources autorisées
+     */
+    public function payments(Request $request, string $sources, string $hash): JsonResponse
+    {
+        if (!$this->validateHash($sources, $hash)) {
+            abort(403, 'Invalid access token');
+        }
+
+        $sourceIds = $this->parseSourceIds($sources);
+
+        $selectedSources = $request->filled('source_id')
+            ? array_values(array_intersect($this->parseMultiSelect($request->source_id), $sourceIds))
+            : $sourceIds;
+
+        $perPage = min((int) $request->input('per_page', 20), 50);
+
+        $paginator = SourcePayment::with('source:id,name,color')
+            ->whereIn('source_id', $selectedSources)
+            ->orderBy('created_at', 'desc')
+            ->paginate($perPage);
+
+        return response()->json([
+            'items' => $paginator->items(),
+            'total' => $paginator->total(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
         ]);
     }
 
