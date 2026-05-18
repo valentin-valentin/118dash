@@ -28,6 +28,7 @@ Route::prefix('partners/{sources}/{hash}/data')->group(function () {
     Route::get('/monthly-breakdown', [PartnerStatsController::class, 'monthlyBreakdown']);
     Route::get('/balances', [PartnerStatsController::class, 'balances']);
     Route::get('/payments', [PartnerStatsController::class, 'payments']);
+    Route::get('/reconcile', [PartnerStatsController::class, 'reconcile']);
     Route::get('/filter-options', [PartnerStatsController::class, 'filterOptions']);
 });
 

@@ -64,6 +64,19 @@ const balances = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/bala
 const payments = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/payments`)
 const paymentsPage = ref(1)
 
+// ─── Réconciliation (chargement à la demande) ────────────────────────────────
+const reconcile = useApi(`/partners/${props.sourcesParam}/${props.hash}/data/reconcile`)
+const showReconcileModal = ref(false)
+
+function openReconcileModal() {
+    showReconcileModal.value = true
+    reconcile.load({ source_id: filters.source_id })
+}
+
+function closeReconcileModal() {
+    showReconcileModal.value = false
+}
+
 function loadBalancesAndPayments(sourceFilter) {
     const payload = { source_id: sourceFilter }
     balances.load(payload)
@@ -295,10 +308,17 @@ const sortedMonthlyRows = computed(() => {
 
             <!-- Soldes -->
             <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
-                <div class="border-b border-gray-200 bg-gray-50 px-4 py-2">
+                <div class="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2">
                     <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500">
                         {{ balances.data?.items && balances.data.items.length > 1 ? 'Soldes' : 'Solde' }}
                     </h2>
+                    <button
+                        type="button"
+                        class="rounded border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:bg-gray-100"
+                        @click="openReconcileModal"
+                    >
+                        Réconciliation
+                    </button>
                 </div>
                 <template v-if="balances.loading">
                     <div class="px-4 py-3">
@@ -735,6 +755,114 @@ const sortedMonthlyRows = computed(() => {
                         </tbody>
                     </table>
                 </div>
+                </DialogContent>
+            </Dialog>
+
+            <!-- Modal Réconciliation -->
+            <Dialog :open="showReconcileModal" @update:open="closeReconcileModal">
+                <DialogContent class="!w-[90vw] md:!w-[70vw] lg:!w-[60vw] xl:!w-[50vw] !max-w-2xl max-h-[90vh] overflow-y-auto !p-0">
+                    <div class="px-6 pt-4 pb-2">
+                        <DialogTitle class="text-base font-bold">Réconciliation des soldes</DialogTitle>
+                        <p class="mt-0.5 text-xs text-gray-500">
+                            Solde théorique = Σ payout des appels + crédits − débits
+                        </p>
+                    </div>
+
+                    <!-- Loader -->
+                    <div v-if="reconcile.loading" class="flex flex-col items-center justify-center py-10">
+                        <svg class="h-7 w-7 animate-spin text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="mt-3 text-sm text-gray-600">Calcul en cours…</p>
+                        <p class="mt-1 text-xs text-gray-400">Agrégation de tous les appels depuis le début, ça peut prendre quelques secondes.</p>
+                    </div>
+
+                    <!-- Résultat -->
+                    <div v-else-if="reconcile.data?.items" class="px-6 pb-6 space-y-3">
+                        <div
+                            v-for="item in reconcile.data.items"
+                            :key="item.id"
+                            class="rounded-lg border p-3"
+                            :class="item.matches ? 'border-green-200 bg-green-50/30' : 'border-red-200 bg-red-50/30'"
+                        >
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-semibold text-gray-900">{{ item.name }}</span>
+                                <span
+                                    v-if="item.matches"
+                                    class="text-xs font-medium text-green-700"
+                                >✓ Conforme</span>
+                                <span
+                                    v-else
+                                    class="font-mono text-xs font-bold text-red-700"
+                                >
+                                    Δ {{ item.difference > 0 ? '+' : '' }}{{ formatCurrency(item.difference) }} €
+                                </span>
+                            </div>
+                            <div class="space-y-1 text-sm">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-600">+ Σ appels (payout)</span>
+                                    <span class="font-mono tabular-nums text-gray-900">{{ formatCurrency(item.total_payout_calls) }} €</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-600">+ Crédits</span>
+                                    <span class="font-mono tabular-nums text-green-700">+ {{ formatCurrency(item.total_credits) }} €</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-600">− Débits</span>
+                                    <span class="font-mono tabular-nums text-red-700">− {{ formatCurrency(item.total_debits) }} €</span>
+                                </div>
+                                <div class="flex items-center justify-between border-t border-gray-200 pt-1 mt-1">
+                                    <span class="font-medium text-gray-900">= Solde théorique</span>
+                                    <span class="font-mono font-semibold tabular-nums text-gray-900">{{ formatCurrency(item.expected_solde) }} €</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-600">Solde actuel</span>
+                                    <span class="font-mono tabular-nums text-gray-700">{{ formatCurrency(item.current_solde) }} €</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Totaux (si plusieurs sources) -->
+                        <div
+                            v-if="reconcile.data.items.length > 1"
+                            class="rounded-lg border p-3"
+                            :class="reconcile.data.totals.matches ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'"
+                        >
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-bold text-gray-900">Total</span>
+                                <span
+                                    v-if="reconcile.data.totals.matches"
+                                    class="text-xs font-medium text-green-700"
+                                >✓ Conforme</span>
+                                <span
+                                    v-else
+                                    class="font-mono text-xs font-bold text-red-700"
+                                >
+                                    Δ {{ reconcile.data.totals.difference > 0 ? '+' : '' }}{{ formatCurrency(reconcile.data.totals.difference) }} €
+                                </span>
+                            </div>
+                            <div class="space-y-1 text-sm">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium text-gray-900">Solde théorique cumulé</span>
+                                    <span class="font-mono font-semibold tabular-nums text-gray-900">{{ formatCurrency(reconcile.data.totals.expected_solde) }} €</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-gray-700">Solde actuel cumulé</span>
+                                    <span class="font-mono tabular-nums text-gray-700">{{ formatCurrency(reconcile.data.totals.current_solde) }} €</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="reconcile.data.items.length === 0" class="text-center text-sm text-gray-400 py-6">
+                            Aucune source à réconcilier
+                        </div>
+                    </div>
+
+                    <!-- Erreur -->
+                    <div v-else-if="reconcile.error" class="px-6 pb-6 text-sm text-red-600">
+                        Erreur lors du calcul de la réconciliation
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>

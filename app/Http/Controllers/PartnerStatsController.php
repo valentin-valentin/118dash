@@ -510,6 +510,86 @@ class PartnerStatsController extends Controller
     }
 
     /**
+     * Réconciliation : pour chaque source autorisée, agrège la somme des appels,
+     * les crédits, les débits, et compare au solde actuel.
+     */
+    public function reconcile(Request $request, string $sources, string $hash): JsonResponse
+    {
+        if (!$this->validateHash($sources, $hash)) {
+            abort(403, 'Invalid access token');
+        }
+
+        set_time_limit(300);
+
+        $sourceIds = $this->parseSourceIds($sources);
+
+        $selectedSources = $request->filled('source_id')
+            ? array_values(array_intersect($this->parseMultiSelect($request->source_id), $sourceIds))
+            : $sourceIds;
+
+        $sourcesData = Source::whereIn('id', $selectedSources)
+            ->orderBy('name')
+            ->get(['id', 'name', 'solde']);
+
+        $items = [];
+        $sumPayout = 0.0;
+        $sumCredits = 0.0;
+        $sumDebits = 0.0;
+        $sumExpected = 0.0;
+        $sumCurrent = 0.0;
+
+        foreach ($sourcesData as $source) {
+            $totalPayoutCalls = (float) Call::where('source_id', $source->id)
+                ->sum('payout_source');
+
+            $totalCredits = (float) SourcePayment::where('source_id', $source->id)
+                ->where('type', SourcePayment::TYPE_CREDIT)
+                ->sum('amount');
+
+            $totalDebits = (float) SourcePayment::where('source_id', $source->id)
+                ->where('type', SourcePayment::TYPE_DEBIT)
+                ->sum('amount');
+
+            $expectedSolde = round($totalPayoutCalls + $totalCredits - $totalDebits, 2);
+            $currentSolde = round((float) $source->solde, 2);
+            $difference = round($expectedSolde - $currentSolde, 2);
+
+            $items[] = [
+                'id' => $source->id,
+                'name' => $source->name,
+                'total_payout_calls' => round($totalPayoutCalls, 2),
+                'total_credits' => round($totalCredits, 2),
+                'total_debits' => round($totalDebits, 2),
+                'expected_solde' => $expectedSolde,
+                'current_solde' => $currentSolde,
+                'difference' => $difference,
+                'matches' => abs($difference) < 0.01,
+            ];
+
+            $sumPayout += $totalPayoutCalls;
+            $sumCredits += $totalCredits;
+            $sumDebits += $totalDebits;
+            $sumExpected += $expectedSolde;
+            $sumCurrent += $currentSolde;
+        }
+
+        $totalDifference = round($sumExpected - $sumCurrent, 2);
+
+        return response()->json([
+            'items' => $items,
+            'totals' => [
+                'total_payout_calls' => round($sumPayout, 2),
+                'total_credits' => round($sumCredits, 2),
+                'total_debits' => round($sumDebits, 2),
+                'expected_solde' => round($sumExpected, 2),
+                'current_solde' => round($sumCurrent, 2),
+                'difference' => $totalDifference,
+                'matches' => abs($totalDifference) < 0.01,
+            ],
+        ]);
+    }
+
+    /**
      * Options de filtres disponibles
      */
     public function filterOptions(string $sources, string $hash): JsonResponse
