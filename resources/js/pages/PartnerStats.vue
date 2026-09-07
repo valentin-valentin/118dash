@@ -16,6 +16,30 @@ const props = defineProps({
     sourceIds: Array,
     sourcesParam: String,
     hash: String,
+    at: String,
+})
+
+// ─── Snapshot (outil interne : ?at=YYYY-MM-DDTHH:mm, heure Europe/Paris) ──────
+const atParam = props.at ? { at: props.at } : {}
+const showSnapshotInput = ref(false)
+const snapshotValue = ref(props.at || '')
+
+function applySnapshot() {
+    if (!snapshotValue.value) return
+    const url = new URL(window.location.href)
+    url.searchParams.set('at', snapshotValue.value)
+    window.location.href = url.toString()
+}
+
+function clearSnapshot() {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('at')
+    window.location.href = url.toString()
+}
+
+const snapshotLabel = computed(() => {
+    const m = String(props.at || '').match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/)
+    return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : props.at
 })
 
 // ─── View mode ────────────────────────────────────────────────────────────────
@@ -70,7 +94,7 @@ const showReconcileModal = ref(false)
 
 function openReconcileModal() {
     showReconcileModal.value = true
-    reconcile.load({ source_id: filters.source_id })
+    reconcile.load({ source_id: filters.source_id, ...atParam })
 }
 
 function closeReconcileModal() {
@@ -78,22 +102,22 @@ function closeReconcileModal() {
 }
 
 function loadBalancesAndPayments(sourceFilter) {
-    const payload = { source_id: sourceFilter }
+    const payload = { source_id: sourceFilter, ...atParam }
     balances.load(payload)
     payments.load({ ...payload, page: paymentsPage.value, per_page: 20 })
 }
 
 const { filters, reset } = useFilters(
     {
-        month: monthOptions.value[0].value,
-        year: String(new Date().getFullYear()),
+        month: props.at ? props.at.slice(0, 7) : monthOptions.value[0].value,
+        year: props.at ? props.at.slice(0, 4) : String(new Date().getFullYear()),
         source_id: props.sources.length > 1 ? [] : [props.sources[0].value],
     },
     (f) => {
         if (viewMode.value === 'month') {
-            daily.load(f)
+            daily.load({ ...f, ...atParam })
         } else {
-            monthly.load(f)
+            monthly.load({ ...f, ...atParam })
         }
         paymentsPage.value = 1
         loadBalancesAndPayments(f.source_id)
@@ -105,14 +129,15 @@ watch(paymentsPage, () => {
         source_id: filters.source_id,
         page: paymentsPage.value,
         per_page: 20,
+        ...atParam,
     })
 })
 
 watch(viewMode, (mode) => {
     if (mode === 'month') {
-        daily.load(filters)
+        daily.load({ ...filters, ...atParam })
     } else {
-        monthly.load(filters)
+        monthly.load({ ...filters, ...atParam })
     }
 })
 
@@ -266,7 +291,7 @@ function selectDay(date) {
 
     selectedDate.value = date
     showHourlyModal.value = true
-    hourly.load({ ...filters, date })
+    hourly.load({ ...filters, date, ...atParam })
 }
 
 function closeHourlyView() {
@@ -284,7 +309,7 @@ const sourceTitle = computed(() => {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
-    daily.load(filters)
+    daily.load({ ...filters, ...atParam })
     loadBalancesAndPayments(filters.source_id)
 })
 
@@ -865,6 +890,34 @@ const sortedMonthlyRows = computed(() => {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <!-- Snapshot (outil interne, volontairement discret) -->
+            <div class="pt-2 pb-1 text-center">
+                <div v-if="at" class="inline-flex items-center gap-2 text-[11px] text-gray-400">
+                    <span>Vue au {{ snapshotLabel }}</span>
+                    <button type="button" class="hover:text-gray-600" title="Revenir au direct" @click="clearSnapshot">×</button>
+                </div>
+                <div v-else-if="showSnapshotInput" class="inline-flex items-center gap-1.5 text-[11px]">
+                    <input
+                        v-model="snapshotValue"
+                        type="datetime-local"
+                        class="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] text-gray-600"
+                        @keyup.enter="applySnapshot"
+                    />
+                    <button
+                        type="button"
+                        class="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-gray-500 hover:bg-gray-50"
+                        @click="applySnapshot"
+                    >OK</button>
+                </div>
+                <button
+                    v-else
+                    type="button"
+                    class="text-xs text-gray-300 hover:text-gray-500"
+                    title="Voir la page à un instant donné"
+                    @click="showSnapshotInput = true"
+                >◷</button>
+            </div>
         </div>
     </div>
 </template>

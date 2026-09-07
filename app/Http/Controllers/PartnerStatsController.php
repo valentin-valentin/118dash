@@ -40,9 +40,27 @@ class PartnerStatsController extends Controller
     }
 
     /**
+     * Instant de référence optionnel (?at=YYYY-MM-DDTHH:mm, interprété en Europe/Paris).
+     * Permet de voir la page telle qu'elle était à un moment donné.
+     */
+    private function resolveAt(Request $request): ?\Carbon\Carbon
+    {
+        $at = $request->input('at');
+        if (!$at) {
+            return null;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($at, 'Europe/Paris');
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
      * Affiche la page des statistiques partenaires
      */
-    public function show(string $sources, string $hash): Response
+    public function show(Request $request, string $sources, string $hash): Response
     {
         // Validation du hash
         if (!$this->validateHash($sources, $hash)) {
@@ -62,6 +80,7 @@ class PartnerStatsController extends Controller
             'sourceIds' => $sourceIds,
             'sourcesParam' => $sources,
             'hash' => $hash,
+            'at' => $this->resolveAt($request)?->format('Y-m-d\TH:i'),
         ]);
     }
 
@@ -76,9 +95,10 @@ class PartnerStatsController extends Controller
         }
 
         $sourceIds = $this->parseSourceIds($sources);
+        $at = $this->resolveAt($request);
 
         // Récupérer le mois depuis la requête (format: YYYY-MM)
-        $month = $request->input('month', now()->format('Y-m'));
+        $month = $request->input('month', ($at ?? now('Europe/Paris'))->format('Y-m'));
         [$year, $monthNum] = explode('-', $month);
 
         $startDate = \Carbon\Carbon::createFromDate($year, $monthNum, 1)->setTimezone('Europe/Paris')->startOfDay();
@@ -88,10 +108,10 @@ class PartnerStatsController extends Controller
         $prevStartDate = $startDate->copy()->subMonth();
         $prevEndDate = $endDate->copy()->subMonth();
 
-        $today = \Carbon\Carbon::now('Europe/Paris');
+        $today = $at ? $at->copy() : \Carbon\Carbon::now('Europe/Paris');
 
         // Créer closure pour appliquer les filtres
-        $applyFilters = function($query) use ($request, $sourceIds) {
+        $applyFilters = function($query) use ($request, $sourceIds, $at) {
             // Filtrer par sources autorisées
             $selectedSources = $request->filled('source_id')
                 ? array_intersect($this->parseMultiSelect($request->source_id), $sourceIds)
@@ -109,6 +129,11 @@ class PartnerStatsController extends Controller
 
             // PARTENAIRES : Uniquement les appels >= 10 secondes
             $query->where('total_duration', '>=', 10);
+
+            // Snapshot : ignorer tout ce qui est postérieur à l'instant de référence
+            if ($at) {
+                $query->where('called_at', '<=', $at->copy()->utc());
+            }
         };
 
         // Générer les jours du mois jusqu'à aujourd'hui (pas au-delà)
@@ -218,6 +243,7 @@ class PartnerStatsController extends Controller
         }
 
         $sourceIds = $this->parseSourceIds($sources);
+        $at = $this->resolveAt($request);
 
         $date = $request->input('date');
         if (!$date) {
@@ -228,7 +254,7 @@ class PartnerStatsController extends Controller
         $previousWeekDate = $currentDate->copy()->subDays(7);
 
         // Closure pour appliquer les filtres
-        $applyFilters = function($query) use ($request, $sourceIds) {
+        $applyFilters = function($query) use ($request, $sourceIds, $at) {
             $selectedSources = $request->filled('source_id')
                 ? array_intersect($this->parseMultiSelect($request->source_id), $sourceIds)
                 : $sourceIds;
@@ -245,6 +271,11 @@ class PartnerStatsController extends Controller
 
             // PARTENAIRES : Uniquement les appels >= 10 secondes
             $query->where('total_duration', '>=', 10);
+
+            // Snapshot : ignorer tout ce qui est postérieur à l'instant de référence
+            if ($at) {
+                $query->where('called_at', '<=', $at->copy()->utc());
+            }
         };
 
         // Générer les heures 8-21 (heures d'ouverture)
@@ -326,7 +357,7 @@ class PartnerStatsController extends Controller
         $prevDayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][$previousWeekDate->dayOfWeek];
 
         // Heure actuelle en France
-        $nowInFrance = \Carbon\Carbon::now('Europe/Paris');
+        $nowInFrance = $at ? $at->copy() : \Carbon\Carbon::now('Europe/Paris');
         $currentHour = $nowInFrance->hour;
 
         return response()->json([
@@ -357,12 +388,13 @@ class PartnerStatsController extends Controller
         }
 
         $sourceIds = $this->parseSourceIds($sources);
+        $at = $this->resolveAt($request);
 
-        $year = (int) $request->input('year', now()->year);
+        $today = $at ? $at->copy() : \Carbon\Carbon::now('Europe/Paris');
 
-        $today = \Carbon\Carbon::now('Europe/Paris');
+        $year = (int) $request->input('year', $today->year);
 
-        $applyFilters = function($query) use ($request, $sourceIds) {
+        $applyFilters = function($query) use ($request, $sourceIds, $at) {
             $selectedSources = $request->filled('source_id')
                 ? array_intersect($this->parseMultiSelect($request->source_id), $sourceIds)
                 : $sourceIds;
@@ -378,6 +410,10 @@ class PartnerStatsController extends Controller
             });
 
             $query->where('total_duration', '>=', 10);
+
+            if ($at) {
+                $query->where('called_at', '<=', $at->copy()->utc());
+            }
         };
 
         $monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
@@ -457,6 +493,8 @@ class PartnerStatsController extends Controller
         }
 
         $sourceIds = $this->parseSourceIds($sources);
+        $at = $this->resolveAt($request);
+        $atUtc = $at?->copy()->utc();
 
         $selectedSources = $request->filled('source_id')
             ? array_values(array_intersect($this->parseMultiSelect($request->source_id), $sourceIds))
@@ -465,12 +503,35 @@ class PartnerStatsController extends Controller
         $items = Source::whereIn('id', $selectedSources)
             ->orderBy('name')
             ->get(['id', 'name', 'color', 'solde'])
-            ->map(fn ($s) => [
-                'id' => $s->id,
-                'name' => $s->name,
-                'color' => $s->color,
-                'solde' => (float) $s->solde,
-            ]);
+            ->map(function ($s) use ($atUtc) {
+                $solde = (float) $s->solde;
+
+                // Snapshot : on repart du solde actuel et on retranche les mouvements postérieurs à T
+                if ($atUtc) {
+                    $laterPayout = (float) Call::where('source_id', $s->id)
+                        ->where('called_at', '>', $atUtc)
+                        ->sum('payout_source');
+
+                    $laterCredits = (float) SourcePayment::where('source_id', $s->id)
+                        ->where('type', SourcePayment::TYPE_CREDIT)
+                        ->where('created_at', '>', $atUtc)
+                        ->sum('amount');
+
+                    $laterDebits = (float) SourcePayment::where('source_id', $s->id)
+                        ->where('type', SourcePayment::TYPE_DEBIT)
+                        ->where('created_at', '>', $atUtc)
+                        ->sum('amount');
+
+                    $solde = round($solde - $laterPayout - $laterCredits + $laterDebits, 2);
+                }
+
+                return [
+                    'id' => $s->id,
+                    'name' => $s->name,
+                    'color' => $s->color,
+                    'solde' => $solde,
+                ];
+            });
 
         return response()->json([
             'items' => $items,
@@ -497,6 +558,7 @@ class PartnerStatsController extends Controller
 
         $paginator = SourcePayment::with('source:id,name,color')
             ->whereIn('source_id', $selectedSources)
+            ->when($this->resolveAt($request), fn ($q, $at) => $q->where('created_at', '<=', $at->copy()->utc()))
             ->orderBy('created_at', 'desc')
             ->paginate($perPage);
 
@@ -522,6 +584,7 @@ class PartnerStatsController extends Controller
         set_time_limit(300);
 
         $sourceIds = $this->parseSourceIds($sources);
+        $atUtc = $this->resolveAt($request)?->utc();
 
         $selectedSources = $request->filled('source_id')
             ? array_values(array_intersect($this->parseMultiSelect($request->source_id), $sourceIds))
@@ -540,18 +603,40 @@ class PartnerStatsController extends Controller
 
         foreach ($sourcesData as $source) {
             $totalPayoutCalls = (float) Call::where('source_id', $source->id)
+                ->when($atUtc, fn ($q) => $q->where('called_at', '<=', $atUtc))
                 ->sum('payout_source');
 
             $totalCredits = (float) SourcePayment::where('source_id', $source->id)
                 ->where('type', SourcePayment::TYPE_CREDIT)
+                ->when($atUtc, fn ($q) => $q->where('created_at', '<=', $atUtc))
                 ->sum('amount');
 
             $totalDebits = (float) SourcePayment::where('source_id', $source->id)
                 ->where('type', SourcePayment::TYPE_DEBIT)
+                ->when($atUtc, fn ($q) => $q->where('created_at', '<=', $atUtc))
                 ->sum('amount');
 
             $expectedSolde = round($totalPayoutCalls + $totalCredits - $totalDebits, 2);
+
+            // En mode snapshot, le solde "actuel" est reconstitué en retranchant les mouvements postérieurs à T
             $currentSolde = round((float) $source->solde, 2);
+            if ($atUtc) {
+                $laterPayout = (float) Call::where('source_id', $source->id)
+                    ->where('called_at', '>', $atUtc)
+                    ->sum('payout_source');
+
+                $laterCredits = (float) SourcePayment::where('source_id', $source->id)
+                    ->where('type', SourcePayment::TYPE_CREDIT)
+                    ->where('created_at', '>', $atUtc)
+                    ->sum('amount');
+
+                $laterDebits = (float) SourcePayment::where('source_id', $source->id)
+                    ->where('type', SourcePayment::TYPE_DEBIT)
+                    ->where('created_at', '>', $atUtc)
+                    ->sum('amount');
+
+                $currentSolde = round($currentSolde - $laterPayout - $laterCredits + $laterDebits, 2);
+            }
             $difference = round($expectedSolde - $currentSolde, 2);
 
             $items[] = [
