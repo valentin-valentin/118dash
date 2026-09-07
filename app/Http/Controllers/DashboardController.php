@@ -741,9 +741,9 @@ class DashboardController extends Controller
                 continue;
             }
 
-            // Seuls les rejetés entre 8h et 20h (heure de Paris) sont comptés
+            // Seuls les rejetés entre 8h et 20h (heure de Paris) sont comptés, hors dimanche
             $parisAt = $calledAt->copy()->setTimezone('Europe/Paris');
-            if ($parisAt->hour < 8 || $parisAt->hour >= 20) {
+            if ($parisAt->hour < 8 || $parisAt->hour >= 20 || $parisAt->isSunday()) {
                 continue;
             }
 
