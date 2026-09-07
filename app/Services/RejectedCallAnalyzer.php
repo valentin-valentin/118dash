@@ -25,7 +25,12 @@ class RejectedCallAnalyzer
         'expired_10_15',
         'expired_15_20',
         'expired_20_30',
-        'expired_gt_30',
+        'expired_30_45',
+        'expired_45_60',
+        'expired_1h_2h',
+        'expired_2h_4h',
+        'expired_4h_8h',
+        'expired_gt_8h',
         'not_assigned_today',
         'active_assignment',
     ];
@@ -191,7 +196,12 @@ class RejectedCallAnalyzer
             $minutes < 15 => 'expired_10_15',
             $minutes < 20 => 'expired_15_20',
             $minutes < 30 => 'expired_20_30',
-            default => 'expired_gt_30',
+            $minutes < 45 => 'expired_30_45',
+            $minutes < 60 => 'expired_45_60',
+            $minutes < 120 => 'expired_1h_2h',
+            $minutes < 240 => 'expired_2h_4h',
+            $minutes < 480 => 'expired_4h_8h',
+            default => 'expired_gt_8h',
         }, $delay];
     }
 

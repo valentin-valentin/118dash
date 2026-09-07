@@ -3,12 +3,12 @@ import { Head } from '@inertiajs/vue3'
 import { computed, onMounted, ref } from 'vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
     Dialog,
     DialogContent,
     DialogTitle,
 } from '@/components/ui/dialog'
-import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useApi } from '@/composables/useApi'
 import { useFilterOptions } from '@/composables/useFilterOptions'
 import { useFilters } from '@/composables/useFilters'
@@ -21,7 +21,12 @@ const REASONS = [
     { key: 'expired_10_15', short: '10-15 mn', long: 'Numéro expiré entre 10 et 15 mn' },
     { key: 'expired_15_20', short: '15-20 mn', long: 'Numéro expiré entre 15 et 20 mn' },
     { key: 'expired_20_30', short: '20-30 mn', long: 'Numéro expiré entre 20 et 30 mn' },
-    { key: 'expired_gt_30', short: '> 30 mn', long: 'Numéro expiré il y a plus de 30 mn' },
+    { key: 'expired_30_45', short: '30-45 mn', long: 'Numéro expiré entre 30 et 45 mn' },
+    { key: 'expired_45_60', short: '45-60 mn', long: 'Numéro expiré entre 45 mn et 1 h' },
+    { key: 'expired_1h_2h', short: '1-2 h', long: 'Numéro expiré entre 1 et 2 h' },
+    { key: 'expired_2h_4h', short: '2-4 h', long: 'Numéro expiré entre 2 et 4 h' },
+    { key: 'expired_4h_8h', short: '4-8 h', long: 'Numéro expiré entre 4 et 8 h' },
+    { key: 'expired_gt_8h', short: '> 8 h', long: 'Numéro expiré il y a plus de 8 h' },
     { key: 'not_assigned_today', short: 'Pas assigné auj.', long: "Numéro pas assigné aujourd'hui" },
     { key: 'active_assignment', short: 'Anomalie', long: "Numéro assigné au moment de l'appel (anomalie)" },
 ]
@@ -117,6 +122,17 @@ function percentOfTotal(count) {
     return ((count / total) * 100).toFixed(1)
 }
 
+function percentOfDay(row, count) {
+    if (!row.total || !count) return null
+    return ((count / row.total) * 100).toFixed(0)
+}
+
+function formatDelay(minutes) {
+    if (minutes === null || minutes === undefined) return '-'
+    if (minutes < 60) return minutes + ' mn'
+    return Math.floor(minutes / 60) + 'h' + String(minutes % 60).padStart(2, '0')
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     loadFilterOptions()
@@ -130,16 +146,17 @@ onMounted(() => {
     <AppLayout>
         <div class="space-y-6 p-6">
             <!-- En-tête -->
-            <div class="flex items-center gap-3">
-                <SidebarTrigger class="lg:hidden" />
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-900">Appels rejetés</h1>
-                    <p class="text-sm text-gray-500 mt-0.5">
-                        Appels arrivés sur un numéro désactivé (8h-20h, hors dimanche, retries opérateurs dédupliqués).
-                        Le délai est mesuré entre la fin réelle de la dernière assignation du numéro et l'appel.
-                    </p>
-                </div>
-            </div>
+            <PageHeader
+                :breadcrumbs="[
+                    { title: 'Dashboard', href: '/' },
+                    { title: 'Appels rejetés', href: '/rejected-calls' }
+                ]"
+            />
+
+            <p class="text-xs text-gray-500">
+                Appels arrivés sur un numéro désactivé (8h-20h, hors dimanche, retries opérateurs dédupliqués).
+                Le délai est mesuré entre la fin réelle de la dernière assignation du numéro et l'appel.
+            </p>
 
             <!-- Filtres -->
             <FilterBar
@@ -249,6 +266,9 @@ onMounted(() => {
                                         <div :class="row[reason.key] === 0 || isSunday(row.date) ? 'text-gray-300' : 'text-gray-900'">
                                             {{ formatNumber(row[reason.key]) }}
                                         </div>
+                                        <div v-if="!isSunday(row.date) && percentOfDay(row, row[reason.key]) !== null" class="text-xs text-gray-500">
+                                            {{ percentOfDay(row, row[reason.key]) }}%
+                                        </div>
                                     </td>
                                 </tr>
                             </template>
@@ -316,7 +336,7 @@ onMounted(() => {
                                         {{ reasonLabels[row.reason] || row.reason }}
                                     </td>
                                     <td class="px-4 py-1 text-right text-xs tabular-nums text-gray-700">
-                                        {{ row.delay_minutes !== null ? row.delay_minutes + ' mn' : '-' }}
+                                        {{ formatDelay(row.delay_minutes) }}
                                     </td>
                                     <td class="px-4 py-1 text-right text-xs tabular-nums" :class="row.retries > 0 ? 'text-gray-700' : 'text-gray-300'">
                                         {{ row.retries }}
