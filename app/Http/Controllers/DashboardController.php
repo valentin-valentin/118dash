@@ -701,56 +701,13 @@ class DashboardController extends Controller
 
     /**
      * Compte les appels rejetés (disabled_calls) par jour (Europe/Paris).
-     * Les retries opérateurs sont dédupliqués sur le couple from/to : une
-     * occurrence survenant moins de 5 minutes après la précédente du même
-     * couple est considérée comme un retry du même appel et n'est pas comptée.
+     * Règles (dédup retries, plage 8h-20h, hors dimanche) : voir RejectedCallAnalyzer.
      */
     private function rejectedCallsByDay(Request $request, \Carbon\Carbon $start, \Carbon\Carbon $end): array
     {
-        $startUtc = $start->copy()->utc();
+        $analyzer = app(\App\Services\RejectedCallAnalyzer::class);
 
-        $query = DB::table('disabled_calls')
-            // marge avant le début du mois pour détecter les retries qui chevauchent la borne
-            ->whereBetween('called_at', [$startUtc->copy()->subMinutes(10), $end->copy()->utc()]);
-
-        // Seuls les filtres portés par le phonenumber sont applicables ici
-        // (brand/agent/callcenter/carrier/durée n'existent pas sur les rejetés)
-        foreach (['provider_id', 'company_id', 'source_id'] as $field) {
-            if ($request->filled($field)) {
-                $ids = array_map('intval', $this->parseMultiSelect($request->input($field)));
-                $query->whereIn('phonenumber_id', function ($q) use ($field, $ids) {
-                    $q->select('id')->from('phonenumbers')->whereIn($field, $ids);
-                });
-            }
-        }
-
-        $rows = $query->orderBy('called_at')->orderBy('id')->get(['from', 'to', 'called_at']);
-
-        $lastSeen = [];
-        $byDay = [];
-
-        foreach ($rows as $row) {
-            $calledAt = \Carbon\Carbon::parse($row->called_at, 'UTC');
-            $key = $row->from . '|' . $row->to;
-
-            $isRetry = isset($lastSeen[$key]) && $lastSeen[$key]->diffInSeconds($calledAt) <= 300;
-            $lastSeen[$key] = $calledAt;
-
-            // Les lignes de la marge servent uniquement à amorcer la détection de retries
-            if ($isRetry || $calledAt->lt($startUtc)) {
-                continue;
-            }
-
-            // Seuls les rejetés entre 8h et 20h (heure de Paris) sont comptés, hors dimanche
-            $parisAt = $calledAt->copy()->setTimezone('Europe/Paris');
-            if ($parisAt->hour < 8 || $parisAt->hour >= 20 || $parisAt->isSunday()) {
-                continue;
-            }
-
-            $byDay[$parisAt->format('Y-m-d')] = ($byDay[$parisAt->format('Y-m-d')] ?? 0) + 1;
-        }
-
-        return $byDay;
+        return $analyzer->countsByDay($analyzer->dedupedCalls($request, $start, $end));
     }
 
     /**
