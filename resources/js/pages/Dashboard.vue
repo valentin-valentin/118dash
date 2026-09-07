@@ -248,6 +248,14 @@ function formatNumber(value) {
     return formatted.replace(/,/g, ' ')
 }
 
+// Part des rejetés sur le total appels + rejetés
+function rejectedPercent(calls, rejected) {
+    if (rejected === null || rejected === undefined) return null
+    const total = (calls || 0) + rejected
+    if (total === 0) return null
+    return ((rejected / total) * 100).toFixed(1)
+}
+
 function formatCurrency(value) {
     if (value === null || value === undefined) return '-'
     // Format personnalisé : espace pour milliers, point pour décimales
@@ -661,6 +669,9 @@ onMounted(() => {
                                 </td>
                                 <td v-if="filters.with_rejected" class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.rejected_calls) }}</div>
+                                    <div v-if="rejectedPercent(daily.data.totals.calls, daily.data.totals.rejected_calls) !== null" class="text-xs text-gray-500">
+                                        soit {{ rejectedPercent(daily.data.totals.calls, daily.data.totals.rejected_calls) }}%
+                                    </div>
                                 </td>
                                 <td class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatDurationTotal(daily.data.totals.total_duration) }}</div>
@@ -746,6 +757,9 @@ onMounted(() => {
                                     </td>
                                     <td v-if="filters.with_rejected" class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.rejected_calls) }}</div>
+                                        <div v-if="!isSunday(row.date) && rejectedPercent(row.calls, row.rejected_calls) !== null" class="text-xs text-gray-500">
+                                            soit {{ rejectedPercent(row.calls, row.rejected_calls) }}%
+                                        </div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDurationTotal(row.total_duration) }}</div>
