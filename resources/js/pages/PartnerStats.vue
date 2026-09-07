@@ -913,10 +913,10 @@ const sortedMonthlyRows = computed(() => {
                 <button
                     v-else
                     type="button"
-                    class="text-xs text-gray-300 hover:text-gray-500"
+                    class="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
                     title="Voir la page à un instant donné"
                     @click="showSnapshotInput = true"
-                >◷</button>
+                >◷ Voir un snapshot</button>
             </div>
         </div>
     </div>
