@@ -77,6 +77,7 @@ const { filters, reset } = useFilters(
         callcenter_id: [],
         agent_name: [],
         min_duration: false,
+        with_rejected: false,
     },
     (f) => {
         daily.load(f)
@@ -94,19 +95,21 @@ const hasFilters = computed(() =>
     (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
     (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
     (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
-    filters.min_duration
+    filters.min_duration ||
+    filters.with_rejected
 )
 
 // ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
-const columns = [
+const columns = computed(() => [
     { key: 'date', label: 'Date', sortable: true },
     { key: 'calls', label: 'Appels', sortable: true, headerClass: 'text-right' },
+    ...(filters.with_rejected ? [{ key: 'rejected_calls', label: 'Rejetés', sortable: true, headerClass: 'text-right' }] : []),
     { key: 'total_duration', label: 'Durée totale', sortable: true, headerClass: 'text-right' },
     { key: 'avg_duration', label: 'Durée moy.', sortable: true, headerClass: 'text-right' },
     { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
     { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
     { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
-]
+])
 
 const sortKey = ref('date')
 const sortDir = ref('desc')
@@ -604,6 +607,19 @@ onMounted(() => {
                             ≥ 10 secondes
                         </label>
                     </div>
+
+                    <!-- Filtre appels rejetés -->
+                    <div class="flex items-center gap-2 px-3 py-2 bg-white rounded-md border border-gray-200">
+                        <input
+                            type="checkbox"
+                            id="with-rejected"
+                            v-model="filters.with_rejected"
+                            class="h-4 w-4 rounded border-gray-300"
+                        />
+                        <label for="with-rejected" class="text-sm text-gray-700 cursor-pointer select-none">
+                            Avec les rejetés
+                        </label>
+                    </div>
                 </div>
             </FilterBar>
 
@@ -642,6 +658,9 @@ onMounted(() => {
                                             ({{ daily.data.totals.calls_var >= 0 ? '+' : '' }}{{ daily.data.totals.calls_var }}%)
                                         </span>
                                     </div>
+                                </td>
+                                <td v-if="filters.with_rejected" class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.rejected_calls) }}</div>
                                 </td>
                                 <td class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatDurationTotal(daily.data.totals.total_duration) }}</div>
@@ -724,6 +743,9 @@ onMounted(() => {
                                                 ({{ row.calls_var >= 0 ? '+' : '' }}{{ row.calls_var }}%)
                                             </span>
                                         </div>
+                                    </td>
+                                    <td v-if="filters.with_rejected" class="px-3 py-1.5 text-right text-sm">
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.rejected_calls) }}</div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDurationTotal(row.total_duration) }}</div>

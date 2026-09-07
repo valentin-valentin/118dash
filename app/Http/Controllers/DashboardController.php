@@ -552,6 +552,12 @@ class DashboardController extends Controller
             $previousWeekData[$dayData->date] = $prevData;
         }
 
+        // Appels rejetés (optionnel, plus coûteux) : comptés par jour depuis disabled_calls
+        $rejectedByDay = null;
+        if ($request->input('with_rejected') == 'true') {
+            $rejectedByDay = $this->rejectedCallsByDay($request, $start, $end);
+        }
+
         // Mapper avec comparaisons
         $daily = $daily->map(function ($row) use ($previousWeekData) {
             $currentDate = \Carbon\Carbon::parse($row->date);
@@ -611,6 +617,13 @@ class DashboardController extends Controller
                 'avg_duration_var' => $avgDurationVar,
             ];
         });
+
+        if ($rejectedByDay !== null) {
+            $daily = $daily->map(function ($row) use ($rejectedByDay) {
+                $row['rejected_calls'] = $rejectedByDay[$row['date']] ?? 0;
+                return $row;
+            });
+        }
 
         // Calculer les totaux du mois actuel
         $totalCalls = $daily->sum('calls');
@@ -676,10 +689,63 @@ class DashboardController extends Controller
             'avg_duration_var' => $avgDurationVar,
         ];
 
+        if ($rejectedByDay !== null) {
+            $totals['rejected_calls'] = array_sum($rejectedByDay);
+        }
+
         return response()->json([
             'items' => $daily,
             'totals' => $totals,
         ]);
+    }
+
+    /**
+     * Compte les appels rejetés (disabled_calls) par jour (Europe/Paris).
+     * Les retries opérateurs sont dédupliqués sur le couple from/to : une
+     * occurrence survenant moins de 5 minutes après la précédente du même
+     * couple est considérée comme un retry du même appel et n'est pas comptée.
+     */
+    private function rejectedCallsByDay(Request $request, \Carbon\Carbon $start, \Carbon\Carbon $end): array
+    {
+        $startUtc = $start->copy()->utc();
+
+        $query = DB::table('disabled_calls')
+            // marge avant le début du mois pour détecter les retries qui chevauchent la borne
+            ->whereBetween('called_at', [$startUtc->copy()->subMinutes(10), $end->copy()->utc()]);
+
+        // Seuls les filtres portés par le phonenumber sont applicables ici
+        // (brand/agent/callcenter/carrier/durée n'existent pas sur les rejetés)
+        foreach (['provider_id', 'company_id', 'source_id'] as $field) {
+            if ($request->filled($field)) {
+                $ids = array_map('intval', $this->parseMultiSelect($request->input($field)));
+                $query->whereIn('phonenumber_id', function ($q) use ($field, $ids) {
+                    $q->select('id')->from('phonenumbers')->whereIn($field, $ids);
+                });
+            }
+        }
+
+        $rows = $query->orderBy('called_at')->orderBy('id')->get(['from', 'to', 'called_at']);
+
+        $lastSeen = [];
+        $byDay = [];
+
+        foreach ($rows as $row) {
+            $calledAt = \Carbon\Carbon::parse($row->called_at, 'UTC');
+            $key = $row->from . '|' . $row->to;
+
+            $isRetry = isset($lastSeen[$key]) && $lastSeen[$key]->diffInSeconds($calledAt) <= 300;
+            $lastSeen[$key] = $calledAt;
+
+            // Les lignes de la marge servent uniquement à amorcer la détection de retries
+            if ($isRetry || $calledAt->lt($startUtc)) {
+                continue;
+            }
+
+            $day = $calledAt->copy()->setTimezone('Europe/Paris')->format('Y-m-d');
+            $byDay[$day] = ($byDay[$day] ?? 0) + 1;
+        }
+
+        return $byDay;
     }
 
     /**
