@@ -741,8 +741,13 @@ class DashboardController extends Controller
                 continue;
             }
 
-            $day = $calledAt->copy()->setTimezone('Europe/Paris')->format('Y-m-d');
-            $byDay[$day] = ($byDay[$day] ?? 0) + 1;
+            // Seuls les rejetés entre 8h et 20h (heure de Paris) sont comptés
+            $parisAt = $calledAt->copy()->setTimezone('Europe/Paris');
+            if ($parisAt->hour < 8 || $parisAt->hour >= 20) {
+                continue;
+            }
+
+            $byDay[$parisAt->format('Y-m-d')] = ($byDay[$parisAt->format('Y-m-d')] ?? 0) + 1;
         }
 
         return $byDay;
