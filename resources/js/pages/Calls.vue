@@ -8,11 +8,21 @@ import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
-import { User, PhoneForwarded } from 'lucide-vue-next'
+import { User, PhoneForwarded, Download } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/calls/stats')
@@ -169,6 +179,85 @@ function formatAgentName(agentName) {
         return match[1]
     }
     return agentName
+}
+
+// ─── Export CSV ───────────────────────────────────────────────────────────────
+const exportableColumns = [
+    { key: 'source', label: 'Source' },
+    { key: 'provider', label: 'Provider' },
+    { key: 'company', label: 'Company' },
+    { key: 'voxnode_id', label: 'Voxnode ID' },
+    { key: 'caller', label: 'Appelant' },
+    { key: 'called', label: 'Appelé' },
+    { key: 'total_duration', label: 'Durée totale (s)' },
+    { key: 'duration_agent', label: 'Durée agent (s)' },
+    { key: 'duration_transfer', label: 'Durée transfert (s)' },
+    { key: 'called_at', label: 'Date' },
+    { key: 'who_hangup', label: 'Qui a raccroché' },
+    { key: 'agent_name', label: 'Agent' },
+    { key: 'brand_name', label: 'Marque' },
+    { key: 'brand_phonenumber', label: 'N° marque' },
+    { key: 'carrier', label: 'Opérateur' },
+    { key: 'record_agent', label: 'Enregistrement agent' },
+    { key: 'record_transfer', label: 'Enregistrement transfert' },
+    { key: 'callcenter', label: 'Call center' },
+    { key: 'blacklist', label: 'Blacklist' },
+]
+
+const exportOpen = ref(false)
+const exportColumns = ref(exportableColumns.map(c => c.key))
+const exportDateFrom = ref('')
+const exportDateTo = ref('')
+
+function openExportDialog() {
+    // Plage pré-remplie depuis les filtres actifs, sinon les 30 derniers jours
+    const today = new Date().toISOString().slice(0, 10)
+    const monthAgo = new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10)
+    exportDateFrom.value = filters.date_from || monthAgo
+    exportDateTo.value = filters.date_to || today
+    exportOpen.value = true
+}
+
+function toggleExportColumn(key) {
+    const idx = exportColumns.value.indexOf(key)
+    if (idx === -1) {
+        exportColumns.value.push(key)
+    } else {
+        exportColumns.value.splice(idx, 1)
+    }
+}
+
+function toggleAllExportColumns() {
+    exportColumns.value = exportColumns.value.length === exportableColumns.length
+        ? []
+        : exportableColumns.map(c => c.key)
+}
+
+const canExport = computed(() =>
+    exportColumns.value.length > 0 && !!exportDateFrom.value && !!exportDateTo.value
+)
+
+function downloadExport() {
+    const params = new URLSearchParams()
+
+    // Reprendre les filtres actifs (hors tri/pagination)
+    const skip = ['sort', 'dir', 'per_page', 'page', 'date_from', 'date_to']
+    for (const [key, value] of Object.entries(filters)) {
+        if (skip.includes(key)) continue
+        if (Array.isArray(value)) {
+            if (value.length) params.set(key, value.join(','))
+        } else if (value !== '' && value !== null && value !== undefined) {
+            params.set(key, value)
+        }
+    }
+
+    params.set('date_from', exportDateFrom.value)
+    params.set('date_to', exportDateTo.value)
+    // Conserver l'ordre d'affichage des colonnes
+    params.set('columns', exportableColumns.map(c => c.key).filter(k => exportColumns.value.includes(k)).join(','))
+
+    window.location.href = `/calls/export?${params.toString()}`
+    exportOpen.value = false
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -370,6 +459,76 @@ onMounted(() => {
                     />
                 </div>
             </FilterBar>
+
+            <!-- Export CSV -->
+            <div class="flex justify-end">
+                <Button variant="outline" size="sm" @click="openExportDialog">
+                    <Download class="h-4 w-4" />
+                    Exporter CSV
+                </Button>
+            </div>
+
+            <Dialog v-model:open="exportOpen">
+                <DialogContent class="sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Exporter les appels en CSV</DialogTitle>
+                        <DialogDescription>
+                            Les filtres actifs de la page sont appliqués à l'export.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div class="space-y-4">
+                        <!-- Plage de dates -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="space-y-1">
+                                <label class="text-xs font-medium text-gray-600">Du</label>
+                                <Input v-model="exportDateFrom" type="date" class="h-8" />
+                            </div>
+                            <div class="space-y-1">
+                                <label class="text-xs font-medium text-gray-600">Au</label>
+                                <Input v-model="exportDateTo" type="date" class="h-8" />
+                            </div>
+                        </div>
+
+                        <!-- Colonnes -->
+                        <div>
+                            <div class="mb-2 flex items-center justify-between">
+                                <span class="text-xs font-medium text-gray-600">
+                                    Colonnes ({{ exportColumns.length }}/{{ exportableColumns.length }})
+                                </span>
+                                <button
+                                    type="button"
+                                    class="text-xs font-medium text-blue-600 hover:text-blue-700"
+                                    @click="toggleAllExportColumns"
+                                >
+                                    {{ exportColumns.length === exportableColumns.length ? 'Tout décocher' : 'Tout cocher' }}
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                                <label
+                                    v-for="col in exportableColumns"
+                                    :key="col.key"
+                                    class="flex cursor-pointer items-center gap-2 text-sm text-gray-700"
+                                >
+                                    <Checkbox
+                                        :model-value="exportColumns.includes(col.key)"
+                                        @update:model-value="toggleExportColumn(col.key)"
+                                    />
+                                    {{ col.label }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" @click="exportOpen = false">Annuler</Button>
+                        <Button :disabled="!canExport" @click="downloadExport">
+                            <Download class="h-4 w-4" />
+                            Exporter
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <!-- Table -->
             <div class="rounded-lg border border-gray-100 bg-white">

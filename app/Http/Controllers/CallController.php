@@ -41,20 +41,11 @@ class CallController extends Controller
         return [$value];
     }
 
-    public function data(Request $request): JsonResponse
+    /**
+     * Applique les filtres de la requête sur la query. Retourne true si au moins un filtre est actif.
+     */
+    private function applyFilters(Request $request, $query): bool
     {
-        $query = Call::query()
-            ->with([
-                'agent:id,name',
-                'callcenter:id,name',
-                'blacklist:id,name',
-                'source:id,name,color',
-                'phonenumber:id,phonenumber,provider_id,company_id,source_id',
-                'phonenumber.provider:id,name,color',
-                'phonenumber.company:id,name,color',
-                'phonenumber.source:id,name,color'
-            ]);
-
         // Détecter si des filtres sont actifs
         $hasFilters = false;
 
@@ -217,6 +208,25 @@ class CallController extends Controller
             }
         }
 
+        return $hasFilters;
+    }
+
+    public function data(Request $request): JsonResponse
+    {
+        $query = Call::query()
+            ->with([
+                'agent:id,name',
+                'callcenter:id,name',
+                'blacklist:id,phonenumber',
+                'source:id,name,color',
+                'phonenumber:id,phonenumber,provider_id,company_id,source_id',
+                'phonenumber.provider:id,name,color',
+                'phonenumber.company:id,name,color',
+                'phonenumber.source:id,name,color'
+            ]);
+
+        $hasFilters = $this->applyFilters($request, $query);
+
         // Tri
         $sortable = ['id', 'called_at', 'total_duration', 'duration_agent', 'payout', 'brand_name', 'agent_name'];
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'called_at';
@@ -246,6 +256,92 @@ class CallController extends Controller
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
             'has_more_pages' => $paginator->hasMorePages(),
+        ]);
+    }
+
+    /**
+     * Colonnes exportables : clé => libellé (en-tête CSV).
+     * source/provider/company/callcenter/blacklist sont résolus en nom via les relations,
+     * avec la même logique d'affichage que la page (source du Call, sinon du Phonenumber).
+     */
+    private const EXPORT_COLUMNS = [
+        'source' => 'Source',
+        'provider' => 'Provider',
+        'company' => 'Company',
+        'voxnode_id' => 'Voxnode ID',
+        'caller' => 'Appelant',
+        'called' => 'Appelé',
+        'total_duration' => 'Durée totale (s)',
+        'duration_agent' => 'Durée agent (s)',
+        'duration_transfer' => 'Durée transfert (s)',
+        'called_at' => 'Date',
+        'who_hangup' => 'Qui a raccroché',
+        'agent_name' => 'Agent',
+        'brand_name' => 'Marque',
+        'brand_phonenumber' => 'N° marque',
+        'carrier' => 'Opérateur',
+        'record_agent' => 'Enregistrement agent',
+        'record_transfer' => 'Enregistrement transfert',
+        'callcenter' => 'Call center',
+        'blacklist' => 'Blacklist',
+    ];
+
+    public function export(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+        ]);
+
+        $allowed = array_keys(self::EXPORT_COLUMNS);
+        $columns = $request->filled('columns')
+            ? array_values(array_intersect($allowed, $this->parseMultiSelect($request->columns)))
+            : $allowed;
+
+        abort_if(empty($columns), 422, 'Aucune colonne valide sélectionnée');
+
+        $query = Call::query()
+            ->with([
+                'callcenter:id,name',
+                'blacklist:id,phonenumber',
+                'source:id,name',
+                'phonenumber:id,phonenumber,provider_id,company_id,source_id',
+                'phonenumber.provider:id,name',
+                'phonenumber.company:id,name',
+                'phonenumber.source:id,name',
+            ]);
+
+        $this->applyFilters($request, $query);
+
+        $filename = sprintf('appels_%s_%s.csv', $request->date_from, $request->date_to);
+
+        return response()->streamDownload(function () use ($query, $columns) {
+            $out = fopen('php://output', 'w');
+
+            // BOM UTF-8 pour Excel
+            fwrite($out, "\xEF\xBB\xBF");
+
+            fputcsv($out, array_map(fn ($c) => self::EXPORT_COLUMNS[$c], $columns), ';', '"', '');
+
+            $query->chunkById(1000, function ($calls) use ($out, $columns) {
+                foreach ($calls as $call) {
+                    fputcsv($out, array_map(fn ($c) => match ($c) {
+                        'source' => $call->source?->name ?? $call->phonenumber?->source?->name,
+                        'provider' => $call->phonenumber?->provider?->name,
+                        'company' => $call->phonenumber?->company?->name,
+                        'callcenter' => $call->callcenter?->name,
+                        'blacklist' => $call->blacklist?->phonenumber,
+                        'called_at' => $call->called_at?->format('Y-m-d H:i:s'),
+                        default => $call->{$c},
+                    }, $columns), ';', '"', '');
+                }
+
+                flush();
+            });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 

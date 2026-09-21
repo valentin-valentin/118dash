@@ -40,6 +40,7 @@ Route::middleware(['auth'])->group(function () {
     // ── Pages (Inertia) ───────────────────────────────────────────────────────
     Route::get('/dashboard', fn () => Inertia::render('Dashboard'))->name('dashboard');
     Route::get('/calls', [CallController::class, 'index'])->name('calls.index');
+    Route::get('/calls/export', [CallController::class, 'export'])->name('calls.export');
     Route::get('/calls/{call}', [CallController::class, 'show'])->name('calls.show');
 
     Route::get('/providers', [ProviderController::class, 'index'])->name('providers.index');
