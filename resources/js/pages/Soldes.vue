@@ -1,4 +1,5 @@
 <script setup>
+import { xsrfToken } from '@/lib/csrf'
 import { computed, onMounted, ref } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -157,7 +158,7 @@ async function submitPayment() {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({
                 source_id: paymentForm.value.source_id,
@@ -245,7 +246,7 @@ async function submitTransfer() {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({
                 from_source_id: transferForm.value.from_source_id,
@@ -315,7 +316,7 @@ async function syncSolde() {
             headers: {
                 Accept: 'application/json',
                 'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
         })
         if (!res.ok) throw new Error('HTTP ' + res.status)

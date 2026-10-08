@@ -1,4 +1,4 @@
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import type { DefineComponent } from 'vue';
 import { createApp, h } from 'vue';
@@ -21,4 +21,13 @@ createInertiaApp({
     progress: {
         color: '#4B5563',
     },
+});
+
+// Session expirée (419) : au lieu d'afficher la page d'erreur brute dans une modale,
+// on recharge la page pour repartir avec une session et un token valides.
+router.on('invalid', (event) => {
+    if (event.detail.response.status === 419) {
+        event.preventDefault();
+        window.location.reload();
+    }
 });

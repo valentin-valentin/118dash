@@ -1,4 +1,5 @@
 <script setup>
+import { xsrfToken } from '@/lib/csrf'
 import { computed, onMounted, ref } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -130,7 +131,7 @@ async function generateUrl() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                'X-XSRF-TOKEN': xsrfToken()
             },
             body: JSON.stringify({ source_ids: selectedSourceIds.value })
         })

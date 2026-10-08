@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Blacklist;
+use App\Support\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,6 +26,8 @@ class BlacklistController extends Controller
 
     public function store(Request $request)
     {
+        $this->normalizePhonenumber($request);
+
         $validated = $request->validate([
             'phonenumber' => ['required', 'string', 'regex:/^\+33[1-9]\d{8}$/', 'unique:blacklist,phonenumber'],
             'source' => 'nullable|string|max:255',
@@ -51,6 +55,8 @@ class BlacklistController extends Controller
 
     public function update(Request $request, Blacklist $blacklist)
     {
+        $this->normalizePhonenumber($request);
+
         $validated = $request->validate([
             'phonenumber' => ['required', 'string', 'regex:/^\+33[1-9]\d{8}$/', 'unique:blacklist,phonenumber,' . $blacklist->id],
             'source' => 'nullable|string|max:255',
@@ -67,6 +73,69 @@ class BlacklistController extends Controller
 
         return redirect()->route('blacklists.index')
             ->with('success', 'Blacklist modifiée avec succès.');
+    }
+
+    public function bulkImport(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'numbers' => 'required|string|max:1000000',
+            'source' => 'nullable|string|max:255',
+            'note' => 'nullable|string|max:1000',
+        ]);
+
+        // Un numéro par ligne, ou séparés par virgule / point-virgule / tabulation
+        $lines = preg_split('/[\r\n,;\t]+/', $validated['numbers']);
+
+        $valid = [];
+        $invalid = [];
+        $duplicatesInBatch = 0;
+
+        foreach ($lines as $line) {
+            $line = trim($line, " \t\"'");
+            if ($line === '') {
+                continue;
+            }
+
+            $normalized = PhoneNumber::normalizeFr($line);
+            if ($normalized === null) {
+                $invalid[] = $line;
+            } elseif (isset($valid[$normalized])) {
+                $duplicatesInBatch++;
+            } else {
+                $valid[$normalized] = true;
+            }
+        }
+
+        $numbers = array_keys($valid);
+
+        $existing = collect($numbers)
+            ->chunk(1000)
+            ->flatMap(fn ($chunk) => Blacklist::whereIn('phonenumber', $chunk->all())->pluck('phonenumber'))
+            ->all();
+
+        $toCreate = array_values(array_diff($numbers, $existing));
+
+        $now = now();
+        $created = 0;
+        DB::transaction(function () use ($toCreate, $validated, $now, &$created) {
+            foreach (array_chunk($toCreate, 500) as $chunk) {
+                $created += Blacklist::insertOrIgnore(array_map(fn ($phonenumber) => [
+                    'phonenumber' => $phonenumber,
+                    'source' => $validated['source'] ?? null,
+                    'note' => $validated['note'] ?? null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ], $chunk));
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'created' => $created,
+            'already_exists' => count($existing),
+            'duplicates_in_batch' => $duplicatesInBatch,
+            'invalid' => $invalid,
+        ]);
     }
 
     public function data(Request $request): JsonResponse
@@ -117,6 +186,15 @@ class BlacklistController extends Controller
         return response()->json([
             'sources' => $sources,
         ]);
+    }
+
+    private function normalizePhonenumber(Request $request): void
+    {
+        if ($request->filled('phonenumber')) {
+            $request->merge([
+                'phonenumber' => PhoneNumber::normalizeFr($request->phonenumber) ?? $request->phonenumber,
+            ]);
+        }
     }
 
     public function stats(): JsonResponse

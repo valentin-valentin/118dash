@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { xsrfToken } from '@/lib/csrf'
+import { computed, onMounted, ref } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -8,10 +9,20 @@ import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Pencil } from 'lucide-vue-next'
+import { Plus, Pencil, Upload } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/blacklists/stats')
@@ -54,6 +65,52 @@ const columns = [
     { key: 'actions', label: 'Actions' },
 ]
 
+// ─── Import en masse ──────────────────────────────────────────────────────────
+const showImportModal = ref(false)
+const importForm = ref({ numbers: '', source: '', note: '' })
+const importing = ref(false)
+const importResult = ref(null)
+const importError = ref(null)
+
+function openImportModal() {
+    importForm.value = { numbers: '', source: '', note: '' }
+    importResult.value = null
+    importError.value = null
+    showImportModal.value = true
+}
+
+async function submitImport() {
+    importing.value = true
+    importError.value = null
+    try {
+        const response = await fetch('/data/blacklists/bulk-import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-XSRF-TOKEN': xsrfToken(),
+            },
+            body: JSON.stringify(importForm.value),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+            importError.value = data.message || "Erreur lors de l'import"
+            return
+        }
+
+        importResult.value = data
+        table.load(filters)
+        stats.load()
+        filterOptions.load()
+    } catch (error) {
+        importError.value = "Erreur lors de l'import"
+    } finally {
+        importing.value = false
+    }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
     stats.load()
@@ -75,6 +132,10 @@ onMounted(() => {
                 ]"
             >
                 <template #actions>
+                    <Button variant="outline" @click="openImportModal">
+                        <Upload class="mr-2 h-4 w-4" />
+                        Import en masse
+                    </Button>
                     <Button as-child>
                         <Link href="/blacklists/create">
                             <Plus class="mr-2 h-4 w-4" />
@@ -187,5 +248,70 @@ onMounted(() => {
                 </div>
             </div>
         </div>
+
+        <!-- Modal import en masse -->
+        <Dialog v-model:open="showImportModal">
+            <DialogContent class="max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>Import en masse</DialogTitle>
+                    <DialogDescription>
+                        Un numéro par ligne (ou séparés par virgule / point-virgule). Formats acceptés :
+                        0756996360, 33756996360, +33 7 56 99 63 60, 0033756996360…
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div v-if="importResult" class="space-y-3 text-sm">
+                    <div class="rounded-md bg-green-50 p-3 text-green-800">
+                        {{ importResult.created }} numéro(s) ajouté(s)
+                    </div>
+                    <div v-if="importResult.already_exists" class="text-gray-600">
+                        {{ importResult.already_exists }} déjà présent(s) dans la blacklist (ignoré(s))
+                    </div>
+                    <div v-if="importResult.duplicates_in_batch" class="text-gray-600">
+                        {{ importResult.duplicates_in_batch }} doublon(s) dans la liste importée (ignoré(s))
+                    </div>
+                    <div v-if="importResult.invalid.length" class="space-y-1">
+                        <p class="text-red-600">{{ importResult.invalid.length }} numéro(s) invalide(s) :</p>
+                        <pre class="max-h-40 overflow-auto rounded-md bg-red-50 p-2 font-mono text-xs text-red-700">{{ importResult.invalid.join('\n') }}</pre>
+                    </div>
+                </div>
+
+                <form v-else id="import-form" class="space-y-4" @submit.prevent="submitImport">
+                    <div class="space-y-2">
+                        <Label for="import-numbers">Numéros *</Label>
+                        <Textarea
+                            id="import-numbers"
+                            v-model="importForm.numbers"
+                            rows="10"
+                            required
+                            class="font-mono"
+                            placeholder="0756996360&#10;33612345678&#10;+33 1 23 45 67 89"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <Label for="import-source">Source</Label>
+                        <Input id="import-source" v-model="importForm.source" type="text" placeholder="ex: Signalement client..." />
+                    </div>
+                    <div class="space-y-2">
+                        <Label for="import-note">Note</Label>
+                        <Textarea id="import-note" v-model="importForm.note" rows="2" />
+                    </div>
+                    <p v-if="importError" class="text-sm text-red-600">{{ importError }}</p>
+                </form>
+
+                <DialogFooter>
+                    <template v-if="importResult">
+                        <Button variant="outline" @click="importResult = null; importForm.numbers = ''">Nouvel import</Button>
+                        <Button @click="showImportModal = false">Fermer</Button>
+                    </template>
+                    <template v-else>
+                        <Button variant="outline" @click="showImportModal = false">Annuler</Button>
+                        <Button type="submit" form="import-form" :disabled="importing || !importForm.numbers.trim()">
+                            {{ importing ? 'Import...' : 'Importer' }}
+                        </Button>
+                    </template>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </AppLayout>
 </template>

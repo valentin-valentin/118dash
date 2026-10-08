@@ -1,4 +1,5 @@
 <script setup>
+import { xsrfToken } from '@/lib/csrf'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -257,7 +258,7 @@ async function bulkUpdateSource() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({
                 ids: selectedIds.value,
@@ -291,7 +292,7 @@ async function bulkDelete() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({ ids: selectedIds.value }),
         })
@@ -319,7 +320,7 @@ async function bulkRestore() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({ ids: selectedIds.value }),
         })
@@ -347,7 +348,7 @@ async function bulkRoute() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({ ids: selectedIds.value }),
         })
@@ -375,7 +376,7 @@ async function cancelDeletion(id) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({ id }),
         })
@@ -401,7 +402,7 @@ async function forceDelete(id) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({ id }),
         })

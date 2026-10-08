@@ -1,4 +1,5 @@
 <script setup>
+import { xsrfToken } from '@/lib/csrf'
 import { computed, ref, watch } from 'vue'
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -103,7 +104,7 @@ async function manualRoute() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                'X-XSRF-TOKEN': xsrfToken(),
             },
             body: JSON.stringify({ ids: [props.phonenumber.id] }),
         })
@@ -171,15 +172,11 @@ async function submit() {
     importErrors.value = []
 
     try {
-        // Récupérer le CSRF token depuis le meta tag ou le cookie
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content ||
-                         document.cookie.split('; ').find(row => row.startsWith('XSRF-TOKEN='))?.split('=')[1]
-
         const response = await fetch('/data/phonenumbers/bulk-import', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken || '',
+                'X-XSRF-TOKEN': xsrfToken(),
                 'X-Requested-With': 'XMLHttpRequest',
             },
             credentials: 'same-origin',

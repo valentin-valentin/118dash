@@ -70,11 +70,11 @@ function submit() {
                                 v-model="form.phonenumber"
                                 type="text"
                                 required
-                                placeholder="+33612345678"
+                                placeholder="0612345678 ou +33612345678"
                                 class="font-mono"
                                 :class="{ 'border-red-500': form.errors.phonenumber }"
                             />
-                            <p class="text-xs text-gray-500">Format E.164 français uniquement (+33)</p>
+                            <p class="text-xs text-gray-500">Numéro français, enregistré au format E.164 (+33...)</p>
                             <p v-if="form.errors.phonenumber" class="text-sm text-red-600">
                                 {{ form.errors.phonenumber }}
                             </p>
