@@ -237,7 +237,11 @@ function formatDate(value, withTime = false) {
                 v-if="!results.length && !running"
                 class="rounded-lg border border-dashed border-gray-200 bg-white p-10 text-center text-sm text-gray-500"
             >
-                Interroge chaque numéro sur Numero08.com, garder la page ouverte jusqu'à la fin de l'audit.
+                <p>Interroge chaque numéro sur Numero08.com, garder la page ouverte jusqu'à la fin de l'audit.</p>
+                <Button size="lg" class="mt-6" @click="startAudit">
+                    <Play class="mr-2 h-4 w-4" />
+                    Lancer l'audit
+                </Button>
             </div>
 
             <template v-if="results.length">
