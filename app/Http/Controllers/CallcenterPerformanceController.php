@@ -142,14 +142,16 @@ class CallcenterPerformanceController extends Controller
             'prev_from' => 'nullable|date_format:Y-m-d',
             'prev_to' => 'nullable|date_format:Y-m-d',
             'split_remote' => 'nullable|boolean',
+            'cmp_from' => 'nullable|date_format:Y-m-d',
+            'cmp_to' => 'nullable|date_format:Y-m-d',
         ]);
 
         $center = $this->centerSql($request->boolean('split_remote'));
         [$from, $to] = $this->range($request->from, $request->to);
 
         $centers = $this->centerTotals($center, $from, $to);
-        $previous = $request->filled('prev_from') && $request->filled('prev_to')
-            ? $this->centerTotals($center, ...$this->range($request->prev_from, $request->prev_to))
+        $previousRange = $request->filled('prev_from') && $request->filled('prev_to')
+            ? $this->range($request->prev_from, $request->prev_to)
             : null;
 
         return response()->json([
@@ -158,8 +160,12 @@ class CallcenterPerformanceController extends Controller
                 ->map(fn ($c, $key) => ['id' => $key, 'label' => $c['label'], 'color' => $c['color'], 'optional' => !empty($c['optional'])])
                 ->values(),
             'centers' => $centers,
-            'previous' => $previous,
+            'previous' => $previousRange ? $this->centerTotals($center, ...$previousRange) : null,
             'daily' => $this->daily($center, $from, $to),
+            // Jour par jour de la période de comparaison des graphiques (la page envoie J-7)
+            'compare_daily' => $request->filled('cmp_from') && $request->filled('cmp_to')
+                ? $this->daily($center, ...$this->range($request->cmp_from, $request->cmp_to))
+                : null,
             'hourly' => $this->hourly($center, $from, $to),
             'agents' => $this->agents($center, $from, $to),
             'unattributed' => DB::table('calls')

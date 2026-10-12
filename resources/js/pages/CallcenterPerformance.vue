@@ -101,6 +101,9 @@ async function load() {
     if (compare.value) {
         params.set('prev_from', previousPeriod.value.from)
         params.set('prev_to', previousPeriod.value.to)
+        // Graphiques : chaque jour comparé au même jour de la semaine précédente
+        params.set('cmp_from', iso(addDays(parseIso(period.value.from), -7)))
+        params.set('cmp_to', iso(addDays(parseIso(period.value.to), -7)))
     }
     try {
         const res = await fetch(`/data/callcenter-performance?${params}`, { headers: { Accept: 'application/json' } })
@@ -288,11 +291,13 @@ const bucketByWeek = computed(() =>
     granularity.value === 'week' || (granularity.value === 'auto' && daysBetween(period.value.from, period.value.to) > 62),
 )
 
-// Regroupe des lignes journalières (date + sommes) par jour ou semaine sur toute la période
-function buildBuckets(rows) {
+// Regroupe des lignes journalières (date + sommes) par jour ou semaine sur une période.
+// Par jour, les dimanches sont ignorés : les centres sont fermés, ils feraient plonger les courbes.
+function buildBuckets(rows, from = period.value.from, to = period.value.to) {
     const keyOf = (date) => (bucketByWeek.value ? weekStart(date) : date)
     const keys = []
-    for (let d = parseIso(period.value.from); iso(d) <= period.value.to; d = addDays(d, 1)) {
+    for (let d = parseIso(from); iso(d) <= to; d = addDays(d, 1)) {
+        if (!bucketByWeek.value && d.getDay() === 0) continue
         const k = keyOf(iso(d))
         if (keys[keys.length - 1] !== k) keys.push(k)
     }
@@ -317,26 +322,40 @@ function bucketTitle(key) {
     return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
-// Volumes à 0 sans activité, ratios vides
+// Pas d'activité (centre fermé ce jour-là) : point vide plutôt qu'une chute à 0
 function bucketValue(b, key) {
-    if (!b.m) return ['payout', 'calls', 'agents_per_day'].includes(key) ? 0 : null
+    if (!b.m) return null
     const v = b.m[key]
     return v === null || v === undefined ? null : Math.round(v * 10000) / 10000
 }
 
 const trend = computed(() => {
     const daily = data.value?.daily ?? []
+    // Comparaison seulement par jour (par semaine, la semaine précédente est déjà le point d'avant)
+    const compareDaily = compare.value && !bucketByWeek.value ? data.value?.compare_daily : null
     const perCenter = centers.value.map((c) => ({ center: c, buckets: buildBuckets(daily.filter((r) => r.id === c.id)) }))
     const keys = perCenter[0]?.buckets.map((b) => b.key) ?? []
-    return {
-        categories: keys.map(bucketLabel),
-        titles: keys.map(bucketTitle),
-        series: perCenter.map(({ center, buckets }) => ({
-            name: center.label,
-            color: center.color,
-            data: buckets.map((b) => bucketValue(b, trendMetric.value)),
-        })),
+    const series = perCenter.map(({ center, buckets }) => ({
+        name: center.label,
+        color: center.color,
+        data: buckets.map((b) => bucketValue(b, trendMetric.value)),
+    }))
+    // En pointillés : le même jour de la semaine précédente (lundi avec le lundi d'avant)
+    if (compareDaily) {
+        for (const { center } of perCenter) {
+            const rows = compareDaily.filter((r) => r.id === center.id)
+            series.push({
+                name: `${center.label} (sem. préc.)`,
+                color: center.color,
+                dashed: true,
+                data: keys.map((key) => {
+                    const row = rows.find((r) => r.date === iso(addDays(parseIso(key), -7)))
+                    return row ? bucketValue({ m: { ...metrics(row), agents_per_day: Number(row.agent_days) } }, trendMetric.value) : null
+                }),
+            })
+        }
     }
+    return { categories: keys.map(bucketLabel), titles: keys.map(bucketTitle), series }
 })
 
 // ─── Activité par heure ───────────────────────────────────────────────────────
@@ -599,7 +618,8 @@ const PDF_MODES = [
     { key: 'full', label: 'Complet', hint: 'Tous les montants bruts : payout, coûts, marges.' },
 ]
 const showPdf = ref(false)
-const pdfForm = reactive({ period: 'last_week', mode: 'indices', agents: true, splitRemote: false, confirmFull: false, centers: [] })
+// agents : détail par agent à choisir à chaque fois ('none', 'all' ou l'id d'un centre), rien par défaut
+const pdfForm = reactive({ period: 'last_week', mode: 'indices', agents: null, splitRemote: false, confirmFull: false, centers: [] })
 watch(() => pdfForm.mode, () => (pdfForm.confirmFull = false))
 
 // Centres proposés : ceux de la config, Madagascar Remote seulement si on le sépare
@@ -611,11 +631,20 @@ watch(() => pdfForm.splitRemote, (split) => {
 function togglePdfCenter(id) {
     pdfForm.centers = pdfForm.centers.includes(id) ? pdfForm.centers.filter((x) => x !== id) : [...pdfForm.centers, id]
 }
+// Un centre retiré du rapport ne peut plus être choisi pour le détail des agents
+watch(() => pdfForm.centers, (list) => {
+    if (pdfForm.agents && !['none', 'all'].includes(pdfForm.agents) && !list.includes(pdfForm.agents)) pdfForm.agents = null
+})
+const pdfAgentOptions = computed(() => [
+    { key: 'none', label: 'Aucun' },
+    { key: 'all', label: 'Tous les centres' },
+    ...pdfCenterOptions.value.filter((c) => pdfForm.centers.includes(c.id)).map((c) => ({ key: c.id, label: c.label, color: c.color })),
+])
 
-const pdfBlocked = computed(() => (pdfForm.mode === 'full' && !pdfForm.confirmFull) || pdfForm.centers.length === 0)
+const pdfBlocked = computed(() => (pdfForm.mode === 'full' && !pdfForm.confirmFull) || pdfForm.centers.length === 0 || !pdfForm.agents)
 
 function openPdfDialog() {
-    Object.assign(pdfForm, { period: defaultExportPeriod(), mode: 'indices', agents: true, splitRemote: splitRemote.value, confirmFull: false })
+    Object.assign(pdfForm, { period: defaultExportPeriod(), mode: 'indices', agents: null, splitRemote: splitRemote.value, confirmFull: false })
     // Par défaut : les centres cochés sur la page
     const options = pdfCenterOptions.value.map((c) => c.id)
     const onPage = options.filter((id) => selected.value.includes(id))
@@ -626,7 +655,7 @@ function openPdf() {
     if (pdfBlocked.value) return
     const params = exportParams(rangeOf(pdfForm.period), pdfForm.splitRemote, {
         mode: pdfForm.mode,
-        agents: pdfForm.agents ? '1' : '0',
+        agents: pdfForm.agents,
         centers: pdfForm.centers.join(','),
         download: '1',
     })
@@ -744,11 +773,25 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                             <p v-if="pdfForm.mode === 'indices'" class="mt-1.5 text-xs text-gray-500">Les indices sont calculés sur les centres inclus.</p>
                         </div>
 
+                        <div>
+                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Détail par agent</div>
+                            <div class="flex flex-wrap gap-1.5">
+                                <button
+                                    v-for="o in pdfAgentOptions"
+                                    :key="o.key"
+                                    type="button"
+                                    class="flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-all"
+                                    :class="pdfForm.agents === o.key ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'"
+                                    @click="pdfForm.agents = o.key"
+                                >
+                                    <span v-if="o.color" class="h-2 w-2 rounded-full" :style="{ background: o.color }" />
+                                    {{ o.label }}
+                                </button>
+                            </div>
+                            <p v-if="!pdfForm.agents" class="mt-1.5 text-xs text-amber-700">À choisir pour pouvoir télécharger.</p>
+                        </div>
+
                         <div class="space-y-2">
-                            <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                                <Checkbox :model-value="pdfForm.agents" @update:model-value="pdfForm.agents = !!$event" />
-                                Détail par agent
-                            </label>
                             <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                                 <Checkbox :model-value="pdfForm.splitRemote" @update:model-value="pdfForm.splitRemote = !!$event" />
                                 Séparer Madagascar Remote
@@ -948,7 +991,17 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                             {{ t.label }}
                         </button>
                     </div>
-                    <TrendChart :categories="trend.categories" :titles="trend.titles" :series="trend.series" :format="trendFormat" :height="320" />
+                    <div class="mb-1 flex flex-wrap items-center gap-4 text-xs text-gray-600">
+                        <span v-for="c in centers" :key="c.id" class="flex items-center gap-1.5">
+                            <span class="h-2.5 w-2.5 rounded-full" :style="{ background: c.color }" />
+                            {{ c.label }}
+                        </span>
+                        <span v-if="compare && data?.compare_daily && !bucketByWeek" class="flex items-center gap-1.5 text-gray-500">
+                            <span class="w-5 border-t-2 border-dashed border-gray-400" />
+                            même jour, semaine précédente
+                        </span>
+                    </div>
+                    <TrendChart :categories="trend.categories" :titles="trend.titles" :series="trend.series" :format="trendFormat" :height="320" :legend="false" />
                 </div>
 
                 <!-- ─── Activité par heure ──────────────────────────────────── -->

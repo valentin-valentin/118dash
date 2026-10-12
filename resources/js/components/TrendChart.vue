@@ -7,11 +7,13 @@ import VueApexCharts from 'vue3-apexcharts'
  *
  * @prop {Array}    categories  Libellés de l'axe X
  * @prop {Array}    titles      Titres du tooltip (libellé complet de chaque point), facultatif
- * @prop {Array}    series      [{ name, color, data: [number|null] }]
+ * @prop {Array}    series      [{ name, color, data: [number|null], dashed? }]
+ *                              dashed : série de comparaison (période précédente), en pointillés plus pâles
  * @prop {Function} format      Formate une valeur (axe + tooltip)
  * @prop {Number}   height
  * @prop {Boolean}  legend      Légende Apex (désactivée quand la légende est faite à côté en HTML)
  * @prop {String}   fontFamily  Police des axes (par défaut celle de la page)
+ * @prop {Boolean}  dataLabels  Valeur affichée sur chaque point (séries pleines uniquement)
  */
 const props = defineProps({
     categories: { type: Array, default: () => [] },
@@ -21,6 +23,7 @@ const props = defineProps({
     height: { type: Number, default: 300 },
     legend: { type: Boolean, default: true },
     fontFamily: { type: String, default: 'inherit' },
+    dataLabels: { type: Boolean, default: false },
 })
 
 // ApexCharts perd les formateurs de l'axe lors d'une mise à jour : on recrée le graphique
@@ -35,15 +38,27 @@ const options = computed(() => ({
         animations: { enabled: false },
         fontFamily: props.fontFamily,
     },
-    colors: props.series.map((s) => s.color),
-    stroke: { width: 2, curve: 'straight' },
+    // Même couleur que la série d'origine, en plus pâle, pour la comparaison
+    colors: props.series.map((s) => (s.dashed ? `${s.color}80` : s.color)),
+    stroke: {
+        width: props.series.map((s) => (s.dashed ? 1.5 : 2)),
+        dashArray: props.series.map((s) => (s.dashed ? 4 : 0)),
+        curve: 'straight',
+    },
     markers: {
-        size: props.categories.length <= 31 ? 3 : 0,
+        size: props.series.map((s) => (s.dashed || props.categories.length > 31 ? 0 : 3)),
         strokeWidth: 2,
         strokeColors: '#ffffff',
         hover: { size: 5 },
     },
-    dataLabels: { enabled: false },
+    dataLabels: {
+        enabled: props.dataLabels,
+        enabledOnSeries: props.series.map((s, i) => (s.dashed ? null : i)).filter((i) => i !== null),
+        formatter: (v) => (v === null || v === undefined ? '' : props.format(v)),
+        offsetY: -6,
+        style: { fontSize: '8px', fontWeight: 500, colors: ['#4b5563'] },
+        background: { enabled: false },
+    },
     grid: {
         borderColor: '#f3f4f6',
         strokeDashArray: 0,
