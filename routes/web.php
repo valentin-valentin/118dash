@@ -5,6 +5,7 @@ use App\Http\Controllers\ApiTesterController;
 use App\Http\Controllers\AssignmentHistoryController;
 use App\Http\Controllers\BlacklistController;
 use App\Http\Controllers\CallController;
+use App\Http\Controllers\CallcenterPerformanceController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PartnerStatsController;
@@ -68,6 +69,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/phonenumbers', [PhonenumberController::class, 'store'])->name('phonenumbers.store');
     Route::get('/phonenumbers/{phonenumber}/edit', [PhonenumberController::class, 'edit'])->name('phonenumbers.edit');
     Route::put('/phonenumbers/{phonenumber}', [PhonenumberController::class, 'update'])->name('phonenumbers.update');
+
+    Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'index'])->name('callcenter-performance.index');
 
     Route::get('/blacklists', [BlacklistController::class, 'index'])->name('blacklists.index');
     Route::get('/blacklists/create', [BlacklistController::class, 'create'])->name('blacklists.create');
@@ -134,6 +137,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/force-delete', [PhonenumberController::class, 'forceDelete']);
         Route::get('/phonenumbers/rsva-audit/numbers', [RsvaAuditController::class, 'numbers']);
         Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check']);
+
+        Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
+        Route::get('/callcenter-performance/agents/{agent}', [CallcenterPerformanceController::class, 'agentDaily']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
         Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);
