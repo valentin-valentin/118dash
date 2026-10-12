@@ -6,12 +6,14 @@ import VueApexCharts from 'vue3-apexcharts'
  * Courbes d'un seul indicateur (un seul axe), une courbe par série.
  *
  * @prop {Array}    categories  Libellés de l'axe X
+ * @prop {Array}    titles      Titres du tooltip (libellé complet de chaque point), facultatif
  * @prop {Array}    series      [{ name, color, data: [number|null] }]
  * @prop {Function} format      Formate une valeur (axe + tooltip)
  * @prop {Number}   height
  */
 const props = defineProps({
     categories: { type: Array, default: () => [] },
+    titles: { type: Array, default: null },
     series: { type: Array, default: () => [] },
     format: { type: Function, default: (v) => v },
     height: { type: Number, default: 300 },
@@ -19,7 +21,7 @@ const props = defineProps({
 
 // ApexCharts perd les formateurs de l'axe lors d'une mise à jour : on recrée le graphique
 const renderKey = ref(0)
-watch(() => [props.categories, props.series, props.format], () => renderKey.value++)
+watch(() => [props.categories, props.series, props.format, props.titles], () => renderKey.value++)
 
 const options = computed(() => ({
     chart: {
@@ -75,6 +77,7 @@ const options = computed(() => ({
     tooltip: {
         shared: true,
         intersect: false,
+        x: { formatter: (v, { dataPointIndex }) => props.titles?.[dataPointIndex] ?? v },
         y: { formatter: (v) => (v === null || v === undefined ? '—' : props.format(v)) },
     },
 }))

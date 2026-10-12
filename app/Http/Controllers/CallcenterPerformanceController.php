@@ -49,6 +49,7 @@ class CallcenterPerformanceController extends Controller
             'centers' => $centers,
             'previous' => $previous,
             'daily' => $this->daily($from, $to),
+            'hourly' => $this->hourly($from, $to),
             'agents' => $this->agents($from, $to),
             'unattributed' => DB::table('calls')
                 ->whereBetween('called_at', [$from, $to])
@@ -63,6 +64,7 @@ class CallcenterPerformanceController extends Controller
         $request->validate([
             'from' => 'required|date_format:Y-m-d',
             'to' => 'required|date_format:Y-m-d|after_or_equal:from',
+            'callcenter_id' => 'nullable|integer',
         ]);
 
         [$from, $to] = $this->range($request->from, $request->to);
@@ -71,6 +73,7 @@ class CallcenterPerformanceController extends Controller
         $rows = DB::table('calls')
             ->whereBetween('called_at', [$from, $to])
             ->where('agent_id', $agent)
+            ->when($request->filled('callcenter_id'), fn ($q) => $q->where('callcenter_id', $request->callcenter_id))
             ->selectRaw("$day AS date, " . $this->sumsSql())
             ->groupBy('date')
             ->orderBy('date')
@@ -94,6 +97,7 @@ class CallcenterPerformanceController extends Controller
                 callcenters.name AS name,
                 COUNT(DISTINCT calls.agent_id) AS agents,
                 COUNT(DISTINCT calls.agent_id, $day) AS agent_days,
+                COUNT(DISTINCT $day) AS days,
                 " . $this->sumsSql())
             ->groupBy('calls.callcenter_id', 'callcenters.name')
             ->get();
@@ -137,6 +141,30 @@ class CallcenterPerformanceController extends Controller
                 " . $this->sumsSql())
             ->groupBy('date', 'callcenter_id')
             ->orderBy('date')
+            ->get()
+            ->all();
+    }
+
+    /**
+     * Totaux par centre et par heure de la journée (heure de Paris).
+     * agent_hours = nombre de couples agent / jour / heure avec au moins un appel.
+     */
+    private function hourly(Carbon $from, Carbon $to): array
+    {
+        $local = $this->parisDateTimeSql($from, $to);
+
+        return DB::table('calls')
+            ->whereBetween('called_at', [$from, $to])
+            ->whereNotNull('callcenter_id')
+            ->selectRaw("
+                callcenter_id AS id,
+                HOUR($local) AS hour,
+                COUNT(*) AS calls,
+                COALESCE(SUM(payout), 0) AS payout,
+                COUNT(DISTINCT agent_id, DATE($local)) AS agent_hours
+            ")
+            ->groupBy('callcenter_id', 'hour')
+            ->orderBy('hour')
             ->get()
             ->all();
     }
@@ -239,10 +267,18 @@ class CallcenterPerformanceController extends Controller
 
     /**
      * Date de Paris d'un appel en SQL (called_at est en UTC).
+     */
+    private function parisDateSql(Carbon $from, Carbon $to): string
+    {
+        return 'DATE(' . $this->parisDateTimeSql($from, $to) . ')';
+    }
+
+    /**
+     * Date et heure de Paris d'un appel en SQL.
      * Les tables de fuseaux MySQL ne sont pas forcément chargées : on calcule
      * le décalage heure d'été / heure d'hiver à partir des changements d'heure de la période.
      */
-    private function parisDateSql(Carbon $from, Carbon $to): string
+    private function parisDateTimeSql(Carbon $from, Carbon $to): string
     {
         $transitions = (new DateTimeZone(self::TZ))
             ->getTransitions($from->timestamp - 86400, $to->timestamp + 86400);
@@ -253,6 +289,6 @@ class CallcenterPerformanceController extends Controller
             $offset = "IF(calls.called_at >= '$at', {$t['offset']}, $offset)";
         }
 
-        return "DATE(DATE_ADD(calls.called_at, INTERVAL $offset SECOND))";
+        return "DATE_ADD(calls.called_at, INTERVAL $offset SECOND)";
     }
 }

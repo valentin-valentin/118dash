@@ -69,7 +69,12 @@ export function variation(current, previous) {
 }
 
 // ─── Formats ──────────────────────────────────────────────────────────────────
-const nf = (digits) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+const formatters = {}
+// Espace insécable normale pour les milliers (l'espace fine par défaut est peu lisible)
+const nf = (digits) => {
+    formatters[digits] ??= new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+    return { format: (v) => formatters[digits].format(v).replace(/\u202f/g, '\u00a0') }
+}
 
 export const fmt = {
     int: (v) => (v === null || v === undefined ? '—' : nf(0).format(v)),
@@ -78,13 +83,14 @@ export const fmt = {
     pct: (v, d = 1) => (v === null || v === undefined ? '—' : `${nf(d).format(v * 100)} %`),
     mult: (v) => (v === null || v === undefined ? '—' : `${nf(2).format(v)}×`),
     hours: (v) => (v === null || v === undefined ? '—' : `${nf(v < 100 ? 1 : 0).format(v)} h`),
-    // Durée courte : 3 min 05
+    // Durée courte : 58 s, 3 min 05
     dur: (s) => {
         if (s === null || s === undefined) return '—'
         const total = Math.round(s)
-        const m = Math.floor(Math.abs(total) / 60)
-        const sec = String(Math.abs(total) % 60).padStart(2, '0')
-        return `${total < 0 ? '-' : ''}${m} min ${sec}`
+        const abs = Math.abs(total)
+        const sign = total < 0 ? '-' : ''
+        if (abs < 60) return `${sign}${abs}\u00a0s`
+        return `${sign}${Math.floor(abs / 60)}\u00a0min\u00a0${String(abs % 60).padStart(2, '0')}`
     },
     variation: (v) => (v === null ? '' : `${v > 0 ? '+' : ''}${nf(1).format(v * 100)} %`),
 }
