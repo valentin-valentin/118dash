@@ -12,26 +12,25 @@ import { ArrowLeft, AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Play
 // ─── Groupes ──────────────────────────────────────────────────────────────────
 // Ordre d'affichage : les problèmes d'abord, les numéros en service à la fin
 const GROUPS = [
-    { key: 'withdrawn', label: 'Retirés', description: 'Le numéro a été retiré : il ne reçoit plus d\'appels.', tone: 'red' },
-    { key: 'closed', label: 'Fermés', description: 'Fermé techniquement chez l\'opérateur.', tone: 'red' },
-    { key: 'undeclared', label: 'Sans service déclaré', description: 'Ouvert chez l\'opérateur, mais aucun service n\'est déclaré.', tone: 'amber' },
-    { key: 'unknown', label: 'Inconnus', description: 'Absent des données officielles, ou aucun état en vigueur.', tone: 'gray' },
-    { key: 'error', label: 'Erreurs', description: 'L\'API n\'a pas pu répondre pour ces numéros.', tone: 'gray' },
-    { key: 'active', label: 'En service', description: 'Un service est déclaré sur le numéro.', tone: 'green' },
+    { key: 'inactive', label: 'Hors service', description: 'Aucun service déclaré', tone: 'red' },
+    { key: 'unknown', label: 'Inconnus', description: 'Pas trouvé sur Numero08', tone: 'gray' },
+    { key: 'error', label: 'Erreurs', description: 'Pas de réponse de l\'API', tone: 'gray' },
+    { key: 'active', label: 'En service', description: 'Service déclaré', tone: 'green' },
 ]
 
 const TONES = {
     red: { card: 'border-red-200 bg-red-50', text: 'text-red-700', dot: 'bg-red-500' },
-    amber: { card: 'border-amber-200 bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
     gray: { card: 'border-gray-200 bg-gray-50', text: 'text-gray-700', dot: 'bg-gray-400' },
     green: { card: 'border-green-200 bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
 }
 
 // ─── Audit ────────────────────────────────────────────────────────────────────
-// La page vérifie les numéros un par un. Rien n'est stocké : quitter la page arrête l'audit.
+// La page vérifie les numéros en parallèle. Rien n'est stocké : quitter la page arrête l'audit.
 
-// L'API autorise 120 appels / minute : on reste en dessous
-const MIN_INTERVAL_MS = 550
+// Nombre de requêtes simultanées
+const CONCURRENCY = 4
+// L'API autorise 120 appels / minute : on espace les départs pour rester en dessous (~115 / min)
+const MIN_INTERVAL_MS = 520
 // Attente après un dépassement de limite (429) avant de réessayer
 const RATE_LIMIT_WAIT_MS = 30000
 
@@ -40,16 +39,15 @@ const running = ref(false)
 const stopRequested = ref(false)
 const waitingRateLimit = ref(false)
 const finishedAt = ref(null)
-const dataAsOf = ref(null)
 const actionError = ref(null)
 
 const processed = computed(() => results.value.filter((r) => r.group).length)
 const total = computed(() => results.value.length)
 const progress = computed(() => (total.value ? Math.round((processed.value / total.value) * 100) : 0))
 
-// Environ 1 s par numéro (temps de réponse de l'API)
+// Débit plafonné par la limite de l'API : environ 2 numéros par seconde
 const remainingLabel = computed(() => {
-    const minutes = Math.ceil((total.value - processed.value) / 60)
+    const minutes = Math.ceil(((total.value - processed.value) * MIN_INTERVAL_MS) / 60000)
     return minutes <= 1 ? "moins d'une minute" : `environ ${minutes} min`
 })
 
@@ -80,31 +78,48 @@ async function startAudit() {
         if (!data) throw new Error('Impossible de récupérer la liste des numéros')
         results.value = data.map((n) => ({ ...n, group: null }))
 
-        let lastCallAt = 0
-        for (let i = 0; i < results.value.length && !stopRequested.value; i++) {
-            const row = results.value[i]
+        // État partagé entre les requêtes parallèles
+        let nextIndex = 0
+        let nextSlotAt = 0 // prochain départ autorisé
+        let pausedUntil = 0 // pause commune après un 429
 
-            await sleep(Math.max(0, MIN_INTERVAL_MS - (Date.now() - lastCallAt)))
-            lastCallAt = Date.now()
-
-            let response
-            try {
-                response = await getJson(`/data/phonenumbers/${row.id}/rsva-status`)
-            } catch {
-                response = { status: 0, data: null }
-            }
-
-            if (response.status === 429) {
-                waitingRateLimit.value = true
-                await sleep(RATE_LIMIT_WAIT_MS)
-                waitingRateLimit.value = false
-                i-- // on réessaie le même numéro
-                continue
-            }
-
-            Object.assign(row, response.data ?? { group: 'error', error: `Erreur dashboard (HTTP ${response.status})` })
-            if (row.data_as_of) dataAsOf.value = row.data_as_of
+        // Réserve un créneau de départ, espacé de MIN_INTERVAL_MS du précédent
+        async function waitForSlot() {
+            const slot = Math.max(Date.now(), nextSlotAt, pausedUntil)
+            nextSlotAt = slot + MIN_INTERVAL_MS
+            await sleep(slot - Date.now())
         }
+
+        async function worker() {
+            while (!stopRequested.value && nextIndex < results.value.length) {
+                const row = results.value[nextIndex++]
+
+                while (!stopRequested.value) {
+                    await waitForSlot()
+                    if (stopRequested.value) return
+
+                    let response
+                    try {
+                        response = await getJson(`/data/phonenumbers/${row.id}/rsva-status`)
+                    } catch {
+                        response = { status: 0, data: null }
+                    }
+
+                    if (response.status === 429) {
+                        // Toutes les requêtes se mettent en pause, puis on réessaie ce numéro
+                        pausedUntil = Math.max(pausedUntil, Date.now() + RATE_LIMIT_WAIT_MS)
+                        waitingRateLimit.value = true
+                        continue
+                    }
+
+                    waitingRateLimit.value = false
+                    Object.assign(row, response.data ?? { group: 'error', error: `Erreur dashboard (HTTP ${response.status})` })
+                    break
+                }
+            }
+        }
+
+        await Promise.all(Array.from({ length: CONCURRENCY }, worker))
 
         finishedAt.value = new Date()
     } catch (e) {
@@ -222,8 +237,8 @@ function formatDate(value, withTime = false) {
                 v-if="!results.length && !running"
                 class="rounded-lg border border-dashed border-gray-200 bg-white p-10 text-center text-sm text-gray-500"
             >
-                L'audit interroge les données officielles (RSVA) pour chaque numéro et indique ceux qui ne sont plus
-                en service. Il faut compter environ 1 seconde par numéro ; garder la page ouverte pendant l'audit.
+                L'audit interroge Numero08 pour chaque numéro et indique ceux qui ne sont plus
+                en service. Il faut compter environ 1 minute pour 115 numéros ; garder la page ouverte pendant l'audit.
             </div>
 
             <template v-if="results.length">
@@ -235,7 +250,7 @@ function formatDate(value, withTime = false) {
                                 <span class="font-medium">Audit en cours</span>
                                 · {{ processed }} / {{ total }} numéros · {{ remainingLabel }} restantes
                                 <span v-if="waitingRateLimit" class="block text-xs text-amber-700">
-                                    Limite de 120 appels / minute atteinte, reprise dans 30 secondes...
+                                    Limite de 120 appels / min atteinte, reprise dans 30 s
                                 </span>
                             </template>
                             <template v-else-if="processed === total">
@@ -247,9 +262,6 @@ function formatDate(value, withTime = false) {
                                 <span class="font-medium">Audit arrêté</span>
                                 · {{ processed }} / {{ total }} numéros vérifiés
                             </template>
-                        </div>
-                        <div v-if="dataAsOf" class="text-xs text-gray-500">
-                            Données officielles au {{ formatDate(dataAsOf) }}
                         </div>
                     </div>
                     <div v-if="running" class="mt-3 h-2 overflow-hidden rounded-full bg-gray-100">
@@ -266,15 +278,14 @@ function formatDate(value, withTime = false) {
                     <div>
                         <p class="font-medium">
                             {{ assignedNotActive }} numéro{{ assignedNotActive > 1 ? 's' : '' }}
-                            assigné{{ assignedNotActive > 1 ? 's' : '' }} (donc affiché{{ assignedNotActive > 1 ? 's' : '' }})
-                            {{ assignedNotActive > 1 ? 'ne sont' : 'n\'est' }} plus en service officiellement
+                            assigné{{ assignedNotActive > 1 ? 's' : '' }} hors service
                         </p>
-                        <p class="mt-0.5 text-red-700">Les appels risquent de ne pas arriver. Ils apparaissent en tête de chaque groupe ci-dessous.</p>
+                        <p class="mt-0.5 text-red-700">En haut de chaque groupe.</p>
                     </div>
                 </div>
 
                 <!-- Compteurs par groupe -->
-                <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+                <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     <button
                         v-for="g in GROUPS"
                         :key="g.key"

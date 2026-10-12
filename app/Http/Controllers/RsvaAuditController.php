@@ -80,23 +80,24 @@ class RsvaAuditController extends Controller
             return response()->json([
                 'group' => 'unknown',
                 'status_label' => ($data['reason'] ?? null) === 'not_in_registry'
-                    ? 'Absent des données officielles'
-                    : 'Aucun état officiel en vigueur',
-                'data_as_of' => $data['data_as_of'] ?? null,
+                    ? 'Inconnu'
+                    : 'Aucun état en vigueur',
                 'public_url' => $data['public_url'] ?? null,
             ]);
         }
 
         return response()->json([
-            'group' => in_array($data['status'] ?? null, ['active', 'undeclared', 'withdrawn', 'closed'], true)
-                ? $data['status']
-                : 'unknown',
-            'status_label' => $data['status_label'] ?? null,
+            // Retiré, fermé ou sans service déclaré : même chose pour nous
+            'group' => match ($data['status'] ?? null) {
+                'active' => 'active',
+                'withdrawn', 'closed', 'undeclared' => 'inactive',
+                default => 'unknown',
+            },
+            'status_label' => ($data['status'] ?? null) === 'active' ? 'En service' : ($data['status_label'] ?? null),
             'operator' => $data['operator']['name'] ?? null,
             'holder' => $data['holder']['name'] ?? null,
             'service' => $data['service']['name'] ?? null,
             'since' => $data['period']['from'] ?? null,
-            'data_as_of' => $data['data_as_of'] ?? null,
             'public_url' => $data['public_url'] ?? null,
         ]);
     }
