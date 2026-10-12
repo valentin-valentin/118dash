@@ -237,8 +237,7 @@ function formatDate(value, withTime = false) {
                 v-if="!results.length && !running"
                 class="rounded-lg border border-dashed border-gray-200 bg-white p-10 text-center text-sm text-gray-500"
             >
-                L'audit interroge Numero08 pour chaque numéro et indique ceux qui ne sont plus
-                en service. Il faut compter environ 1 minute pour 115 numéros ; garder la page ouverte pendant l'audit.
+                Interroge chaque numéro sur Numero08.com, garder la page ouverte jusqu'à la fin de l'audit.
             </div>
 
             <template v-if="results.length">
