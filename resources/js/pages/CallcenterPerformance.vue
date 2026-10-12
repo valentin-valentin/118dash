@@ -149,6 +149,9 @@ const previousTotals = computed(() => {
     return rows.length ? metrics(addSums(rows)) : null
 })
 
+// 4 centres ou plus : cartes plus étroites sur grand écran
+const compactCards = computed(() => centers.value.length >= 4)
+
 const costEstimated = computed(() => centers.value.some((c) => c.cost_estimated))
 const costMissing = computed(() => centers.value.some((c) => c.cost === null))
 
@@ -185,7 +188,7 @@ const CARD_GROUPS = [
             { key: 'calls_per_day', label: 'Appels par jour', format: fmt.int },
             { key: 'agents', label: 'Agents actifs', format: fmt.int },
             { key: 'agents_per_day', label: 'Agents par jour (moy.)', format: (v) => fmt.dec(v) },
-            { key: 'calls_per_agent_day', label: 'Appels par agent et par jour', format: (v) => fmt.dec(v), best: 'max' },
+            { key: 'calls_per_agent_day', label: 'Appels / agent / jour', format: (v) => fmt.dec(v), best: 'max' },
         ],
     },
     {
@@ -202,8 +205,8 @@ const CARD_GROUPS = [
         rows: [
             { key: 'payout_per_agent_hour', label: 'Payout / heure agent', format: (v) => fmt.eur(v, 2), best: 'max' },
             { key: 'payout_per_call', label: 'Payout / appel', format: (v) => fmt.eur(v, 2), best: 'max' },
-            { key: 'avg_total', label: 'Durée moyenne d\'un appel', format: fmt.dur },
-            { key: 'transfer_ratio', label: 'Part du temps en transfert', format: (v) => fmt.pct(v), best: 'max' },
+            { key: 'avg_total', label: 'Durée moy. d\'un appel', format: fmt.dur },
+            { key: 'transfer_ratio', label: 'Part en transfert', format: (v) => fmt.pct(v), best: 'max' },
         ],
     },
 ]
@@ -639,23 +642,30 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                 </div>
 
                 <!-- ─── Centres ─────────────────────────────────────────────── -->
-                <div class="grid gap-4" :class="centers.length === 3 ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2'">
+                <div
+                    class="grid gap-4"
+                    :class="{
+                        'md:grid-cols-2': centers.length > 1,
+                        'xl:grid-cols-3': centers.length === 3,
+                        'min-[87.5rem]:grid-cols-4': centers.length >= 4,
+                    }"
+                >
                     <div v-for="c in centers" :key="c.id" class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                         <div class="h-1" :style="{ background: c.color }" />
-                        <div class="p-5">
-                            <div class="flex items-baseline justify-between gap-2">
+                        <div class="p-4">
+                            <div class="flex gap-x-2" :class="compactCards ? 'flex-col' : 'flex-wrap items-baseline justify-between'">
                                 <h3 class="text-lg font-semibold text-gray-900">{{ c.label }}</h3>
-                                <span class="text-xs text-gray-400">
+                                <span class="whitespace-nowrap text-xs text-gray-400">
                                     <template v-if="c.label !== c.name">{{ c.name }} · </template>{{ c.m.days }} jour{{ c.m.days > 1 ? 's' : '' }} d'activité
                                 </span>
                             </div>
 
                             <!-- Les deux indicateurs les plus parlants -->
-                            <div class="mt-4 grid grid-cols-2 gap-4 rounded-md bg-gray-50 p-3">
+                            <div class="mt-3 grid grid-cols-2 gap-3 rounded-md bg-gray-50 p-3">
                                 <div>
-                                    <div class="text-xs text-gray-500">Payout / journée-agent</div>
+                                    <div class="text-xs leading-4 text-gray-500" :class="{ 'min-h-8': compactCards }">Payout / journée-agent</div>
                                     <div class="mt-1 flex items-center gap-2">
-                                        <span class="text-2xl font-bold tabular-nums text-gray-900">{{ fmt.eur(c.m.payout_per_agent_day) }}</span>
+                                        <span class="whitespace-nowrap font-bold tabular-nums text-gray-900" :class="compactCards ? 'text-xl' : 'text-2xl'">{{ fmt.eur(c.m.payout_per_agent_day) }}</span>
                                         <span v-if="bestId('payout_per_agent_day', 'max') === c.id" class="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">1er</span>
                                     </div>
                                     <div v-if="c.prev" class="mt-0.5 text-xs" :class="variationClass(variation(c.m.payout_per_agent_day, c.prev.payout_per_agent_day), 'up')">
@@ -664,9 +674,9 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                     </div>
                                 </div>
                                 <div>
-                                    <div class="text-xs text-gray-500">Ratio temps agent</div>
+                                    <div class="text-xs leading-4 text-gray-500" :class="{ 'min-h-8': compactCards }">Ratio temps agent</div>
                                     <div class="mt-1 flex items-center gap-2">
-                                        <span class="text-2xl font-bold tabular-nums text-gray-900">{{ fmt.pct(c.m.agent_ratio) }}</span>
+                                        <span class="whitespace-nowrap font-bold tabular-nums text-gray-900" :class="compactCards ? 'text-xl' : 'text-2xl'">{{ fmt.pct(c.m.agent_ratio) }}</span>
                                         <span v-if="bestId('agent_ratio', 'min') === c.id" class="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">1er</span>
                                     </div>
                                     <div v-if="c.prev" class="mt-0.5 text-xs" :class="variationClass(variation(c.m.agent_ratio, c.prev.agent_ratio), 'down')">
@@ -685,8 +695,8 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                         class="-mx-2 flex items-baseline gap-2 rounded px-2 py-1 hover:bg-gray-100"
                                     >
                                         <dt class="text-gray-600">{{ r.label }}</dt>
-                                        <span class="flex-1 -translate-y-1 border-b border-dotted border-gray-200" />
-                                        <dd class="flex items-center gap-1.5 tabular-nums text-gray-900" :class="{ 'font-semibold': r.best && bestId(r.key, r.best) === c.id }">
+                                        <span class="min-w-2 flex-1 -translate-y-1 border-b border-dotted border-gray-200" />
+                                        <dd class="flex shrink-0 items-center gap-1.5 whitespace-nowrap tabular-nums text-gray-900" :class="{ 'font-semibold': r.best && bestId(r.key, r.best) === c.id }">
                                             <span v-if="r.best && bestId(r.key, r.best) === c.id" class="h-1.5 w-1.5 rounded-full bg-gray-900" title="Meilleur centre sur cet indicateur" />
                                             {{ r.format(c.m[r.key]) }}
                                             <span v-if="r.key === 'cost' && c.cost_estimated" class="text-xs font-normal text-gray-400">est.</span>
@@ -794,7 +804,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                         <h3 class="font-semibold text-gray-900">Productivité</h3>
                         <div class="mt-3 space-y-5">
                             <div v-for="p in PRODUCTIVITY" :key="p.key">
-                                <div class="flex flex-wrap items-baseline justify-between gap-x-2">
+                                <div class="flex gap-x-2" :class="compactCards ? 'flex-col' : 'flex-wrap items-baseline justify-between'">
                                     <span class="text-sm font-medium text-gray-900">{{ p.label }}</span>
                                     <span class="text-xs text-gray-400">{{ p.hint }}</span>
                                 </div>
