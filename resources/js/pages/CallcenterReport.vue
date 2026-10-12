@@ -230,7 +230,8 @@ const chartDays = computed(() =>
 // Tableau des valeurs sous chaque graphique quand il tient en largeur (une semaine).
 // Plus lisible que des étiquettes sur les points, qui se chevauchent quand les courbes sont proches.
 const valueTables = computed(() => days.value.length <= 7)
-const chartHeight = computed(() => (valueTables.value ? 150 : 215))
+// Hauteurs calculées pour faire tenir 4 graphiques et la composition sur une page
+const chartHeight = computed(() => (valueTables.value ? 120 : 190))
 
 const CHART_FONT = 'Helvetica, Arial, sans-serif'
 
@@ -245,33 +246,6 @@ const productivityPage = computed(() => [
             : { title: 'Durée agent moyenne par appel', series: dailySeries('avg_agent'), format: fmt.dur },
     { title: 'Ratio temps agent', series: dailySeries('agent_ratio'), format: (v) => fmt.pct(v, 0) },
 ])
-
-const pauseChart = computed(() => ({ title: 'Pause moyenne par appel', series: dailySeries('avg_pause'), format: fmt.dur }))
-
-// Appels par agent, heure par heure (moyenne sur les jours d'activité du centre)
-const hourlyChart = computed(() => {
-    const rows = (data.value?.hourly ?? []).filter((r) => isIncluded(r.id) && Number(r.calls) > 0)
-    if (!rows.length) return null
-    const perHour = {}
-    for (const r of rows) perHour[r.hour] = (perHour[r.hour] ?? 0) + Number(r.calls)
-    const peak = Math.max(...Object.values(perHour))
-    const hours = Object.keys(perHour).map(Number).filter((h) => perHour[h] >= peak * 0.01)
-    const range = []
-    for (let h = Math.min(...hours); h <= Math.max(...hours); h++) range.push(h)
-    return {
-        title: 'Appels par agent, par heure',
-        categories: range.map((h) => `${h}h`),
-        series: centers.value.map((c) => ({
-            name: c.label,
-            color: c.color,
-            data: range.map((h) => {
-                const r = rows.find((x) => x.id === c.id && x.hour === h)
-                return r && Number(r.agent_hours) ? Math.round((Number(r.calls) / Number(r.agent_hours)) * 10) / 10 : null
-            }),
-        })),
-        format: (v) => fmt.dec(v, 1),
-    }
-})
 
 const PHASES = [
     { key: 'avg_wait', label: 'Attente initiale', color: '#e87ba4' },
@@ -353,7 +327,7 @@ const agentPages = computed(() => {
     if (page.length) pages.push(page)
     return pages
 })
-const pageCount = computed(() => 3 + agentPages.value.length)
+const pageCount = computed(() => 2 + agentPages.value.length)
 
 // ─── Téléchargement du PDF ────────────────────────────────────────────────────
 const pdfName = computed(() => `Performance centres – ${periodLabel.value}`)
@@ -536,7 +510,7 @@ const ready = computed(() => !!data.value)
                 </footer>
             </section>
 
-            <!-- ─── Page 2 : volume et productivité ───────────────────────── -->
+            <!-- ─── Page 2 : volume, productivité et composition d'un appel ─ -->
             <section class="sheet">
                 <div class="mb-3 flex items-baseline justify-between gap-4">
                     <h2 class="text-base font-semibold text-gray-900">Volume et productivité, jour par jour</h2>
@@ -551,7 +525,7 @@ const ready = computed(() => !!data.value)
                         </span>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-x-12 gap-y-4">
+                <div class="grid grid-cols-2 gap-x-12 gap-y-2">
                     <div v-for="chart in productivityPage" :key="chart.title">
                         <div class="text-xs font-medium text-gray-700">{{ chart.title }}</div>
                         <TrendChart
@@ -581,86 +555,23 @@ const ready = computed(() => !!data.value)
                         </table>
                     </div>
                 </div>
-                <footer class="sheet-footer">
-                    <span>Performance des centres d'appels · {{ periodLabel }}</span>
-                    <span>2 / {{ pageCount }}</span>
-                </footer>
-            </section>
-
-            <!-- ─── Page 3 : temps des agents ─────────────────────────────── -->
-            <section class="sheet">
-                <div class="mb-3 flex items-baseline justify-between gap-4">
-                    <h2 class="text-base font-semibold text-gray-900">Temps des agents</h2>
-                    <div class="flex flex-wrap items-center gap-4 text-[11px] text-gray-600">
-                        <span v-for="c in centers" :key="c.id" class="flex items-center gap-1.5">
-                            <span class="h-2.5 w-2.5 rounded-full" :style="{ background: c.color }" />
-                            {{ c.label }}
-                        </span>
-                        <span v-if="hasPrevious" class="flex items-center gap-1.5 text-gray-500">
-                            <span class="w-5 border-t-2 border-dashed border-gray-400" />
-                            même jour, semaine précédente
-                        </span>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-x-12">
-                    <div>
-                        <div class="text-xs font-medium text-gray-700">{{ pauseChart.title }}</div>
-                        <TrendChart
-                            :categories="chartDays"
-                            :series="pauseChart.series"
-                            :format="pauseChart.format"
-                            :height="chartHeight"
-                            :legend="false"
-                            :font-family="CHART_FONT"
-                        />
-                        <table v-if="valueTables" class="value-table">
-                            <thead>
-                                <tr>
-                                    <th />
-                                    <th v-for="d in chartDays" :key="d">{{ d }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="(serie, i) in pauseChart.series.filter((x) => !x.dashed)" :key="i">
-                                    <td>
-                                        <span class="inline-block h-2 w-2 rounded-full align-middle" :style="{ background: serie.color }" />
-                                        {{ serie.name }}
-                                    </td>
-                                    <td v-for="(v, j) in serie.data" :key="j">{{ v === null ? '–' : pauseChart.format(v) }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div v-if="hourlyChart">
-                        <div class="text-xs font-medium text-gray-700">
-                            {{ hourlyChart.title }} <span class="font-normal text-gray-400">· moyenne sur la période</span>
-                        </div>
-                        <TrendChart
-                            :categories="hourlyChart.categories"
-                            :series="hourlyChart.series"
-                            :format="hourlyChart.format"
-                            :height="chartHeight"
-                            :legend="false"
-                            :font-family="CHART_FONT"
-                        />
-                    </div>
-                </div>
-
-                <h2 class="mb-2 mt-4 text-base font-semibold text-gray-900">Composition moyenne d'un appel</h2>
-                <div class="mb-3 flex flex-wrap gap-4 text-[11px] text-gray-600">
+                <div class="mb-1.5 mt-3 flex items-baseline justify-between gap-4">
+                    <h2 class="text-sm font-semibold text-gray-900">Composition moyenne d'un appel</h2>
+                <div class="flex flex-wrap gap-4 text-[10px] text-gray-600">
                     <span v-for="p in PHASES" :key="p.key" class="flex items-center gap-1.5">
                         <span class="h-2.5 w-2.5 rounded-sm" :style="{ background: p.color }" />
                         {{ p.label }}
                     </span>
                 </div>
-                <div class="space-y-2.5">
+                </div>
+                <div class="space-y-1.5">
                     <div v-for="c in centers" :key="c.id" class="flex items-start gap-3">
-                        <div class="w-36 shrink-0 text-xs font-medium text-gray-900">
+                        <div class="w-32 shrink-0 text-[11px] font-medium leading-tight text-gray-900">
                             {{ c.label }}
                             <div class="font-normal text-gray-500">{{ fmt.dur(c.m.avg_total) }} au total</div>
                         </div>
                         <div class="flex-1">
-                            <div class="flex h-5 gap-0.5">
+                            <div class="flex h-4 gap-0.5">
                                 <div
                                     v-for="p in PHASES"
                                     :key="p.key"
@@ -671,7 +582,7 @@ const ready = computed(() => !!data.value)
                                 </div>
                             </div>
                             <!-- Toutes les durées, y compris celles des segments trop étroits -->
-                            <div class="mt-0.5 flex flex-wrap gap-x-4 text-[9px] text-gray-500">
+                            <div class="flex flex-wrap gap-x-4 text-[8.5px] leading-tight text-gray-500">
                                 <span v-for="p in PHASES" :key="p.key">
                                     {{ p.label }} <span class="font-medium text-gray-800">{{ fmt.dur(c.m[p.key]) }}</span> ({{ phasePercent(c, p.key) }})
                                 </span>
@@ -681,7 +592,7 @@ const ready = computed(() => !!data.value)
                 </div>
                 <footer class="sheet-footer">
                     <span>Performance des centres d'appels · {{ periodLabel }}</span>
-                    <span>3 / {{ pageCount }}</span>
+                    <span>2 / {{ pageCount }}</span>
                 </footer>
             </section>
 
@@ -712,7 +623,7 @@ const ready = computed(() => !!data.value)
                 </div>
                 <footer class="sheet-footer">
                     <span>Performance des centres d'appels · {{ periodLabel }}</span>
-                    <span>{{ 4 + p }} / {{ pageCount }}</span>
+                    <span>{{ 3 + p }} / {{ pageCount }}</span>
                 </footer>
             </section>
         </template>
