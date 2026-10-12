@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Performance et rentabilité des call centers et de leurs agents.
@@ -26,6 +27,111 @@ class CallcenterPerformanceController extends Controller
     public function index(): Response
     {
         return Inertia::render('CallcenterPerformance');
+    }
+
+    /**
+     * Rapport imprimable (PDF via l'impression du navigateur).
+     */
+    public function report(Request $request): Response
+    {
+        return Inertia::render('CallcenterReport', [
+            'query' => $request->only(['from', 'to', 'prev_from', 'prev_to', 'split_remote', 'mode', 'reference', 'agents']),
+        ]);
+    }
+
+    /**
+     * Export CSV complet (centres, agents, jour par jour), sans rien masquer.
+     * Une seule table : la colonne « niveau » indique le type de ligne.
+     */
+    public function csv(Request $request): StreamedResponse
+    {
+        $request->validate([
+            'from' => 'required|date_format:Y-m-d',
+            'to' => 'required|date_format:Y-m-d|after_or_equal:from',
+            'split_remote' => 'nullable|boolean',
+        ]);
+
+        $center = $this->centerSql($request->boolean('split_remote'));
+        [$from, $to] = $this->range($request->from, $request->to);
+        $day = $this->parisDateSql($from, $to);
+        $labels = collect(config('callcenters'))->map(fn ($c) => $c['label']);
+
+        $centers = collect($this->centerTotals($center, $from, $to));
+
+        $rows = [];
+        foreach ($centers as $c) {
+            $rows[] = ['niveau' => 'centre', 'date' => '', 'centre' => $c['label'], 'agent' => '', ...$this->csvValues((object) $c, $c['cost'])];
+        }
+        foreach ($this->agents($center, $from, $to) as $a) {
+            $a->agent_days = $a->days; // pour un agent, journées-agent = jours actifs
+            $rows[] = ['niveau' => 'agent', 'date' => '', 'centre' => $labels[$a->callcenter_id], 'agent' => $a->id, ...$this->csvValues($a)];
+        }
+        foreach ($this->daily($center, $from, $to) as $d) {
+            $rows[] = ['niveau' => 'centre_jour', 'date' => $d->date, 'centre' => $labels[$d->id], 'agent' => '', ...$this->csvValues($d)];
+        }
+        $agentDays = $this->attributedCalls($center, $from, $to)
+            ->selectRaw("$day AS date, calls.agent_name AS agent, $center AS center_key, " . $this->sumsSql())
+            ->groupByRaw("date, calls.agent_name, $center")
+            ->orderBy('date')
+            ->orderBy('agent')
+            ->get();
+        foreach ($agentDays as $d) {
+            $d->agent_days = 1;
+            $rows[] = ['niveau' => 'agent_jour', 'date' => $d->date, 'centre' => $labels[$d->center_key], 'agent' => $d->agent, ...$this->csvValues($d)];
+        }
+
+        $filename = "performance-centres_{$request->from}_{$request->to}.csv";
+
+        return response()->streamDownload(function () use ($rows) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF"); // BOM : accents corrects dans Excel
+            fputcsv($out, array_keys($rows[0] ?? ['niveau' => '']), ',', '"', '');
+            foreach ($rows as $row) {
+                fputcsv($out, $row, ',', '"', '');
+            }
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /**
+     * Valeurs d'une ligne CSV : sommes brutes + indicateurs calculés à partir des sommes.
+     * Conversation / pause : répartition mesurée sur les appels qui ont le détail,
+     * appliquée à la durée agent (comme sur la page).
+     */
+    private function csvValues(object $r, ?float $cost = null): array
+    {
+        $calls = (int) $r->calls;
+        $payout = (float) $r->payout;
+        $agentS = (int) $r->agent_s;
+        $totalS = (int) $r->total_s;
+        $phone = (int) $r->talk_s + (int) $r->pause_s;
+        $talkShare = $phone ? (int) $r->talk_s / $phone : null;
+        $agentDays = isset($r->agent_days) ? (int) $r->agent_days : null;
+        $div = fn ($a, $b, $d = 2) => $b ? round($a / $b, $d) : '';
+
+        return [
+            'appels' => $calls,
+            'agents_actifs' => $r->agents ?? '',
+            'journees_agent' => $agentDays ?? '',
+            'jours_actifs' => $r->days ?? '',
+            'payout_eur' => round($payout, 2),
+            'cout_eur' => $cost === null ? '' : round($cost, 2),
+            'marge_eur' => $cost === null ? '' : round($payout - $cost, 2),
+            'duree_totale_s' => $totalS,
+            'attente_s' => (int) $r->wait_s,
+            'duree_agent_s' => $agentS,
+            'conversation_s' => $talkShare === null ? '' : round($agentS * $talkShare),
+            'pause_s' => $talkShare === null ? '' : round($agentS * (1 - $talkShare)),
+            'transfert_s' => (int) $r->transfer_s,
+            'payout_par_appel' => $div($payout, $calls),
+            'payout_par_heure_agent' => $div($payout, $agentS / 3600),
+            'payout_par_journee_agent' => $agentDays ? $div($payout, $agentDays) : '',
+            'appels_par_journee_agent' => $agentDays ? $div($calls, $agentDays, 1) : '',
+            'duree_moyenne_s' => $div($totalS, $calls, 0),
+            'duree_agent_moyenne_s' => $div($agentS, $calls, 0),
+            'ratio_temps_agent' => $div($agentS, $totalS, 4),
+            'ratio_transfert' => $div((int) $r->transfer_s, $totalS, 4),
+        ];
     }
 
     public function data(Request $request): JsonResponse

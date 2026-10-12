@@ -7,7 +7,9 @@ import PageHeader from '@/components/PageHeader.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp, Info } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp, Download, FileText, Info } from 'lucide-vue-next'
 import {
     addDays, addSums, daysBetween, fmt, formatRange, iso, metrics, parseIso, variation, weekStart,
 } from '@/lib/performance'
@@ -543,6 +545,61 @@ watch(expandedAgent, () => {
     if (agentsScroll.value) detailWidth.value = agentsScroll.value.clientWidth
 })
 
+// ─── Rapport (PDF) et export CSV ──────────────────────────────────────────────
+const showReport = ref(false)
+const REPORT_MODES = [
+    { key: 'full', label: 'Complet', hint: 'Tous les chiffres, montants compris.' },
+    { key: 'no_money', label: 'Sans montants', hint: 'Volumes, durées et ratios. Aucun €.' },
+    { key: 'indices', label: 'Indices', hint: 'Montants remplacés par des indices (un centre = 100).' },
+]
+
+function lastWeek() {
+    const today = new Date()
+    const monday = addDays(today, -((today.getDay() + 6) % 7) - 7)
+    return { from: iso(monday), to: iso(addDays(monday, 6)), prev_from: iso(addDays(monday, -7)), prev_to: iso(addDays(monday, -1)) }
+}
+function lastMonth() {
+    const t = new Date()
+    return {
+        from: iso(new Date(t.getFullYear(), t.getMonth() - 1, 1)),
+        to: iso(new Date(t.getFullYear(), t.getMonth(), 0)),
+        prev_from: iso(new Date(t.getFullYear(), t.getMonth() - 2, 1)),
+        prev_to: iso(new Date(t.getFullYear(), t.getMonth() - 1, 0)),
+    }
+}
+
+const reportForm = reactive({ period: 'last_week', mode: 'full', reference: 'madagascar', agents: true, splitRemote: false })
+
+const reportPeriods = computed(() => [
+    { key: 'last_week', label: 'Semaine dernière', range: lastWeek() },
+    { key: 'last_month', label: 'Mois dernier', range: lastMonth() },
+    { key: 'current', label: 'Période affichée', range: { ...period.value, prev_from: previousPeriod.value.from, prev_to: previousPeriod.value.to } },
+])
+const reportRange = computed(() => reportPeriods.value.find((p) => p.key === reportForm.period).range)
+
+// En début de mois on sort le mois précédent, sinon la semaine précédente
+function openReport() {
+    reportForm.period = new Date().getDate() <= 3 ? 'last_month' : 'last_week'
+    reportForm.splitRemote = splitRemote.value
+    showReport.value = true
+}
+
+function reportParams(extra = {}) {
+    const params = new URLSearchParams({ ...reportRange.value, ...extra })
+    if (reportForm.splitRemote) params.set('split_remote', '1')
+    return params
+}
+
+function openPdf() {
+    const params = reportParams({ mode: reportForm.mode, reference: reportForm.reference, agents: reportForm.agents ? '1' : '0' })
+    window.open(`/callcenter-performance/report?${params}`, '_blank')
+}
+
+function downloadCsv() {
+    const { from, to } = reportRange.value
+    window.location.href = `/data/callcenter-performance/csv?${reportParams({ from, to })}`
+}
+
 // Rechargement à chaque changement de période
 watch([period, compare, splitRemote], load, { immediate: true, deep: true })
 </script>
@@ -552,7 +609,89 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
 
     <AppLayout>
         <div class="space-y-6 p-6">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Performance call centers' }]" />
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Performance call centers' }]">
+                <template #actions>
+                    <Button @click="openReport">
+                        <FileText class="mr-2 h-4 w-4" />
+                        Rapport
+                    </Button>
+                </template>
+            </PageHeader>
+
+            <!-- ─── Rapport PDF / CSV ───────────────────────────────────────── -->
+            <Dialog v-model:open="showReport">
+                <DialogContent class="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Rapport</DialogTitle>
+                        <DialogDescription>PDF à envoyer aux centres, ou CSV complet.</DialogDescription>
+                    </DialogHeader>
+
+                    <div class="space-y-5">
+                        <div>
+                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Période</div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button
+                                    v-for="p in reportPeriods"
+                                    :key="p.key"
+                                    type="button"
+                                    class="rounded-md border px-3 py-2 text-left transition"
+                                    :class="reportForm.period === p.key ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 hover:bg-gray-50'"
+                                    @click="reportForm.period = p.key"
+                                >
+                                    <div class="text-sm font-medium">{{ p.label }}</div>
+                                    <div class="text-[11px]" :class="reportForm.period === p.key ? 'text-gray-300' : 'text-gray-500'">{{ formatRange(p.range.from, p.range.to) }}</div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Contenu du PDF</div>
+                            <div class="space-y-1.5">
+                                <label
+                                    v-for="m in REPORT_MODES"
+                                    :key="m.key"
+                                    class="flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2"
+                                    :class="reportForm.mode === m.key ? 'border-gray-900' : 'border-gray-200 hover:bg-gray-50'"
+                                >
+                                    <input v-model="reportForm.mode" type="radio" :value="m.key" class="mt-1" />
+                                    <div class="flex-1">
+                                        <div class="text-sm font-medium text-gray-900">{{ m.label }}</div>
+                                        <div class="text-xs text-gray-500">{{ m.hint }}</div>
+                                        <div v-if="m.key === 'indices' && reportForm.mode === 'indices'" class="mt-1.5 flex items-center gap-2 text-xs text-gray-600">
+                                            Référence = 100 :
+                                            <select v-model="reportForm.reference" class="h-7 rounded border border-gray-200 bg-white px-1.5 text-xs">
+                                                <option v-for="c in data?.centers ?? []" :key="c.id" :value="c.id">{{ c.label }}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                                <Checkbox :model-value="reportForm.agents" @update:model-value="reportForm.agents = !!$event" />
+                                Détail par agent
+                            </label>
+                            <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                                <Checkbox :model-value="reportForm.splitRemote" @update:model-value="reportForm.splitRemote = !!$event" />
+                                Séparer Madagascar Remote
+                            </label>
+                        </div>
+                    </div>
+
+                    <DialogFooter class="gap-2 sm:justify-between">
+                        <Button variant="outline" @click="downloadCsv">
+                            <Download class="mr-2 h-4 w-4" />
+                            CSV complet
+                        </Button>
+                        <Button @click="openPdf">
+                            <FileText class="mr-2 h-4 w-4" />
+                            Ouvrir le rapport PDF
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <!-- ─── Filtres ─────────────────────────────────────────────────── -->
             <FilterBar title="Filtres" :has-active-filters="hasActiveFilters" @reset="resetFilters">

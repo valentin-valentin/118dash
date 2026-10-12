@@ -71,6 +71,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/phonenumbers/{phonenumber}', [PhonenumberController::class, 'update'])->name('phonenumbers.update');
 
     Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'index'])->name('callcenter-performance.index');
+    Route::get('/callcenter-performance/report', [CallcenterPerformanceController::class, 'report'])->name('callcenter-performance.report');
 
     Route::get('/blacklists', [BlacklistController::class, 'index'])->name('blacklists.index');
     Route::get('/blacklists/create', [BlacklistController::class, 'create'])->name('blacklists.create');
@@ -140,6 +141,7 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
         Route::get('/callcenter-performance/agent', [CallcenterPerformanceController::class, 'agentDaily']);
+        Route::get('/callcenter-performance/csv', [CallcenterPerformanceController::class, 'csv']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
         Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);
