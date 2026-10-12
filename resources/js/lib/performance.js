@@ -30,6 +30,12 @@ export function metrics(s) {
     const cost = s.cost === null || s.cost === undefined ? null : Number(s.cost)
     const margin = cost === null ? null : payout - cost
 
+    // Part conversation / pause du temps agent, mesurée sur les appels qui ont le détail.
+    // Appliquée à la durée agent pour que conversation + pause = durée agent.
+    const phoneAgent = n('talk_s') + n('pause_s')
+    const talkShare = phoneAgent ? n('talk_s') / phoneAgent : null
+    const avgAgent = div(n('agent_s'), n('calls'))
+
     return {
         calls: n('calls'),
         agents: n('agents'),
@@ -52,11 +58,10 @@ export function metrics(s) {
         wait_ratio: div(n('wait_s'), n('total_s')),
         avg_total: div(n('total_s'), n('calls')),
         avg_wait: div(n('wait_s'), n('calls')),
-        avg_agent: div(n('agent_s'), n('calls')),
+        avg_agent: avgAgent,
         avg_transfer: div(n('transfer_s'), n('calls')),
-        // Conversation et pause ne sont renseignées que sur une partie des appels
-        avg_talk: div(n('talk_s'), n('phone_calls')),
-        avg_pause: div(n('pause_s'), n('phone_calls')),
+        avg_talk: avgAgent === null || talkShare === null ? null : avgAgent * talkShare,
+        avg_pause: avgAgent === null || talkShare === null ? null : avgAgent * (1 - talkShare),
         agent_hours: n('agent_s') / 3600,
         anomalies: n('anomalies'),
     }

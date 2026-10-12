@@ -2,8 +2,10 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import TrendChart from '@/components/TrendChart.vue'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp, Info } from 'lucide-vue-next'
 import {
@@ -24,6 +26,10 @@ const preset = ref('7d')
 const customFrom = ref(iso(addDays(new Date(), -30)))
 const customTo = ref(iso(new Date()))
 const compare = ref(true)
+
+// Centres : ceux de la config cochés par défaut, les autres décochés.
+// overrides garde les choix manuels d'un chargement à l'autre.
+const overrides = ref({})
 
 const period = computed(() => {
     const today = new Date()
@@ -64,6 +70,14 @@ const previousPeriod = computed(() => {
     return { from: iso(addDays(f, -length)), to: iso(addDays(f, -1)) }
 })
 
+// Filtres modifiés par rapport aux valeurs par défaut
+const hasActiveFilters = computed(() => preset.value !== '7d' || !compare.value || Object.keys(overrides.value).length > 0)
+function resetFilters() {
+    preset.value = '7d'
+    compare.value = true
+    overrides.value = {}
+}
+
 const periodValid = computed(() => period.value.from && period.value.to && period.value.from <= period.value.to)
 
 // ─── Chargement ───────────────────────────────────────────────────────────────
@@ -93,9 +107,6 @@ async function load() {
 }
 
 // ─── Centres ──────────────────────────────────────────────────────────────────
-// Les centres suivis (config) sont cochés par défaut, les autres décochés.
-// overrides garde les choix manuels d'un chargement à l'autre.
-const overrides = ref({})
 const isSelected = (c) => overrides.value[c.id] ?? c.tracked
 const selected = computed(() => (data.value?.centers ?? []).filter(isSelected).map((c) => c.id))
 function toggleCenter(c) {
@@ -213,8 +224,8 @@ const TABLE = [
             { key: 'avg_total', label: 'Durée totale', format: fmt.dur },
             { key: 'avg_wait', label: 'Attente initiale', format: fmt.dur },
             { key: 'avg_agent', label: 'Durée agent', format: fmt.dur },
-            { key: 'avg_talk', label: 'dont conversation', format: fmt.dur, secondary: true, indent: true },
-            { key: 'avg_pause', label: 'dont pause', format: fmt.dur, secondary: true, indent: true },
+            { key: 'avg_talk', label: 'dont conversation', format: fmt.dur, indent: true },
+            { key: 'avg_pause', label: 'dont pause', format: fmt.dur, indent: true },
             { key: 'avg_transfer', label: 'Durée transfert', format: fmt.dur },
             { key: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v), best: 'min' },
             { key: 'transfer_ratio', label: 'Ratio transfert', format: (v) => fmt.pct(v), best: 'max' },
@@ -365,7 +376,8 @@ const hourly = computed(() => {
 // ─── Composition d'un appel ───────────────────────────────────────────────────
 const PHASES = [
     { key: 'avg_wait', label: 'Attente initiale', color: '#e87ba4' },
-    { key: 'avg_agent', label: 'Agent', color: '#4a3aa7' },
+    { key: 'avg_talk', label: 'Agent : conversation', color: '#4a3aa7' },
+    { key: 'avg_pause', label: 'Agent : pause', color: '#9085e9' },
     { key: 'avg_transfer', label: 'Transfert', color: '#008300' },
 ]
 const maxAvgTotal = computed(() => Math.max(...centers.value.map((c) => c.m.avg_total ?? 0), 1))
@@ -429,11 +441,11 @@ const agents = computed(() => {
     const q = agentFilters.search.trim().toLowerCase()
     const rows = agentsInScope.value
         .filter((a) => !agentFilters.hideSmall || Number(a.calls) >= smallThreshold.value)
-        .filter((a) => !q || [a.name, a.username].some((v) => v && v.toLowerCase().includes(q)))
+        .filter((a) => !q || (a.username ?? '').toLowerCase().includes(q))
         .map((a) => ({ ...a, center: centersById.value[a.callcenter_id], m: agentMetrics(a) }))
 
     const dir = agentSort.dir === 'asc' ? 1 : -1
-    const val = (a) => (agentSort.key === 'name' ? (a.name ?? a.username ?? '').toLowerCase() : a.m[agentSort.key])
+    const val = (a) => (agentSort.key === 'name' ? agentName(a).toLowerCase() : a.m[agentSort.key])
     return rows.sort((a, b) => {
         const va = val(a)
         const vb = val(b)
@@ -494,7 +506,7 @@ const agentTrend = computed(() => {
         categories: buckets.map((b) => bucketLabel(b.key)),
         titles: buckets.map((b) => bucketTitle(b.key)),
         series: [{
-            name: agent.name ?? agent.username,
+            name: agentName(agent),
             color: agent.center?.color ?? '#2a78d6',
             data: buckets.map((b) => bucketValue(b, agentMetric.value)),
         }],
@@ -514,7 +526,8 @@ const AGENT_COMPARE = [
     { key: 'agent_ratio', centerKey: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v), better: 'down' },
 ]
 
-const agentName = (a) => a.name ?? a.username ?? `#${a.id}`
+// Identifiant de ligne (dedi003, prepose995...) : les noms des agents ne sont plus tenus à jour
+const agentName = (a) => a.username ?? a.name ?? `#${a.id}`
 
 // Le détail d'un agent prend la largeur visible du tableau, pas sa largeur totale
 const agentsScroll = ref(null)
@@ -535,51 +548,51 @@ watch([period, compare], load, { immediate: true, deep: true })
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Performance call centers' }]" />
 
             <!-- ─── Filtres ─────────────────────────────────────────────────── -->
-            <div class="sticky top-0 z-20 space-y-3 rounded-lg border border-gray-200 bg-white/95 p-4 shadow-sm backdrop-blur">
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="flex flex-wrap rounded-md border border-gray-200 p-0.5">
+            <FilterBar title="Filtres" :has-active-filters="hasActiveFilters" @reset="resetFilters">
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-center gap-1.5">
                         <button
                             v-for="p in PRESETS"
                             :key="p.key"
                             type="button"
-                            class="rounded px-3 py-1.5 text-sm transition"
-                            :class="preset === p.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                            class="h-8 rounded-md px-3 text-xs font-medium transition-all"
+                            :class="preset === p.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
                             @click="preset = p.key"
                         >
                             {{ p.label }}
                         </button>
+                        <template v-if="preset === 'custom'">
+                            <Input v-model="customFrom" type="date" class="ml-1.5 h-8 w-40" />
+                            <span class="text-xs text-gray-400">→</span>
+                            <Input v-model="customTo" type="date" class="h-8 w-40" />
+                        </template>
+                        <label class="ml-auto flex cursor-pointer items-center gap-2 text-xs text-gray-600">
+                            <Checkbox :model-value="compare" @update:model-value="compare = !!$event" />
+                            Comparer à la période précédente
+                        </label>
                     </div>
-                    <template v-if="preset === 'custom'">
-                        <Input v-model="customFrom" type="date" class="h-9 w-40" />
-                        <span class="text-gray-400">→</span>
-                        <Input v-model="customTo" type="date" class="h-9 w-40" />
-                    </template>
-                    <label class="ml-auto flex items-center gap-2 text-sm text-gray-600">
-                        <input v-model="compare" type="checkbox" class="rounded border-gray-300" />
-                        Comparer à la période précédente
-                    </label>
-                </div>
 
-                <div class="flex flex-wrap items-center gap-2">
-                    <button
-                        v-for="c in data?.centers ?? []"
-                        :key="c.id"
-                        type="button"
-                        class="flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition"
-                        :class="isSelected(c) ? 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50' : 'border-dashed border-gray-200 text-gray-400 hover:text-gray-600'"
-                        @click="toggleCenter(c)"
-                    >
-                        <span class="h-2.5 w-2.5 rounded-full" :style="{ background: isSelected(c) ? c.color : '#d1d5db' }" />
-                        {{ c.label }}
-                        <span class="text-xs text-gray-400">{{ fmt.int(c.calls) }}</span>
-                    </button>
-                    <span class="ml-auto text-sm text-gray-500">
-                        <span class="font-medium text-gray-900">{{ formatRange(period.from, period.to) }}</span>
-                        <template v-if="compare"> · comparé au {{ formatRange(previousPeriod.from, previousPeriod.to) }}</template>
-                        <span v-if="loading" class="ml-2 text-gray-400">chargement…</span>
-                    </span>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button
+                            v-for="c in data?.centers ?? []"
+                            :key="c.id"
+                            type="button"
+                            class="flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-all"
+                            :class="isSelected(c) ? 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50' : 'border-dashed border-gray-200 bg-white text-gray-400 hover:text-gray-600'"
+                            @click="toggleCenter(c)"
+                        >
+                            <span class="h-2 w-2 rounded-full" :style="{ background: isSelected(c) ? c.color : '#d1d5db' }" />
+                            {{ c.label }}
+                            <span class="font-normal text-gray-400">{{ fmt.int(c.calls) }}</span>
+                        </button>
+                        <span class="ml-auto text-xs text-gray-500">
+                            <span class="font-medium text-gray-900">{{ formatRange(period.from, period.to) }}</span>
+                            <template v-if="compare"> · comparé au {{ formatRange(previousPeriod.from, previousPeriod.to) }}</template>
+                            <span v-if="loading" class="ml-2 text-gray-400">chargement…</span>
+                        </span>
+                    </div>
                 </div>
-            </div>
+            </FilterBar>
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
 
@@ -597,7 +610,7 @@ watch([period, compare], load, { immediate: true, deep: true })
             <div v-else-if="data" class="space-y-6 transition-opacity" :class="{ 'opacity-50': loading }">
                 <!-- ─── Synthèse ────────────────────────────────────────────── -->
                 <div class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-                    <div v-for="k in KPIS" :key="k.key" class="flex flex-col rounded-lg border border-gray-200 bg-white p-4">
+                    <div v-for="k in KPIS" :key="k.key" class="flex flex-col rounded-lg border border-gray-100 bg-white p-4">
                         <div class="min-h-8 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ k.label }}</div>
                         <div class="mt-1 text-2xl font-bold tabular-nums text-gray-900">{{ k.format(totals[k.key]) }}</div>
                         <div class="mb-2 mt-1 text-xs text-gray-500">{{ k.sub(totals) }}</div>
@@ -617,7 +630,7 @@ watch([period, compare], load, { immediate: true, deep: true })
 
                 <!-- ─── Centres ─────────────────────────────────────────────── -->
                 <div class="grid gap-4" :class="centers.length >= 3 ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2'">
-                    <div v-for="c in centers" :key="c.id" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                    <div v-for="c in centers" :key="c.id" class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                         <div class="h-1" :style="{ background: c.color }" />
                         <div class="p-5">
                             <div class="flex items-baseline justify-between gap-2">
@@ -676,7 +689,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                 </div>
 
                 <!-- ─── Évolution ───────────────────────────────────────────── -->
-                <div class="rounded-lg border border-gray-200 bg-white p-5">
+                <div class="rounded-lg border border-gray-100 bg-white p-5">
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <h3 class="font-semibold text-gray-900">Évolution</h3>
                         <div class="flex rounded-md border border-gray-200 p-0.5 text-xs">
@@ -708,7 +721,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                 </div>
 
                 <!-- ─── Activité par heure ──────────────────────────────────── -->
-                <div v-if="hourly" class="rounded-lg border border-gray-200 bg-white p-5">
+                <div v-if="hourly" class="rounded-lg border border-gray-100 bg-white p-5">
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h3 class="font-semibold text-gray-900">Activité par heure</h3>
@@ -732,7 +745,7 @@ watch([period, compare], load, { immediate: true, deep: true })
 
                 <!-- ─── Composition + productivité ──────────────────────────── -->
                 <div class="grid gap-4 lg:grid-cols-2">
-                    <div class="rounded-lg border border-gray-200 bg-white p-5">
+                    <div class="rounded-lg border border-gray-100 bg-white p-5">
                         <h3 class="font-semibold text-gray-900">Composition moyenne d'un appel</h3>
                         <div class="mt-2 flex flex-wrap gap-4 text-xs text-gray-600">
                             <span v-for="p in PHASES" :key="p.key" class="flex items-center gap-1.5">
@@ -767,7 +780,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                         </div>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white p-5">
+                    <div class="rounded-lg border border-gray-100 bg-white p-5">
                         <h3 class="font-semibold text-gray-900">Productivité</h3>
                         <div class="mt-3 space-y-5">
                             <div v-for="p in PRODUCTIVITY" :key="p.key">
@@ -790,7 +803,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                 </div>
 
                 <!-- ─── Comparatif détaillé ─────────────────────────────────── -->
-                <div class="rounded-lg border border-gray-200 bg-white">
+                <div class="rounded-lg border border-gray-100 bg-white">
                     <div class="flex items-center justify-between px-5 py-4">
                         <h3 class="font-semibold text-gray-900">Comparatif détaillé</h3>
                         <label class="flex items-center gap-2 text-sm text-gray-600">
@@ -848,7 +861,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                 </div>
 
                 <!-- ─── Agents ──────────────────────────────────────────────── -->
-                <div class="rounded-lg border border-gray-200 bg-white">
+                <div class="rounded-lg border border-gray-100 bg-white">
                     <div class="flex flex-wrap items-center gap-3 px-5 py-4">
                         <h3 class="font-semibold text-gray-900">Agents</h3>
                         <span class="mr-auto text-sm text-gray-400">{{ agents.length }} affiché{{ agents.length > 1 ? 's' : '' }}</span>
@@ -907,7 +920,6 @@ watch([period, compare], load, { immediate: true, deep: true })
                                                 <ChevronRight v-else class="h-3.5 w-3.5 text-gray-400" />
                                                 <span class="h-2 w-2 shrink-0 rounded-full" :style="{ background: a.center?.color }" :title="a.center?.label" />
                                                 <span class="font-medium text-gray-900">{{ agentName(a) }}</span>
-                                                <span v-if="a.name && a.username && a.name !== a.username" class="font-mono text-xs text-gray-400">{{ a.username }}</span>
                                             </div>
                                         </td>
                                         <td
@@ -1000,6 +1012,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                     <Info class="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <div class="space-y-1">
                         <p>Journée-agent : un agent qui a pris au moins un appel dans la journée (heure de Paris). Ce n'est pas une présence RH.</p>
+                        <p>Conversation / pause : répartition mesurée sur les appels où l'application agent l'a enregistrée, appliquée à toute la durée agent.</p>
                         <p v-if="costEstimated">Période partielle : le coût mensuel est réparti au prorata des jours, la marge est une estimation.</p>
                         <p v-if="costMissing">Pas de coût renseigné pour certains centres : marge non calculée (config/callcenters.php).</p>
                         <p v-if="totals.anomalies">{{ fmt.int(totals.anomalies) }} appel(s) avec une durée totale inférieure à agent + transfert : attente négative, laissée telle quelle dans les calculs.</p>

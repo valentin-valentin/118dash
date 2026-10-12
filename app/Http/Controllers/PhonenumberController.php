@@ -102,7 +102,9 @@ class PhonenumberController extends Controller
 
         // Filtres
         if ($request->filled('search')) {
-            $search = $request->search;
+            // Numéros stockés en +33... : "0891 24", "08.91.24" ou "+33 8 91" doivent aussi matcher
+            $search = preg_replace('/[\s.\-]/', '', $request->search);
+            $search = preg_replace('/^(\+33|0033|0)/', '+33', $search);
             $query->where('phonenumber', 'like', "%{$search}%");
         }
 

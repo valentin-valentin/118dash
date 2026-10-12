@@ -40,10 +40,13 @@ function parseUrlParams<T extends Record<string, unknown>>(defaults: T): T {
                     const num = Number(v);
                     return !isNaN(num) && v.trim() !== '' ? num : v;
                 }) as any;
-            } else {
-                // Try to parse single values as numbers too
+            } else if (typeof defaults[key] === 'number') {
+                // Valeur numérique par défaut (page, per_page...) : on convertit
                 const num = Number(value);
-                result[key] = (!isNaN(num) && value.trim() !== '' ? num : value) as any;
+                result[key] = (!isNaN(num) && value.trim() !== '' ? num : defaults[key]) as any;
+            } else {
+                // Sinon on garde la chaîne telle quelle (ex : recherche "0891..." qui perdait son 0)
+                result[key] = value as any;
             }
         }
     }
@@ -72,7 +75,8 @@ function updateUrl<T extends Record<string, unknown>>(filters: T, defaults: T) {
     const queryString = params.toString();
     const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
 
-    window.history.replaceState({}, '', newUrl);
+    // Conserver l'état d'historique : Inertia y stocke la page courante (retour arrière, rechargement)
+    window.history.replaceState(window.history.state, '', newUrl);
 }
 
 /**

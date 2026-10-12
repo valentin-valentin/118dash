@@ -4,7 +4,6 @@ use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -15,9 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['sidebar_state']);
 
+        // Pas d'AddLinkHeadersForPreloadedAssets : son en-tête Link (une entrée par fichier JS/CSS)
+        // dépassait les 4 Ko de tampon nginx par défaut et provoquait des 502 au chargement complet.
+        // Les mêmes préchargements sont déjà dans le HTML (<link rel="modulepreload">).
         $middleware->web(append: [
             HandleInertiaRequests::class,
-            AddLinkHeadersForPreloadedAssets::class,
         ]);
 
         // Trust all proxies for HTTPS detection
