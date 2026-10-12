@@ -230,22 +230,51 @@ const chartDays = computed(() =>
 // Tableau des valeurs sous chaque graphique quand il tient en largeur (une semaine).
 // Plus lisible que des étiquettes sur les points, qui se chevauchent quand les courbes sont proches.
 const valueTables = computed(() => days.value.length <= 7)
-// Hauteurs calculées pour faire tenir 4 graphiques et la composition sur une page
-const chartHeight = computed(() => (valueTables.value ? 120 : 190))
 
 const CHART_FONT = 'Helvetica, Arial, sans-serif'
 
-const productivityPage = computed(() => [
-    // Jour sans appel pour un centre (fermé) : point vide plutôt qu'une chute à 0
-    { title: 'Appels par jour', series: dailySeries('calls'), format: fmt.int },
-    { title: 'Appels par agent et par jour', series: dailySeries('calls_per_agent_day'), format: (v) => fmt.dec(v, 0) },
+// ─── Page 2 : comparaison des centres sur la période ──────────────────────────
+// Trois indicateurs relatifs, comparables d'un centre à l'autre quelle que soit sa taille.
+const comparisonBlocks = computed(() => [
     withMoney
-        ? { title: 'Payout par journée-agent', series: dailySeries('payout_per_agent_day'), format: (v) => fmt.eur(v) }
+        ? { key: 'payout_per_agent_day', title: 'Payout par journée-agent', hint: 'Ce que rapporte un agent sur une journée travaillée.', format: (v) => fmt.eur(v) }
         : withIndices
-            ? { title: 'Production par journée-agent (indice, ensemble du jour = 100)', series: dailySeries('index_day'), format: (v) => fmt.dec(v, 0) }
-            : { title: 'Durée agent moyenne par appel', series: dailySeries('avg_agent'), format: fmt.dur },
-    { title: 'Ratio temps agent', series: dailySeries('agent_ratio'), format: (v) => fmt.pct(v, 0) },
+            ? { key: 'index_production', title: 'Production par journée-agent', hint: 'Indice : 100 = moyenne de l\'ensemble des centres.', format: (v) => fmt.dec(v, 0) }
+            : { key: 'avg_agent', title: 'Durée agent par appel', hint: 'Temps moyen d\'un agent sur un appel. Plus bas = plus efficace.', format: fmt.dur },
+    { key: 'calls_per_agent_day', title: 'Appels par agent et par jour', hint: 'Nombre d\'appels pris par un agent dans sa journée.', format: (v) => fmt.dec(v, 1) },
+    { key: 'agent_ratio', title: 'Ratio temps agent', hint: 'Part d\'un appel où l\'agent est mobilisé. Plus bas = mieux.', format: (v) => fmt.pct(v) },
 ])
+
+// Valeur d'une ligne (centre ou Ensemble) sur la période ou la période précédente
+function blockValue(entity, key, previous = false) {
+    const m = previous ? entity.prev : entity.m
+    if (!m) return null
+    if (key === 'index_production') {
+        const reference = previous ? ensemble.value.prev?.payout_per_agent_day : ensemble.value.m.payout_per_agent_day
+        return reference && m.payout_per_agent_day !== null ? (m.payout_per_agent_day / reference) * 100 : null
+    }
+    return m[key] ?? null
+}
+
+const comparisonRows = computed(() => (centers.value.length > 1 ? [...centers.value, ensemble.value] : centers.value))
+
+// Échelle commune à toutes les barres d'un indicateur (période et période précédente)
+function blockMax(key) {
+    const values = comparisonRows.value.flatMap((e) => [blockValue(e, key), blockValue(e, key, true)]).filter((v) => v !== null)
+    return Math.max(...values, 0) * 1.08 || 1
+}
+
+// ─── Page 3 : évolution jour par jour ─────────────────────────────────────────
+const evolutionCharts = computed(() =>
+    [
+        withMoney
+            ? { key: 'payout_per_agent_day', title: 'Payout par journée-agent', format: (v) => fmt.eur(v) }
+            : withIndices
+                ? { key: 'index_day', title: 'Production par journée-agent', subtitle: 'indice, 100 = ensemble des centres ce jour-là', format: (v) => fmt.dec(v, 0) }
+                : { key: 'agent_ratio', title: 'Ratio temps agent', format: (v) => fmt.pct(v, 0) },
+        { key: 'calls_per_agent_day', title: 'Appels par agent et par jour', format: (v) => fmt.dec(v, 0) },
+    ].map((c) => ({ ...c, series: dailySeries(c.key) })),
+)
 
 const PHASES = [
     { key: 'avg_wait', label: 'Attente initiale', color: '#e87ba4' },
@@ -327,7 +356,7 @@ const agentPages = computed(() => {
     if (page.length) pages.push(page)
     return pages
 })
-const pageCount = computed(() => 2 + agentPages.value.length)
+const pageCount = computed(() => 3 + agentPages.value.length)
 
 // ─── Téléchargement du PDF ────────────────────────────────────────────────────
 const pdfName = computed(() => `Performance centres – ${periodLabel.value}`)
@@ -510,10 +539,98 @@ const ready = computed(() => !!data.value)
                 </footer>
             </section>
 
-            <!-- ─── Page 2 : volume, productivité et composition d'un appel ─ -->
+            <!-- ─── Page 2 : comparaison des centres sur la période ───────── -->
             <section class="sheet">
-                <div class="mb-3 flex items-baseline justify-between gap-4">
-                    <h2 class="text-base font-semibold text-gray-900">Volume et productivité, jour par jour</h2>
+                <h2 class="text-lg font-semibold text-gray-900">Comparaison des centres</h2>
+                <p class="mb-5 mt-0.5 text-xs text-gray-500">
+                    Sur toute la période.
+                    <template v-if="previousLabel">
+                        Le trait noir sur chaque barre indique la valeur de la période précédente ({{ previousLabel }}).
+                    </template>
+                </p>
+
+                <div class="grid grid-cols-3 gap-10">
+                    <div v-for="block in comparisonBlocks" :key="block.key">
+                        <div class="text-sm font-semibold text-gray-900">{{ block.title }}</div>
+                        <div class="mb-3 min-h-8 text-[11px] leading-snug text-gray-500">{{ block.hint }}</div>
+                        <div class="space-y-2.5">
+                            <div v-for="e in comparisonRows" :key="e.id">
+                                <div class="mb-1 flex items-baseline justify-between text-[11px]">
+                                    <span :class="e.id === '_all' ? 'text-gray-500' : 'font-medium text-gray-800'">{{ e.label }}</span>
+                                    <span class="tabular-nums">
+                                        <span class="text-[13px] font-semibold" :class="e.id === '_all' ? 'text-gray-500' : 'text-gray-900'">
+                                            {{ block.format(blockValue(e, block.key)) }}
+                                        </span>
+                                        <span
+                                            v-if="!(e.id === '_all' && block.key === 'index_production') && variation(blockValue(e, block.key), blockValue(e, block.key, true)) !== null"
+                                            class="ml-1.5 text-[10px] text-gray-400"
+                                        >{{ fmt.variation(variation(blockValue(e, block.key), blockValue(e, block.key, true))) }}</span>
+                                    </span>
+                                </div>
+                                <div class="relative h-3.5 rounded-sm bg-gray-100">
+                                    <div
+                                        class="h-full rounded-sm"
+                                        :style="{
+                                            width: `${((blockValue(e, block.key) ?? 0) / blockMax(block.key)) * 100}%`,
+                                            background: e.id === '_all' ? '#d1d5db' : e.color,
+                                        }"
+                                    />
+                                    <!-- Repère : période précédente -->
+                                    <div
+                                        v-if="blockValue(e, block.key, true) !== null"
+                                        class="absolute -top-0.5 h-[18px] w-[2px] bg-gray-900"
+                                        :style="{ left: `calc(${(blockValue(e, block.key, true) / blockMax(block.key)) * 100}% - 1px)` }"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-9 mb-2.5 flex items-baseline justify-between gap-4">
+                    <h2 class="text-sm font-semibold text-gray-900">Composition moyenne d'un appel</h2>
+                    <div class="flex flex-wrap gap-4 text-[11px] text-gray-600">
+                        <span v-for="p in PHASES" :key="p.key" class="flex items-center gap-1.5">
+                            <span class="h-2.5 w-2.5 rounded-sm" :style="{ background: p.color }" />
+                            {{ p.label }}
+                        </span>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <div v-for="c in centers" :key="c.id" class="flex items-start gap-4">
+                        <div class="w-32 shrink-0 text-xs font-medium leading-tight text-gray-900">
+                            {{ c.label }}
+                            <div class="mt-0.5 font-normal text-gray-500">{{ fmt.dur(c.m.avg_total) }} au total</div>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex h-5 gap-0.5">
+                                <div
+                                    v-for="p in PHASES"
+                                    :key="p.key"
+                                    class="flex items-center justify-center overflow-hidden text-[10px] font-medium text-white first:rounded-l last:rounded-r"
+                                    :style="{ width: `${phaseShare(c, p.key) * 100}%`, background: p.color }"
+                                >
+                                    <span v-if="phaseShare(c, p.key) > 0.035" class="truncate px-0.5">{{ fmt.dur(c.m[p.key]) }}</span>
+                                </div>
+                            </div>
+                            <div class="mt-1 flex flex-wrap gap-x-5 text-[10px] text-gray-500">
+                                <span v-for="p in PHASES" :key="p.key">
+                                    {{ p.label }} <span class="font-medium text-gray-800">{{ fmt.dur(c.m[p.key]) }}</span> ({{ phasePercent(c, p.key) }})
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <footer class="sheet-footer">
+                    <span>Performance des centres d'appels · {{ periodLabel }}</span>
+                    <span>2 / {{ pageCount }}</span>
+                </footer>
+            </section>
+
+            <!-- ─── Page 3 : évolution jour par jour ─────────────────────── -->
+            <section class="sheet">
+                <div class="mb-4 flex items-baseline justify-between gap-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Évolution jour par jour</h2>
                     <div class="flex flex-wrap items-center gap-4 text-[11px] text-gray-600">
                         <span v-for="c in centers" :key="c.id" class="flex items-center gap-1.5">
                             <span class="h-2.5 w-2.5 rounded-full" :style="{ background: c.color }" />
@@ -525,74 +642,47 @@ const ready = computed(() => !!data.value)
                         </span>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-x-12 gap-y-2">
-                    <div v-for="chart in productivityPage" :key="chart.title">
-                        <div class="text-xs font-medium text-gray-700">{{ chart.title }}</div>
-                        <TrendChart
-                            :categories="chartDays"
-                            :series="chart.series"
-                            :format="chart.format"
-                            :height="chartHeight"
-                            :legend="false"
-                            :font-family="CHART_FONT"
-                        />
-                        <table v-if="valueTables" class="value-table">
-                            <thead>
-                                <tr>
-                                    <th />
-                                    <th v-for="d in chartDays" :key="d">{{ d }}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="(serie, i) in chart.series.filter((x) => !x.dashed)" :key="i">
-                                    <td>
-                                        <span class="inline-block h-2 w-2 rounded-full align-middle" :style="{ background: serie.color }" />
-                                        {{ serie.name }}
-                                    </td>
-                                    <td v-for="(v, j) in serie.data" :key="j">{{ v === null ? '–' : chart.format(v) }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="mb-1.5 mt-3 flex items-baseline justify-between gap-4">
-                    <h2 class="text-sm font-semibold text-gray-900">Composition moyenne d'un appel</h2>
-                <div class="flex flex-wrap gap-4 text-[10px] text-gray-600">
-                    <span v-for="p in PHASES" :key="p.key" class="flex items-center gap-1.5">
-                        <span class="h-2.5 w-2.5 rounded-sm" :style="{ background: p.color }" />
-                        {{ p.label }}
-                    </span>
-                </div>
-                </div>
-                <div class="space-y-1.5">
-                    <div v-for="c in centers" :key="c.id" class="flex items-start gap-3">
-                        <div class="w-32 shrink-0 text-[11px] font-medium leading-tight text-gray-900">
-                            {{ c.label }}
-                            <div class="font-normal text-gray-500">{{ fmt.dur(c.m.avg_total) }} au total</div>
+                <div class="space-y-5">
+                    <div v-for="chart in evolutionCharts" :key="chart.key">
+                        <div class="text-sm font-semibold text-gray-900">
+                            {{ chart.title }}
+                            <span v-if="chart.subtitle" class="text-xs font-normal text-gray-500">· {{ chart.subtitle }}</span>
                         </div>
-                        <div class="flex-1">
-                            <div class="flex h-4 gap-0.5">
-                                <div
-                                    v-for="p in PHASES"
-                                    :key="p.key"
-                                    class="flex items-center justify-center overflow-hidden text-[9px] font-medium text-white first:rounded-l last:rounded-r"
-                                    :style="{ width: `${phaseShare(c, p.key) * 100}%`, background: p.color }"
-                                >
-                                    <span v-if="phaseShare(c, p.key) > 0.035" class="truncate px-0.5">{{ fmt.dur(c.m[p.key]) }}</span>
-                                </div>
+                        <div class="grid items-center gap-6" :class="valueTables ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'">
+                            <div>
+                                <TrendChart
+                                    :categories="chartDays"
+                                    :series="chart.series"
+                                    :format="chart.format"
+                                    :height="valueTables ? 235 : 255"
+                                    :legend="false"
+                                    :font-family="CHART_FONT"
+                                />
                             </div>
-                            <!-- Toutes les durées, y compris celles des segments trop étroits -->
-                            <div class="flex flex-wrap gap-x-4 text-[8.5px] leading-tight text-gray-500">
-                                <span v-for="p in PHASES" :key="p.key">
-                                    {{ p.label }} <span class="font-medium text-gray-800">{{ fmt.dur(c.m[p.key]) }}</span> ({{ phasePercent(c, p.key) }})
-                                </span>
-                            </div>
+                            <!-- Sur une semaine : les valeurs à côté du graphique -->
+                            <table v-if="valueTables" class="value-table w-auto">
+                                <thead>
+                                    <tr>
+                                        <th />
+                                        <th v-for="d in chartDays" :key="d">{{ d }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(serie, i) in chart.series.filter((x) => !x.dashed)" :key="i">
+                                        <td>
+                                            <span class="inline-block h-2 w-2 rounded-full align-middle" :style="{ background: serie.color }" />
+                                            {{ serie.name }}
+                                        </td>
+                                        <td v-for="(v, j) in serie.data" :key="j">{{ v === null ? '–' : chart.format(v) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
                 <footer class="sheet-footer">
                     <span>Performance des centres d'appels · {{ periodLabel }}</span>
-                    <span>2 / {{ pageCount }}</span>
+                    <span>3 / {{ pageCount }}</span>
                 </footer>
             </section>
 
@@ -623,7 +713,7 @@ const ready = computed(() => !!data.value)
                 </div>
                 <footer class="sheet-footer">
                     <span>Performance des centres d'appels · {{ periodLabel }}</span>
-                    <span>{{ 3 + p }} / {{ pageCount }}</span>
+                    <span>{{ 4 + p }} / {{ pageCount }}</span>
                 </footer>
             </section>
         </template>
@@ -652,7 +742,7 @@ const ready = computed(() => !!data.value)
 .report .value-table {
     width: 100%;
     margin-top: 2px;
-    font-size: 9px;
+    font-size: 10px;
     font-variant-numeric: tabular-nums;
     color: #374151;
 }
@@ -665,7 +755,7 @@ const ready = computed(() => !!data.value)
 }
 
 .report .value-table td {
-    padding: 1px 4px;
+    padding: 2px 5px;
     border-top: 1px solid #f3f4f6;
     text-align: right;
     white-space: nowrap;
