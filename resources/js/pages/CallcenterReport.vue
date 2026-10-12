@@ -227,8 +227,10 @@ const chartDays = computed(() =>
             : parseIso(d).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }),
     ),
 )
-// Valeur sur chaque point quand il y a la place
-const pointLabels = computed(() => days.value.length <= 14)
+// Tableau des valeurs sous chaque graphique quand il tient en largeur (une semaine).
+// Plus lisible que des étiquettes sur les points, qui se chevauchent quand les courbes sont proches.
+const valueTables = computed(() => days.value.length <= 7)
+const chartHeight = computed(() => (valueTables.value ? 150 : 215))
 
 const CHART_FONT = 'Helvetica, Arial, sans-serif'
 
@@ -556,11 +558,27 @@ const ready = computed(() => !!data.value)
                             :categories="chartDays"
                             :series="chart.series"
                             :format="chart.format"
-                            :height="215"
+                            :height="chartHeight"
                             :legend="false"
-                            :data-labels="pointLabels"
                             :font-family="CHART_FONT"
                         />
+                        <table v-if="valueTables" class="value-table">
+                            <thead>
+                                <tr>
+                                    <th />
+                                    <th v-for="d in chartDays" :key="d">{{ d }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(serie, i) in chart.series.filter((x) => !x.dashed)" :key="i">
+                                    <td>
+                                        <span class="inline-block h-2 w-2 rounded-full align-middle" :style="{ background: serie.color }" />
+                                        {{ serie.name }}
+                                    </td>
+                                    <td v-for="(v, j) in serie.data" :key="j">{{ v === null ? '–' : chart.format(v) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
                 <footer class="sheet-footer">
@@ -591,11 +609,27 @@ const ready = computed(() => !!data.value)
                             :categories="chartDays"
                             :series="pauseChart.series"
                             :format="pauseChart.format"
-                            :height="215"
+                            :height="chartHeight"
                             :legend="false"
-                            :data-labels="pointLabels"
                             :font-family="CHART_FONT"
                         />
+                        <table v-if="valueTables" class="value-table">
+                            <thead>
+                                <tr>
+                                    <th />
+                                    <th v-for="d in chartDays" :key="d">{{ d }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(serie, i) in pauseChart.series.filter((x) => !x.dashed)" :key="i">
+                                    <td>
+                                        <span class="inline-block h-2 w-2 rounded-full align-middle" :style="{ background: serie.color }" />
+                                        {{ serie.name }}
+                                    </td>
+                                    <td v-for="(v, j) in serie.data" :key="j">{{ v === null ? '–' : pauseChart.format(v) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                     <div v-if="hourlyChart">
                         <div class="text-xs font-medium text-gray-700">
@@ -605,7 +639,7 @@ const ready = computed(() => !!data.value)
                             :categories="hourlyChart.categories"
                             :series="hourlyChart.series"
                             :format="hourlyChart.format"
-                            :height="215"
+                            :height="chartHeight"
                             :legend="false"
                             :font-family="CHART_FONT"
                         />
@@ -702,6 +736,33 @@ const ready = computed(() => !!data.value)
     padding: 12mm 12mm 16mm;
     background: #fff;
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+
+.report .value-table {
+    width: 100%;
+    margin-top: 2px;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    color: #374151;
+}
+
+.report .value-table th {
+    padding: 1px 4px;
+    font-weight: 500;
+    color: #9ca3af;
+    text-align: right;
+}
+
+.report .value-table td {
+    padding: 1px 4px;
+    border-top: 1px solid #f3f4f6;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.report .value-table td:first-child {
+    text-align: left;
+    color: #6b7280;
 }
 
 .report .sheet-footer {
