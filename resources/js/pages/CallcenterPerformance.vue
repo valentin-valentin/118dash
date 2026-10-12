@@ -26,6 +26,8 @@ const preset = ref('7d')
 const customFrom = ref(iso(addDays(new Date(), -30)))
 const customTo = ref(iso(new Date()))
 const compare = ref(true)
+// dedi014 / dedi015 dans un groupe à part (config/callcenters.php)
+const splitRemote = ref(false)
 
 // Centres : ceux de la config cochés par défaut, les autres décochés.
 // overrides garde les choix manuels d'un chargement à l'autre.
@@ -71,10 +73,11 @@ const previousPeriod = computed(() => {
 })
 
 // Filtres modifiés par rapport aux valeurs par défaut
-const hasActiveFilters = computed(() => preset.value !== '7d' || !compare.value || Object.keys(overrides.value).length > 0)
+const hasActiveFilters = computed(() => preset.value !== '7d' || !compare.value || splitRemote.value || Object.keys(overrides.value).length > 0)
 function resetFilters() {
     preset.value = '7d'
     compare.value = true
+    splitRemote.value = false
     overrides.value = {}
 }
 
@@ -91,6 +94,7 @@ async function load() {
     error.value = null
     expandedAgent.value = null
     const params = new URLSearchParams(period.value)
+    if (splitRemote.value) params.set('split_remote', '1')
     if (compare.value) {
         params.set('prev_from', previousPeriod.value.from)
         params.set('prev_to', previousPeriod.value.to)
@@ -427,7 +431,7 @@ function agentMetrics(a) {
 const agentsInScope = computed(() =>
     (data.value?.agents ?? [])
         .filter((a) => selected.value.includes(a.callcenter_id))
-        .filter((a) => !agentFilters.center || a.callcenter_id === Number(agentFilters.center)),
+        .filter((a) => !agentFilters.center || a.callcenter_id === agentFilters.center),
 )
 
 // Petit volume : moins de 10 % du nombre d'appels médian des agents affichés
@@ -483,8 +487,8 @@ async function toggleAgent(agent) {
     agentDaily.value = null
     agentDailyLoading.value = true
     try {
-        const params = new URLSearchParams({ ...period.value, callcenter_id: agent.callcenter_id })
-        const res = await fetch(`/data/callcenter-performance/agents/${agent.id}?${params}`, { headers: { Accept: 'application/json' } })
+        const params = new URLSearchParams({ ...period.value, agent: agent.id })
+        const res = await fetch(`/data/callcenter-performance/agent?${params}`, { headers: { Accept: 'application/json' } })
         agentDaily.value = await res.json()
     } finally {
         agentDailyLoading.value = false
@@ -537,7 +541,7 @@ watch(expandedAgent, () => {
 })
 
 // Rechargement à chaque changement de période
-watch([period, compare], load, { immediate: true, deep: true })
+watch([period, compare, splitRemote], load, { immediate: true, deep: true })
 </script>
 
 <template>
@@ -566,10 +570,16 @@ watch([period, compare], load, { immediate: true, deep: true })
                             <span class="text-xs text-gray-400">→</span>
                             <Input v-model="customTo" type="date" class="h-8 w-40" />
                         </template>
-                        <label class="ml-auto flex cursor-pointer items-center gap-2 text-xs text-gray-600">
-                            <Checkbox :model-value="compare" @update:model-value="compare = !!$event" />
-                            Comparer à la période précédente
-                        </label>
+                        <div class="ml-auto flex flex-wrap items-center gap-4">
+                            <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600">
+                                <Checkbox :model-value="splitRemote" @update:model-value="splitRemote = !!$event" />
+                                Séparer Madagascar Remote
+                            </label>
+                            <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-600">
+                                <Checkbox :model-value="compare" @update:model-value="compare = !!$event" />
+                                Comparer à la période précédente
+                            </label>
+                        </div>
                     </div>
 
                     <div class="flex flex-wrap items-center gap-1.5">
@@ -629,7 +639,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                 </div>
 
                 <!-- ─── Centres ─────────────────────────────────────────────── -->
-                <div class="grid gap-4" :class="centers.length >= 3 ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2'">
+                <div class="grid gap-4" :class="centers.length === 3 ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2'">
                     <div v-for="c in centers" :key="c.id" class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                         <div class="h-1" :style="{ background: c.color }" />
                         <div class="p-5">
@@ -1017,7 +1027,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                         <p v-if="costMissing">Pas de coût renseigné pour certains centres : marge non calculée (config/callcenters.php).</p>
                         <p v-if="totals.anomalies">{{ fmt.int(totals.anomalies) }} appel(s) avec une durée totale inférieure à agent + transfert : attente négative, laissée telle quelle dans les calculs.</p>
                         <p v-if="Number(data.unattributed?.calls)">
-                            {{ fmt.int(Number(data.unattributed.calls)) }} appels sans call center sur la période ({{ fmt.eur(Number(data.unattributed.payout)) }}), non comptés ici.
+                            {{ fmt.int(Number(data.unattributed.calls)) }} appels sans agent dedi… ou prepose… sur la période ({{ fmt.eur(Number(data.unattributed.payout)) }}), non comptés ici.
                         </p>
                     </div>
                 </div>

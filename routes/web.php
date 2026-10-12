@@ -139,7 +139,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check']);
 
         Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
-        Route::get('/callcenter-performance/agents/{agent}', [CallcenterPerformanceController::class, 'agentDaily']);
+        Route::get('/callcenter-performance/agent', [CallcenterPerformanceController::class, 'agentDaily']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
         Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);

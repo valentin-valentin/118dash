@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Carbon\Carbon;
 use DateTimeZone;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,16 +14,14 @@ use Inertia\Response;
 /**
  * Performance et rentabilité des call centers et de leurs agents.
  *
- * Les centres et agents viennent de calls.callcenter_id / calls.agent_id.
+ * Centre et agent sont déduits de calls.agent_name (voir config/callcenters.php),
+ * callcenter_id / agent_id ne sont plus à jour.
  * Les jours sont des jours calendaires à l'heure de Paris.
  * Toutes les durées renvoyées sont en secondes, les montants en €.
  */
 class CallcenterPerformanceController extends Controller
 {
     private const TZ = 'Europe/Paris';
-
-    // Centres hors config : couleurs de repli
-    private const EXTRA_COLORS = ['#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
 
     public function index(): Response
     {
@@ -36,35 +35,37 @@ class CallcenterPerformanceController extends Controller
             'to' => 'required|date_format:Y-m-d|after_or_equal:from',
             'prev_from' => 'nullable|date_format:Y-m-d',
             'prev_to' => 'nullable|date_format:Y-m-d',
+            'split_remote' => 'nullable|boolean',
         ]);
 
+        $center = $this->centerSql($request->boolean('split_remote'));
         [$from, $to] = $this->range($request->from, $request->to);
 
-        $centers = $this->centerTotals($from, $to);
+        $centers = $this->centerTotals($center, $from, $to);
         $previous = $request->filled('prev_from') && $request->filled('prev_to')
-            ? $this->centerTotals(...$this->range($request->prev_from, $request->prev_to))
+            ? $this->centerTotals($center, ...$this->range($request->prev_from, $request->prev_to))
             : null;
 
         return response()->json([
             'centers' => $centers,
             'previous' => $previous,
-            'daily' => $this->daily($from, $to),
-            'hourly' => $this->hourly($from, $to),
-            'agents' => $this->agents($from, $to),
+            'daily' => $this->daily($center, $from, $to),
+            'hourly' => $this->hourly($center, $from, $to),
+            'agents' => $this->agents($center, $from, $to),
             'unattributed' => DB::table('calls')
                 ->whereBetween('called_at', [$from, $to])
-                ->whereNull('callcenter_id')
+                ->whereRaw("$center IS NULL")
                 ->selectRaw('COUNT(*) AS calls, COALESCE(SUM(payout), 0) AS payout')
                 ->first(),
         ]);
     }
 
-    public function agentDaily(Request $request, int $agent): JsonResponse
+    public function agentDaily(Request $request): JsonResponse
     {
         $request->validate([
+            'agent' => 'required|string|max:255',
             'from' => 'required|date_format:Y-m-d',
             'to' => 'required|date_format:Y-m-d|after_or_equal:from',
-            'callcenter_id' => 'nullable|integer',
         ]);
 
         [$from, $to] = $this->range($request->from, $request->to);
@@ -72,8 +73,7 @@ class CallcenterPerformanceController extends Controller
 
         $rows = DB::table('calls')
             ->whereBetween('called_at', [$from, $to])
-            ->where('agent_id', $agent)
-            ->when($request->filled('callcenter_id'), fn ($q) => $q->where('callcenter_id', $request->callcenter_id))
+            ->where('agent_name', $request->agent)
             ->selectRaw("$day AS date, " . $this->sumsSql())
             ->groupBy('date')
             ->orderBy('date')
@@ -85,37 +85,34 @@ class CallcenterPerformanceController extends Controller
     /**
      * Totaux par centre, avec coût alloué sur la période.
      */
-    private function centerTotals(Carbon $from, Carbon $to): array
+    private function centerTotals(string $center, Carbon $from, Carbon $to): array
     {
         $day = $this->parisDateSql($from, $to);
 
-        $rows = DB::table('calls')
-            ->join('callcenters', 'callcenters.id', '=', 'calls.callcenter_id')
-            ->whereBetween('called_at', [$from, $to])
+        $rows = $this->attributedCalls($center, $from, $to)
             ->selectRaw("
-                calls.callcenter_id AS id,
-                callcenters.name AS name,
-                COUNT(DISTINCT calls.agent_id) AS agents,
-                COUNT(DISTINCT calls.agent_id, $day) AS agent_days,
+                $center AS id,
+                COUNT(DISTINCT calls.agent_name) AS agents,
+                COUNT(DISTINCT calls.agent_name, $day) AS agent_days,
                 COUNT(DISTINCT $day) AS days,
                 " . $this->sumsSql())
-            ->groupBy('calls.callcenter_id', 'callcenters.name')
-            ->get();
+            // Grouper sur l'expression : « id » désignerait la colonne calls.id
+            ->groupByRaw($center)
+            ->get()
+            ->keyBy('id');
 
-        $config = config('callcenters');
-        $extra = 0;
-
-        return $rows
-            ->sortBy(fn ($r) => isset($config[$r->id]) ? array_search($r->id, array_keys($config)) : 100 + $r->id)
-            ->map(function ($r) use ($config, $from, $to, &$extra) {
-                $conf = $config[$r->id] ?? null;
-                $cost = $conf ? $this->allocatedCost($conf['costs'], $from, $to) : null;
+        // Dans l'ordre de la config
+        return collect(config('callcenters'))
+            ->filter(fn ($conf, $key) => $rows->has($key))
+            ->map(function ($conf, $key) use ($rows, $from, $to) {
+                $cost = $this->allocatedCost($conf['costs'], $from, $to);
 
                 return [
-                    ...(array) $r,
-                    'label' => $conf['label'] ?? $r->name,
-                    'color' => $conf['color'] ?? self::EXTRA_COLORS[$extra++ % count(self::EXTRA_COLORS)],
-                    'tracked' => $conf !== null,
+                    ...(array) $rows[$key],
+                    'name' => $conf['label'],
+                    'label' => $conf['label'],
+                    'color' => $conf['color'],
+                    'tracked' => true,
                     'cost' => $cost['amount'] ?? null,
                     'cost_estimated' => $cost['estimated'] ?? false,
                 ];
@@ -127,19 +124,17 @@ class CallcenterPerformanceController extends Controller
     /**
      * Totaux par centre et par jour.
      */
-    private function daily(Carbon $from, Carbon $to): array
+    private function daily(string $center, Carbon $from, Carbon $to): array
     {
         $day = $this->parisDateSql($from, $to);
 
-        return DB::table('calls')
-            ->whereBetween('called_at', [$from, $to])
-            ->whereNotNull('callcenter_id')
+        return $this->attributedCalls($center, $from, $to)
             ->selectRaw("
                 $day AS date,
-                callcenter_id AS id,
-                COUNT(DISTINCT agent_id) AS agent_days,
+                $center AS id,
+                COUNT(DISTINCT calls.agent_name) AS agent_days,
                 " . $this->sumsSql())
-            ->groupBy('date', 'callcenter_id')
+            ->groupByRaw("date, $center")
             ->orderBy('date')
             ->get()
             ->all();
@@ -149,48 +144,78 @@ class CallcenterPerformanceController extends Controller
      * Totaux par centre et par heure de la journée (heure de Paris).
      * agent_hours = nombre de couples agent / jour / heure avec au moins un appel.
      */
-    private function hourly(Carbon $from, Carbon $to): array
+    private function hourly(string $center, Carbon $from, Carbon $to): array
     {
         $local = $this->parisDateTimeSql($from, $to);
 
-        return DB::table('calls')
-            ->whereBetween('called_at', [$from, $to])
-            ->whereNotNull('callcenter_id')
+        return $this->attributedCalls($center, $from, $to)
             ->selectRaw("
-                callcenter_id AS id,
+                $center AS id,
                 HOUR($local) AS hour,
                 COUNT(*) AS calls,
                 COALESCE(SUM(payout), 0) AS payout,
-                COUNT(DISTINCT agent_id, DATE($local)) AS agent_hours
+                COUNT(DISTINCT calls.agent_name, DATE($local)) AS agent_hours
             ")
-            ->groupBy('callcenter_id', 'hour')
+            ->groupByRaw("$center, hour")
             ->orderBy('hour')
             ->get()
             ->all();
     }
 
     /**
-     * Totaux par agent.
+     * Totaux par agent (identifié par son nom de ligne : dedi003, prepose995...).
      */
-    private function agents(Carbon $from, Carbon $to): array
+    private function agents(string $center, Carbon $from, Carbon $to): array
     {
         $day = $this->parisDateSql($from, $to);
 
-        return DB::table('calls')
-            ->leftJoin('agents', 'agents.id', '=', 'calls.agent_id')
-            ->whereBetween('called_at', [$from, $to])
-            ->whereNotNull('calls.agent_id')
-            ->whereNotNull('calls.callcenter_id')
+        return $this->attributedCalls($center, $from, $to)
             ->selectRaw("
-                calls.agent_id AS id,
-                calls.callcenter_id AS callcenter_id,
-                NULLIF(agents.name, '') AS name,
-                agents.voxnode_username AS username,
+                calls.agent_name AS id,
+                calls.agent_name AS username,
+                $center AS callcenter_id,
                 COUNT(DISTINCT $day) AS days,
                 " . $this->sumsSql())
-            ->groupBy('calls.agent_id', 'calls.callcenter_id', 'agents.name', 'agents.voxnode_username')
+            ->groupByRaw("calls.agent_name, $center")
             ->get()
             ->all();
+    }
+
+    /**
+     * Appels de la période rattachés à un centre.
+     */
+    private function attributedCalls(string $center, Carbon $from, Carbon $to): Builder
+    {
+        return DB::table('calls')
+            ->whereBetween('called_at', [$from, $to])
+            ->whereRaw("$center IS NOT NULL");
+    }
+
+    /**
+     * Centre d'un appel en SQL, d'après agent_name et la config.
+     * Noms exacts d'abord, puis préfixes du plus long au plus court. NULL si aucun centre.
+     */
+    private function centerSql(bool $splitRemote): string
+    {
+        $pdo = DB::getPdo();
+        $exact = [];
+        $prefixes = [];
+
+        foreach (config('callcenters') as $key => $conf) {
+            if (!empty($conf['optional']) && !$splitRemote) {
+                continue;
+            }
+            foreach ($conf['agents'] ?? [] as $name) {
+                $exact[] = 'WHEN calls.agent_name = ' . $pdo->quote($name) . ' THEN ' . $pdo->quote($key);
+            }
+            foreach ($conf['prefixes'] ?? [] as $prefix) {
+                $prefixes[$prefix] = 'WHEN calls.agent_name LIKE ' . $pdo->quote(addcslashes($prefix, '%_\\') . '%') . ' THEN ' . $pdo->quote($key);
+            }
+        }
+
+        uksort($prefixes, fn ($a, $b) => strlen($b) <=> strlen($a));
+
+        return '(CASE ' . implode(' ', [...$exact, ...array_values($prefixes)]) . ' END)';
     }
 
     /**
