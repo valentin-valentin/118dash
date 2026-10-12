@@ -20,7 +20,7 @@ const PRESETS = [
     { key: 'custom', label: 'Personnalisée' },
 ]
 
-const preset = ref('last_month')
+const preset = ref('7d')
 const customFrom = ref(iso(addDays(new Date(), -30)))
 const customTo = ref(iso(new Date()))
 const compare = ref(true)
@@ -174,7 +174,7 @@ const CARD_GROUPS = [
         ],
     },
     {
-        title: 'Argent',
+        title: 'Finance',
         rows: [
             { key: 'payout', label: 'Payout', format: (v) => fmt.eur(v) },
             { key: 'cost', label: 'Coût', format: (v) => fmt.eur(v) },
@@ -258,7 +258,7 @@ const TREND_METRICS = [
     { key: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v, 0) },
 ]
 
-const trendMetric = ref('payout')
+const trendMetric = ref('payout_per_agent_day')
 const granularity = ref('auto')
 const trendFormat = computed(() => TREND_METRICS.find((t) => t.key === trendMetric.value).format)
 
@@ -386,20 +386,16 @@ const agentSort = reactive({ key: 'calls', dir: 'desc' })
 const AGENT_COLUMNS = [
     { key: 'calls', label: 'Appels', format: fmt.int },
     { key: 'days', label: 'Jours', format: fmt.int },
-    { key: 'calls_per_day', label: 'Appels / jour', format: (v) => fmt.dec(v) },
+    { key: 'calls_per_day', label: 'Appels par jour', format: (v) => fmt.dec(v) },
     { key: 'payout', label: 'Payout', format: (v) => fmt.eur(v) },
-    { key: 'payout_per_day', label: '€ / jour', format: (v) => fmt.eur(v) },
+    { key: 'payout_per_day', label: '€/jour', format: (v) => fmt.eur(v) },
     { key: 'vs_center', label: 'vs centre', format: (v) => fmt.variation(v), hint: '€ / jour de l\'agent comparé au payout / journée-agent de son centre' },
-    { key: 'payout_per_agent_hour', label: '€ / h agent', format: (v) => fmt.eur(v, 2) },
-    { key: 'payout_per_call', label: '€ / appel', format: (v) => fmt.eur(v, 2) },
-    { key: 'avg_agent', label: 'Agent', format: fmt.dur, group: true },
-    { key: 'avg_talk', label: 'Conv.', format: fmt.dur, group: true },
-    { key: 'avg_pause', label: 'Pause', format: fmt.dur, group: true },
-    { key: 'avg_transfer', label: 'Transfert', format: fmt.dur, group: true },
+    { key: 'payout_per_agent_hour', label: '€/h agent', format: (v) => fmt.eur(v, 2) },
+    { key: 'payout_per_call', label: '€/appel', format: (v) => fmt.eur(v, 2) },
+    { key: 'avg_agent', label: 'Durée agent', format: fmt.dur, hint: 'Moyenne par appel' },
+    { key: 'avg_transfer', label: 'Durée transfert', format: fmt.dur, hint: 'Moyenne par appel' },
     { key: 'agent_ratio', label: 'Ratio agent', format: (v) => fmt.pct(v) },
 ]
-const firstGroupIndex = AGENT_COLUMNS.findIndex((c) => c.group)
-const groupLength = AGENT_COLUMNS.filter((c) => c.group).length
 
 const agentKey = (a) => `${a.id}-${a.callcenter_id}`
 
@@ -512,6 +508,9 @@ const AGENT_COMPARE = [
     { key: 'payout_per_day', centerKey: 'payout_per_agent_day', label: 'Payout par jour', format: (v) => fmt.eur(v), better: 'up' },
     { key: 'payout_per_agent_hour', centerKey: 'payout_per_agent_hour', label: 'Payout / heure agent', format: (v) => fmt.eur(v, 2), better: 'up' },
     { key: 'avg_agent', centerKey: 'avg_agent', label: 'Durée agent par appel', format: fmt.dur, better: 'down' },
+    { key: 'avg_talk', centerKey: 'avg_talk', label: 'dont conversation', format: fmt.dur, better: 'down', indent: true },
+    { key: 'avg_pause', centerKey: 'avg_pause', label: 'dont pause', format: fmt.dur, better: 'down', indent: true },
+    { key: 'avg_transfer', centerKey: 'avg_transfer', label: 'Transfert par appel', format: fmt.dur, better: 'up' },
     { key: 'agent_ratio', centerKey: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v), better: 'down' },
 ]
 
@@ -742,7 +741,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                             </span>
                         </div>
                         <div class="mt-4 space-y-2">
-                            <div v-for="c in centers" :key="c.id" class="group -mx-2 rounded px-2 py-2 hover:bg-gray-50">
+                            <div v-for="c in centers" :key="c.id" class="-mx-2 rounded px-2 py-2 hover:bg-gray-50">
                                 <div class="mb-1.5 flex items-baseline justify-between text-sm">
                                     <span class="font-medium text-gray-900">{{ c.label }}</span>
                                     <span class="tabular-nums text-gray-500">{{ fmt.dur(c.m.avg_total) }} au total</span>
@@ -757,8 +756,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                                         <span v-if="phaseShare(c, p.key) > 0.14" class="truncate px-1">{{ fmt.dur(c.m[p.key]) }}</span>
                                     </div>
                                 </div>
-                                <!-- Détail au survol -->
-                                <div class="mt-1.5 hidden flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 group-hover:flex">
+                                <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
                                     <span v-for="p in PHASES" :key="p.key" class="flex items-center gap-1">
                                         <span class="h-2 w-2 rounded-sm" :style="{ background: p.color }" />
                                         {{ p.label }} <span class="font-medium tabular-nums text-gray-900">{{ fmt.dur(c.m[p.key]) }}</span>
@@ -865,17 +863,12 @@ watch([period, compare], load, { immediate: true, deep: true })
                             <span v-if="agentFilters.hideSmall && hiddenSmallAgents" class="text-gray-400">· {{ hiddenSmallAgents }} masqué{{ hiddenSmallAgents > 1 ? 's' : '' }}</span>
                         </label>
                     </div>
-                    <div ref="agentsScroll" class="max-h-[70vh] overflow-auto border-t border-gray-100">
+                    <div ref="agentsScroll" class="overflow-x-auto border-t border-gray-100">
                         <table class="w-full border-separate border-spacing-0 text-[13px]">
-                            <thead class="sticky top-0 z-10 bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-400">
-                                <tr>
-                                    <th class="sticky left-0 z-10 bg-gray-50" :colspan="firstGroupIndex + 1" />
-                                    <th :colspan="groupLength" class="border-b border-gray-200 px-2 pt-2 text-center text-[10px] font-medium">Durées moyennes par appel</th>
-                                    <th />
-                                </tr>
+                            <thead class="bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-400">
                                 <tr>
                                     <th
-                                        class="sticky left-0 z-10 cursor-pointer select-none whitespace-nowrap border-b border-gray-200 bg-gray-50 px-4 py-2 text-left hover:text-gray-700"
+                                        class="sticky left-0 z-10 cursor-pointer select-none whitespace-nowrap border-b border-gray-200 bg-gray-50 px-4 py-2 text-left align-bottom hover:text-gray-700"
                                         @click="sortAgents('name')"
                                     >
                                         Agent
@@ -885,14 +878,16 @@ watch([period, compare], load, { immediate: true, deep: true })
                                     <th
                                         v-for="col in AGENT_COLUMNS"
                                         :key="col.key"
-                                        class="cursor-pointer select-none whitespace-nowrap border-b border-gray-200 px-2 py-2 text-right hover:text-gray-700"
+                                        class="cursor-pointer select-none border-b border-gray-200 px-2 py-2 text-right align-bottom leading-tight hover:text-gray-700"
                                         :class="{ 'text-gray-900': agentSort.key === col.key }"
                                         :title="col.hint"
                                         @click="sortAgents(col.key)"
                                     >
-                                        {{ col.label }}
-                                        <ChevronUp v-if="agentSort.key === col.key && agentSort.dir === 'asc'" class="inline h-3 w-3" />
-                                        <ChevronDown v-else-if="agentSort.key === col.key" class="inline h-3 w-3" />
+                                        <span class="inline-flex items-end justify-end gap-0.5">
+                                            <ChevronUp v-if="agentSort.key === col.key && agentSort.dir === 'asc'" class="mb-px h-3 w-3 shrink-0" />
+                                            <ChevronDown v-else-if="agentSort.key === col.key" class="mb-px h-3 w-3 shrink-0" />
+                                            <span>{{ col.label }}</span>
+                                        </span>
                                     </th>
                                 </tr>
                             </thead>
@@ -942,7 +937,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                                                             <td class="pb-1 text-right">Centre</td>
                                                         </tr>
                                                         <tr v-for="r in AGENT_COMPARE" :key="r.key" class="hover:bg-white">
-                                                            <td class="py-1 pr-3 text-gray-600">{{ r.label }}</td>
+                                                            <td class="py-1 pr-3 text-gray-600" :class="{ 'pl-3 text-gray-500': r.indent }">{{ r.label }}</td>
                                                             <td
                                                                 class="py-1 text-right font-medium tabular-nums"
                                                                 :class="a.center ? variationClass(variation(a.m[r.key], metrics(a.center)[r.centerKey]), r.better) : 'text-gray-900'"
@@ -984,7 +979,7 @@ watch([period, compare], load, { immediate: true, deep: true })
                                     <td :colspan="AGENT_COLUMNS.length + 1" class="px-5 py-8 text-center text-sm text-gray-400">Aucun agent</td>
                                 </tr>
                             </tbody>
-                            <tfoot v-if="agents.length > 1" class="sticky bottom-0 bg-gray-50 font-medium text-gray-900">
+                            <tfoot v-if="agents.length > 1" class="bg-gray-50 font-medium text-gray-900">
                                 <tr>
                                     <td class="sticky left-0 border-t border-gray-200 bg-gray-50 px-4 py-2">Total affiché</td>
                                     <td
