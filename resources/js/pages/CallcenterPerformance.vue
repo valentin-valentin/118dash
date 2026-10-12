@@ -598,17 +598,38 @@ const PDF_MODES = [
     { key: 'full', label: 'Complet', hint: 'Tous les montants bruts : payout, coûts, marges.' },
 ]
 const showPdf = ref(false)
-const pdfForm = reactive({ period: 'last_week', mode: 'indices', agents: true, splitRemote: false, confirmFull: false })
+const pdfForm = reactive({ period: 'last_week', mode: 'indices', agents: true, splitRemote: false, confirmFull: false, centers: [] })
 watch(() => pdfForm.mode, () => (pdfForm.confirmFull = false))
-const pdfBlocked = computed(() => pdfForm.mode === 'full' && !pdfForm.confirmFull)
+
+// Centres proposés : ceux de la config, Madagascar Remote seulement si on le sépare
+const pdfCenterOptions = computed(() => (data.value?.config_centers ?? []).filter((c) => !c.optional || pdfForm.splitRemote))
+watch(() => pdfForm.splitRemote, (split) => {
+    const optional = (data.value?.config_centers ?? []).filter((c) => c.optional).map((c) => c.id)
+    pdfForm.centers = split ? [...new Set([...pdfForm.centers, ...optional])] : pdfForm.centers.filter((id) => !optional.includes(id))
+})
+function togglePdfCenter(id) {
+    pdfForm.centers = pdfForm.centers.includes(id) ? pdfForm.centers.filter((x) => x !== id) : [...pdfForm.centers, id]
+}
+
+const pdfBlocked = computed(() => (pdfForm.mode === 'full' && !pdfForm.confirmFull) || pdfForm.centers.length === 0)
 
 function openPdfDialog() {
     Object.assign(pdfForm, { period: defaultExportPeriod(), mode: 'indices', agents: true, splitRemote: splitRemote.value, confirmFull: false })
+    // Par défaut : les centres cochés sur la page
+    const options = pdfCenterOptions.value.map((c) => c.id)
+    const onPage = options.filter((id) => selected.value.includes(id))
+    pdfForm.centers = onPage.length ? onPage : options
     showPdf.value = true
 }
 function openPdf() {
     if (pdfBlocked.value) return
-    const params = exportParams(rangeOf(pdfForm.period), pdfForm.splitRemote, { mode: pdfForm.mode, agents: pdfForm.agents ? '1' : '0' })
+    const params = exportParams(rangeOf(pdfForm.period), pdfForm.splitRemote, {
+        mode: pdfForm.mode,
+        agents: pdfForm.agents ? '1' : '0',
+        centers: pdfForm.centers.join(','),
+        download: '1',
+    })
+    // Le rapport s'ouvre dans un onglet (aperçu) et le PDF se télécharge tout seul
     window.open(`/callcenter-performance/report?${params}`, '_blank')
     showPdf.value = false
 }
@@ -704,6 +725,24 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                             </label>
                         </div>
 
+                        <div>
+                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Centres</div>
+                            <div class="flex flex-wrap gap-1.5">
+                                <button
+                                    v-for="c in pdfCenterOptions"
+                                    :key="c.id"
+                                    type="button"
+                                    class="flex h-8 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-all"
+                                    :class="pdfForm.centers.includes(c.id) ? 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50' : 'border-dashed border-gray-200 text-gray-400 hover:text-gray-600'"
+                                    @click="togglePdfCenter(c.id)"
+                                >
+                                    <span class="h-2 w-2 rounded-full" :style="{ background: pdfForm.centers.includes(c.id) ? c.color : '#d1d5db' }" />
+                                    {{ c.label }}
+                                </button>
+                            </div>
+                            <p v-if="pdfForm.mode === 'indices'" class="mt-1.5 text-xs text-gray-500">Les indices sont calculés sur les centres inclus.</p>
+                        </div>
+
                         <div class="space-y-2">
                             <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                                 <Checkbox :model-value="pdfForm.agents" @update:model-value="pdfForm.agents = !!$event" />
@@ -718,8 +757,8 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
 
                     <DialogFooter>
                         <Button :disabled="pdfBlocked" @click="openPdf">
-                            <FileText class="mr-2 h-4 w-4" />
-                            Ouvrir le rapport PDF
+                            <Download class="mr-2 h-4 w-4" />
+                            Télécharger le PDF
                         </Button>
                     </DialogFooter>
                 </DialogContent>

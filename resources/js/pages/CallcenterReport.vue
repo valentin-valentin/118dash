@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import TrendChart from '@/components/TrendChart.vue'
-import { Printer } from 'lucide-vue-next'
+import { Download } from 'lucide-vue-next'
 import { addDays, addSums, daysBetween, fmt, iso, metrics, parseIso, variation } from '@/lib/performance'
 
 /**
- * Rapport imprimable de la page Performance (A4 paysage, enregistrable en PDF).
+ * Rapport PDF de la page Performance : chaque .sheet est une page A4 paysage,
+ * capturée en image puis assemblée en PDF (bouton « Télécharger le PDF », ou automatiquement avec download=1).
  * mode : full (tout), no_money (sans montants), indices (montants remplacés par des indices)
  *
  * Indices : 100 = moyenne de l'ensemble des centres sur la période, calculée sur les sommes
@@ -19,6 +20,9 @@ const mode = props.query.mode ?? 'full'
 const showAgents = props.query.agents !== '0'
 const withMoney = mode === 'full'
 const withIndices = mode === 'indices'
+// Centres à inclure (ex : madagascar,lamia) ; vide = tous
+const includedCenters = props.query.centers ? props.query.centers.split(',') : null
+const isIncluded = (id) => !includedCenters || includedCenters.includes(id)
 
 // ─── Libellé de la période ────────────────────────────────────────────────────
 const periodLabel = computed(() => {
@@ -44,7 +48,7 @@ const previousLabel = computed(() => {
     return `${f.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} – ${t.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`
 })
 
-const modeLabel = { full: 'Rapport complet', no_money: 'Sans montants', indices: 'Indices' }[mode]
+const modeLabel = { full: 'Rapport complet (montants bruts)', no_money: 'Sans montants', indices: 'Indices' }[mode]
 
 // ─── Données ──────────────────────────────────────────────────────────────────
 const data = ref(null)
@@ -57,10 +61,15 @@ onMounted(async () => {
         const res = await fetch(`/data/callcenter-performance?${params}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
         data.value = await res.json()
-        // Titre du document = nom proposé pour le PDF
-        document.title = `Performance centres – ${periodLabel.value}`
+        document.title = pdfName.value
     } catch (e) {
         error.value = e.message
+        return
+    }
+    if (props.query.download === '1') {
+        // Laisser les graphiques se dessiner avant la capture
+        await nextTick()
+        setTimeout(downloadPdf, 800)
     }
 })
 
@@ -70,7 +79,7 @@ function centerMetrics(s) {
 }
 
 const centers = computed(() =>
-    (data.value?.centers ?? []).map((c) => {
+    (data.value?.centers ?? []).filter((c) => isIncluded(c.id)).map((c) => {
         const prev = data.value.previous?.find((p) => p.id === c.id)
         return { ...c, m: centerMetrics(c), prev: prev ? centerMetrics(prev) : null }
     }),
@@ -78,9 +87,9 @@ const centers = computed(() =>
 
 // Ensemble des centres : référence des indices (= 100) et dernière colonne de la synthèse
 const ensemble = computed(() => {
-    const days = new Set((data.value?.daily ?? []).map((r) => r.date)).size
+    const days = new Set((data.value?.daily ?? []).filter((r) => isIncluded(r.id)).map((r) => r.date)).size
     const m = metrics(addSums(centers.value))
-    const prevRows = data.value?.previous ?? []
+    const prevRows = (data.value?.previous ?? []).filter((p) => isIncluded(p.id))
     return {
         id: '_all',
         label: 'Ensemble',
@@ -177,7 +186,14 @@ function dailySeries(key, zeroIfEmpty) {
     }))
 }
 
-const chartDays = computed(() => days.value.map((d) => parseIso(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })))
+// Libellés courts pour que l'axe reste lisible : « lun. 2 » sur une semaine, le numéro du jour au-delà
+const chartDays = computed(() =>
+    days.value.map((d) =>
+        days.value.length > 10
+            ? String(parseIso(d).getDate())
+            : parseIso(d).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }),
+    ),
+)
 const callsChart = computed(() => dailySeries('calls', true))
 const productivityChart = computed(() =>
     withMoney
@@ -235,7 +251,123 @@ const agentsByCenter = computed(() =>
     })).filter((g) => g.agents.length),
 )
 
-const print = () => window.print()
+// Répartition des tableaux d'agents en pages : un tableau coûte ses lignes + 3 (titre, en-tête),
+// un tableau trop long continue sur la page suivante
+const ROWS_PER_PAGE = 26
+const agentPages = computed(() => {
+    if (!showAgents) return []
+    const pages = []
+    let page = []
+    let used = 0
+    for (const g of agentsByCenter.value) {
+        let rest = g.agents
+        let continued = false
+        while (rest.length) {
+            const room = ROWS_PER_PAGE - used - 3
+            if (room < 3) {
+                pages.push(page)
+                page = []
+                used = 0
+                continue
+            }
+            const chunk = rest.slice(0, room)
+            page.push({ center: g.center, agents: chunk, total: g.agents.length, continued })
+            used += chunk.length + 3
+            rest = rest.slice(room)
+            continued = true
+        }
+    }
+    if (page.length) pages.push(page)
+    return pages
+})
+const pageCount = computed(() => 2 + agentPages.value.length)
+
+// ─── Téléchargement du PDF ────────────────────────────────────────────────────
+const pdfName = computed(() => `Performance centres – ${periodLabel.value}`)
+const generating = ref(false)
+
+// Police du site (Instrument Sans, servie par fonts.bunny.net) intégrée au PDF.
+// html-to-image ne peut pas lire la feuille de style externe : on télécharge les fichiers nous-mêmes.
+async function fontEmbedCss() {
+    const toDataUrl = async (url) => {
+        const blob = await (await fetch(url)).blob()
+        return new Promise((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result)
+            reader.readAsDataURL(blob)
+        })
+    }
+    const faces = await Promise.all([400, 500, 600].map(async (weight) => {
+        const src = await toDataUrl(`https://fonts.bunny.net/instrument-sans/files/instrument-sans-latin-${weight}-normal.woff2`)
+        return `@font-face { font-family: 'Instrument Sans'; font-style: normal; font-weight: ${weight}; src: url(${src}) format('woff2'); }`
+    }))
+    return faces.join('\n')
+}
+
+async function downloadPdf() {
+    if (generating.value) return
+    generating.value = true
+    try {
+        const [{ jsPDF }, { toPng }] = await Promise.all([import('jspdf'), import('html-to-image')])
+        // Sans la police (réseau indisponible…), on garde la police de secours plutôt que d'échouer
+        const fontCss = await fontEmbedCss().catch(() => '')
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
+        const sheets = [...document.querySelectorAll('.report .sheet')]
+        swaps = await chartsToImages()
+        for (const [i, sheet] of sheets.entries()) {
+            const png = await toPng(sheet, {
+                pixelRatio: 2,
+                backgroundColor: '#ffffff',
+                style: { margin: '0', boxShadow: 'none' },
+                fontEmbedCSS: fontCss,
+                skipFonts: !fontCss,
+                // Les graphiques d'origine font échouer la capture : on capture leur image à la place
+                filter: (node) => !node.classList?.contains('apexcharts-canvas'),
+            })
+            if (i > 0) pdf.addPage()
+            pdf.addImage(png, 'PNG', 0, 0, 297, 210, undefined, 'FAST')
+        }
+        pdf.save(`${pdfName.value}.pdf`)
+    } catch (e) {
+        error.value = `Erreur pendant la génération du PDF : ${e?.message ?? e}`
+    } finally {
+        restoreCharts(swaps)
+        generating.value = false
+    }
+}
+
+// Remplace chaque graphique Apex par une image PNG de son SVG (le temps de la capture).
+// Les graphiques du rapport utilisent une police système, disponible aussi dans l'image.
+let swaps = []
+async function chartsToImages() {
+    const result = []
+    for (const canvas of document.querySelectorAll('.report .apexcharts-canvas')) {
+        const svg = canvas.querySelector('svg')
+        const source = new Image()
+        source.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg))
+        await source.decode()
+        const raster = document.createElement('canvas')
+        raster.width = svg.clientWidth * 2
+        raster.height = svg.clientHeight * 2
+        const ctx = raster.getContext('2d')
+        ctx.scale(2, 2)
+        ctx.drawImage(source, 0, 0)
+        const img = new Image(svg.clientWidth, svg.clientHeight)
+        img.src = raster.toDataURL('image/png')
+        await img.decode()
+        canvas.style.display = 'none'
+        canvas.parentNode.insertBefore(img, canvas)
+        result.push({ canvas, img })
+    }
+    return result
+}
+function restoreCharts(list) {
+    for (const { canvas, img } of list) {
+        img.remove()
+        canvas.style.display = ''
+    }
+    swaps = []
+}
 
 const generatedAt = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 const ready = computed(() => !!data.value)
@@ -243,19 +375,19 @@ const ready = computed(() => !!data.value)
 
 <template>
     <div class="report min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
-        <!-- Barre d'actions (non imprimée) -->
+        <!-- Barre d'actions (hors PDF) -->
         <div class="mx-auto mb-4 flex max-w-[297mm] items-center justify-between px-2 print:hidden">
             <div class="text-sm text-gray-600">
-                Aperçu du rapport · {{ modeLabel }}. Dans la fenêtre d'impression, choisir « Enregistrer au format PDF ».
+                Aperçu · {{ modeLabel }} · {{ pageCount }} page{{ pageCount > 1 ? 's' : '' }}
             </div>
             <button
                 type="button"
                 class="flex items-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                :disabled="!ready"
-                @click="print"
+                :disabled="!ready || generating"
+                @click="downloadPdf"
             >
-                <Printer class="h-4 w-4" />
-                Imprimer / PDF
+                <Download class="h-4 w-4" />
+                {{ generating ? 'Génération…' : 'Télécharger le PDF' }}
             </button>
         </div>
 
@@ -265,7 +397,7 @@ const ready = computed(() => !!data.value)
         <template v-else>
             <!-- ─── Page 1 : synthèse ─────────────────────────────────────── -->
             <section class="sheet">
-                <header class="mb-5 flex items-end justify-between border-b-2 border-gray-900 pb-3">
+                <header class="mb-3 flex items-end justify-between border-b-2 border-gray-900 pb-2.5">
                     <div>
                         <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Performance des centres d'appels</div>
                         <h1 class="mt-1 text-2xl font-bold text-gray-900">{{ periodLabel }}</h1>
@@ -276,14 +408,14 @@ const ready = computed(() => !!data.value)
                     </div>
                 </header>
 
-                <table class="w-full text-[12px]">
+                <table class="w-full text-[11px]">
                     <thead>
                         <tr class="border-b border-gray-300">
                             <th class="py-1.5 text-left font-medium text-gray-500" />
                             <th
                                 v-for="c in columns"
                                 :key="c.id"
-                                class="py-1.5 pl-4 text-right font-semibold"
+                                class="py-1.5 pl-4 pr-3 text-right font-semibold"
                                 :class="c.id === '_all' ? 'border-l border-gray-200 text-gray-500' : 'text-gray-900'"
                             >
                                 <span class="inline-flex items-center gap-1.5">
@@ -295,14 +427,14 @@ const ready = computed(() => !!data.value)
                     </thead>
                     <tbody v-for="s in SECTIONS" :key="s.title">
                         <tr>
-                            <td :colspan="columns.length + 1" class="pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ s.title }}</td>
+                            <td :colspan="columns.length + 1" class="pb-0.5 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ s.title }}</td>
                         </tr>
                         <tr v-for="r in s.rows" :key="s.title + r.key" class="border-b border-gray-100">
-                            <td class="py-1 text-gray-700" :class="{ 'pl-4 text-gray-500': r.indent }">{{ r.label }}</td>
+                            <td class="py-[3px] text-gray-700" :class="{ 'pl-4 text-gray-500': r.indent }">{{ r.label }}</td>
                             <td
                                 v-for="c in columns"
                                 :key="c.id"
-                                class="py-1 pl-4 text-right tabular-nums"
+                                class="py-[3px] pl-4 pr-3 text-right tabular-nums"
                                 :class="{ 'border-l border-gray-200 bg-gray-50': c.id === '_all' }"
                             >
                                 <span class="font-medium" :class="c.id === '_all' ? 'text-gray-600' : 'text-gray-900'">{{ cell(c, r) }}</span>
@@ -317,7 +449,7 @@ const ready = computed(() => !!data.value)
                     </tbody>
                 </table>
 
-                <p class="mt-4 text-[10px] leading-relaxed text-gray-500">
+                <p class="mt-3 text-[9px] leading-snug text-gray-500">
                     Journée-agent : un agent qui a pris au moins un appel dans la journée. Ratio temps agent : part de la durée d'un appel
                     où un agent est mobilisé (plus il est bas, mieux c'est). Conversation / pause : répartition mesurée sur les appels où
                     l'application agent l'a enregistrée.
@@ -327,19 +459,31 @@ const ready = computed(() => !!data.value)
                     </template>
                     <template v-if="withMoney && centers.some((c) => c.cost_estimated)"> Période partielle : coût mensuel réparti au prorata des jours.</template>
                 </p>
+                <footer class="sheet-footer">
+                    <span>Performance des centres d'appels · {{ periodLabel }}</span>
+                    <span>{{ 1 }} / {{ pageCount }}</span>
+                </footer>
             </section>
 
             <!-- ─── Page 2 : graphiques ───────────────────────────────────── -->
-            <section class="sheet break-before-page">
-                <h2 class="mb-3 text-base font-semibold text-gray-900">Évolution jour par jour</h2>
+            <section class="sheet">
+                <div class="mb-3 flex items-baseline justify-between">
+                    <h2 class="text-base font-semibold text-gray-900">Évolution jour par jour</h2>
+                    <div class="flex flex-wrap gap-4 text-[11px] text-gray-600">
+                        <span v-for="c in centers" :key="c.id" class="flex items-center gap-1.5">
+                            <span class="h-2.5 w-2.5 rounded-full" :style="{ background: c.color }" />
+                            {{ c.label }}
+                        </span>
+                    </div>
+                </div>
                 <div class="grid grid-cols-2 gap-12">
                     <div>
                         <div class="text-xs font-medium text-gray-700">Appels par jour</div>
-                        <TrendChart :categories="chartDays" :series="callsChart" :format="fmt.int" :height="230" />
+                        <TrendChart :categories="chartDays" :series="callsChart" :format="fmt.int" :height="230" :legend="false" font-family="Helvetica, Arial, sans-serif" />
                     </div>
                     <div>
                         <div class="text-xs font-medium text-gray-700">{{ productivityChart.title }}</div>
-                        <TrendChart :categories="chartDays" :series="productivityChart.series" :format="productivityChart.format" :height="230" />
+                        <TrendChart :categories="chartDays" :series="productivityChart.series" :format="productivityChart.format" :height="230" :legend="false" font-family="Helvetica, Arial, sans-serif" />
                     </div>
                 </div>
 
@@ -368,20 +512,21 @@ const ready = computed(() => !!data.value)
                         </div>
                     </div>
                 </div>
+                <footer class="sheet-footer">
+                    <span>Performance des centres d'appels · {{ periodLabel }}</span>
+                    <span>{{ 2 }} / {{ pageCount }}</span>
+                </footer>
             </section>
 
             <!-- ─── Pages suivantes : agents ──────────────────────────────── -->
-            <template v-if="showAgents">
-                <section
-                    v-for="(g, i) in agentsByCenter"
-                    :key="g.center.id"
-                    class="sheet"
-                    :class="{ 'break-before-page': i === 0, 'break-inside-avoid': g.agents.length <= 20 }"
-                >
+            <section v-for="(page, p) in agentPages" :key="'agents-' + p" class="sheet">
+                <div v-for="block in page" :key="block.center.id + block.continued" class="mb-5">
                     <h2 class="mb-2 flex items-center gap-2 text-base font-semibold text-gray-900">
-                        <span class="h-2.5 w-2.5 rounded-full" :style="{ background: g.center.color, printColorAdjust: 'exact' }" />
-                        Agents · {{ g.center.label }}
-                        <span class="text-xs font-normal text-gray-500">{{ g.agents.length }} agent{{ g.agents.length > 1 ? 's' : '' }}</span>
+                        <span class="h-2.5 w-2.5 rounded-full" :style="{ background: block.center.color }" />
+                        Agents · {{ block.center.label }}
+                        <span class="text-xs font-normal text-gray-500">
+                            {{ block.continued ? '(suite)' : `${block.total} agent${block.total > 1 ? 's' : ''}` }}
+                        </span>
                     </h2>
                     <table class="w-full text-[11px]">
                         <thead>
@@ -391,14 +536,18 @@ const ready = computed(() => !!data.value)
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="a in g.agents" :key="a.name" class="break-inside-avoid border-b border-gray-100">
+                            <tr v-for="a in block.agents" :key="a.name" class="border-b border-gray-100">
                                 <td class="py-1 font-medium text-gray-900">{{ a.name }}</td>
                                 <td v-for="col in AGENT_COLUMNS" :key="col.key" class="py-1 pl-3 text-right tabular-nums text-gray-700">{{ col.format(a.m[col.key]) }}</td>
                             </tr>
                         </tbody>
                     </table>
-                </section>
-            </template>
+                </div>
+                <footer class="sheet-footer">
+                    <span>Performance des centres d'appels · {{ periodLabel }}</span>
+                    <span>{{ 3 + p }} / {{ pageCount }}</span>
+                </footer>
+            </section>
         </template>
     </div>
 </template>
@@ -406,30 +555,38 @@ const ready = computed(() => !!data.value)
 <style>
 @page {
     size: A4 landscape;
-    margin: 10mm;
+    margin: 0;
 }
 
-/* Aperçu à l'écran : une feuille A4 paysage par section */
+/* Une feuille = une page A4 paysage, à l'écran comme dans le PDF */
 .report .sheet {
+    position: relative;
     box-sizing: border-box;
     width: 297mm;
-    max-width: 100%;
+    height: 210mm;
+    overflow: hidden;
     margin: 0 auto 16px;
-    padding: 12mm;
+    padding: 12mm 12mm 16mm;
     background: #fff;
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
 }
 
+.report .sheet-footer {
+    position: absolute;
+    right: 12mm;
+    bottom: 7mm;
+    left: 12mm;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #9ca3af;
+}
+
 @media print {
     .report .sheet {
-        width: auto;
         margin: 0;
-        padding: 0;
         box-shadow: none;
-    }
-
-    .report .sheet + .sheet {
-        margin-top: 8mm;
+        break-after: page;
     }
 
     .report * {

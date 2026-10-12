@@ -10,6 +10,8 @@ import VueApexCharts from 'vue3-apexcharts'
  * @prop {Array}    series      [{ name, color, data: [number|null] }]
  * @prop {Function} format      Formate une valeur (axe + tooltip)
  * @prop {Number}   height
+ * @prop {Boolean}  legend      Légende Apex (désactivée quand la légende est faite à côté en HTML)
+ * @prop {String}   fontFamily  Police des axes (par défaut celle de la page)
  */
 const props = defineProps({
     categories: { type: Array, default: () => [] },
@@ -17,6 +19,8 @@ const props = defineProps({
     series: { type: Array, default: () => [] },
     format: { type: Function, default: (v) => v },
     height: { type: Number, default: 300 },
+    legend: { type: Boolean, default: true },
+    fontFamily: { type: String, default: 'inherit' },
 })
 
 // ApexCharts perd les formateurs de l'axe lors d'une mise à jour : on recrée le graphique
@@ -29,7 +33,7 @@ const options = computed(() => ({
         toolbar: { show: false },
         zoom: { enabled: false },
         animations: { enabled: false },
-        fontFamily: 'inherit',
+        fontFamily: props.fontFamily,
     },
     colors: props.series.map((s) => s.color),
     stroke: { width: 2, curve: 'straight' },
@@ -66,7 +70,7 @@ const options = computed(() => ({
         },
     })),
     legend: {
-        show: props.series.length > 1,
+        show: props.legend && props.series.length > 1,
         position: 'top',
         horizontalAlign: 'left',
         fontSize: '12px',
