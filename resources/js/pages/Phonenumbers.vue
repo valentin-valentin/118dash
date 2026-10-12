@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3, Zap } from 'lucide-vue-next'
+import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3, Zap, ShieldCheck } from 'lucide-vue-next'
 import {
     Dialog,
     DialogContent,
@@ -452,6 +452,12 @@ onUnmounted(() => {
                 ]"
             >
                 <template #actions>
+                    <Button variant="outline" as-child>
+                        <Link href="/phonenumbers/audit-rsva">
+                            <ShieldCheck class="mr-2 h-4 w-4" />
+                            Audit RSVA
+                        </Link>
+                    </Button>
                     <Button as-child>
                         <Link href="/phonenumbers/create">
                             <Plus class="mr-2 h-4 w-4" />

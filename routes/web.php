@@ -12,6 +12,7 @@ use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RejectedCallController;
 use App\Http\Controllers\RoutingLogController;
+use App\Http\Controllers\RsvaAuditController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\SourcePaymentController;
 use Illuminate\Support\Facades\Route;
@@ -62,6 +63,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/sources/{source}', [SourceController::class, 'update'])->name('sources.update');
 
     Route::get('/phonenumbers', [PhonenumberController::class, 'index'])->name('phonenumbers.index');
+    Route::get('/phonenumbers/audit-rsva', [RsvaAuditController::class, 'index'])->name('phonenumbers.rsva-audit');
     Route::get('/phonenumbers/create', [PhonenumberController::class, 'create'])->name('phonenumbers.create');
     Route::post('/phonenumbers', [PhonenumberController::class, 'store'])->name('phonenumbers.store');
     Route::get('/phonenumbers/{phonenumber}/edit', [PhonenumberController::class, 'edit'])->name('phonenumbers.edit');
@@ -130,6 +132,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/manual-route', [PhonenumberController::class, 'manualRoute']);
         Route::post('/phonenumbers/cancel-deletion', [PhonenumberController::class, 'cancelDeletion']);
         Route::post('/phonenumbers/force-delete', [PhonenumberController::class, 'forceDelete']);
+        Route::get('/phonenumbers/rsva-audit/numbers', [RsvaAuditController::class, 'numbers']);
+        Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check']);
 
         Route::get('/blacklists/stats', [BlacklistController::class, 'stats']);
         Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);
