@@ -35,7 +35,7 @@ class CallcenterPerformanceController extends Controller
     public function report(Request $request): Response
     {
         return Inertia::render('CallcenterReport', [
-            'query' => $request->only(['from', 'to', 'prev_from', 'prev_to', 'split_remote', 'mode', 'agents']),
+            'query' => $request->only(['from', 'to', 'prev_from', 'prev_to', 'split_remote', 'mode', 'agents', 'centers', 'download']),
         ]);
     }
 
@@ -153,6 +153,10 @@ class CallcenterPerformanceController extends Controller
             : null;
 
         return response()->json([
+            // Tous les centres de la config (y compris sans appel sur la période)
+            'config_centers' => collect(config('callcenters'))
+                ->map(fn ($c, $key) => ['id' => $key, 'label' => $c['label'], 'color' => $c['color'], 'optional' => !empty($c['optional'])])
+                ->values(),
             'centers' => $centers,
             'previous' => $previous,
             'daily' => $this->daily($center, $from, $to),
