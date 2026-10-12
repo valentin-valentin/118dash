@@ -35,7 +35,7 @@ class CallcenterPerformanceController extends Controller
     public function report(Request $request): Response
     {
         return Inertia::render('CallcenterReport', [
-            'query' => $request->only(['from', 'to', 'prev_from', 'prev_to', 'split_remote', 'mode', 'reference', 'agents']),
+            'query' => $request->only(['from', 'to', 'prev_from', 'prev_to', 'split_remote', 'mode', 'agents']),
         ]);
     }
 

@@ -4,12 +4,13 @@ import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ReportPeriodPicker from '@/components/ReportPeriodPicker.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp, Download, FileText, Info } from 'lucide-vue-next'
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp, Download, FileText, Info } from 'lucide-vue-next'
 import {
     addDays, addSums, daysBetween, fmt, formatRange, iso, metrics, parseIso, variation, weekStart,
 } from '@/lib/performance'
@@ -545,14 +546,7 @@ watch(expandedAgent, () => {
     if (agentsScroll.value) detailWidth.value = agentsScroll.value.clientWidth
 })
 
-// ─── Rapport (PDF) et export CSV ──────────────────────────────────────────────
-const showReport = ref(false)
-const REPORT_MODES = [
-    { key: 'full', label: 'Complet', hint: 'Tous les chiffres, montants compris.' },
-    { key: 'no_money', label: 'Sans montants', hint: 'Volumes, durées et ratios. Aucun €.' },
-    { key: 'indices', label: 'Indices', hint: 'Montants remplacés par des indices (un centre = 100).' },
-]
-
+// ─── Exports CSV et PDF ───────────────────────────────────────────────────────
 function lastWeek() {
     const today = new Date()
     const monday = addDays(today, -((today.getDay() + 6) % 7) - 7)
@@ -568,36 +562,55 @@ function lastMonth() {
     }
 }
 
-const reportForm = reactive({ period: 'last_week', mode: 'full', reference: 'madagascar', agents: true, splitRemote: false })
-
-const reportPeriods = computed(() => [
+const exportPeriods = computed(() => [
     { key: 'last_week', label: 'Semaine dernière', range: lastWeek() },
     { key: 'last_month', label: 'Mois dernier', range: lastMonth() },
     { key: 'current', label: 'Période affichée', range: { ...period.value, prev_from: previousPeriod.value.from, prev_to: previousPeriod.value.to } },
 ])
-const reportRange = computed(() => reportPeriods.value.find((p) => p.key === reportForm.period).range)
+const rangeOf = (key) => exportPeriods.value.find((p) => p.key === key).range
 
 // En début de mois on sort le mois précédent, sinon la semaine précédente
-function openReport() {
-    reportForm.period = new Date().getDate() <= 3 ? 'last_month' : 'last_week'
-    reportForm.splitRemote = splitRemote.value
-    showReport.value = true
-}
+const defaultExportPeriod = () => (new Date().getDate() <= 3 ? 'last_month' : 'last_week')
 
-function reportParams(extra = {}) {
-    const params = new URLSearchParams({ ...reportRange.value, ...extra })
-    if (reportForm.splitRemote) params.set('split_remote', '1')
+function exportParams(range, splitRemoteValue, extra = {}) {
+    const params = new URLSearchParams({ ...range, ...extra })
+    if (splitRemoteValue) params.set('split_remote', '1')
     return params
 }
 
-function openPdf() {
-    const params = reportParams({ mode: reportForm.mode, reference: reportForm.reference, agents: reportForm.agents ? '1' : '0' })
-    window.open(`/callcenter-performance/report?${params}`, '_blank')
+// CSV : toujours complet
+const showCsv = ref(false)
+const csvForm = reactive({ period: 'last_week', splitRemote: false })
+function openCsv() {
+    Object.assign(csvForm, { period: defaultExportPeriod(), splitRemote: splitRemote.value })
+    showCsv.value = true
+}
+function downloadCsv() {
+    const { from, to } = rangeOf(csvForm.period)
+    window.location.href = `/data/callcenter-performance/csv?${exportParams({ from, to }, csvForm.splitRemote)}`
+    showCsv.value = false
 }
 
-function downloadCsv() {
-    const { from, to } = reportRange.value
-    window.location.href = `/data/callcenter-performance/csv?${reportParams({ from, to })}`
+// PDF : indices par défaut, le complet demande une confirmation
+const PDF_MODES = [
+    { key: 'indices', label: 'Indices', hint: 'Montants remplacés par des indices : 100 = moyenne de l\'ensemble des centres.' },
+    { key: 'no_money', label: 'Sans montants', hint: 'Volumes, durées et ratios uniquement.' },
+    { key: 'full', label: 'Complet', hint: 'Tous les montants bruts : payout, coûts, marges.' },
+]
+const showPdf = ref(false)
+const pdfForm = reactive({ period: 'last_week', mode: 'indices', agents: true, splitRemote: false, confirmFull: false })
+watch(() => pdfForm.mode, () => (pdfForm.confirmFull = false))
+const pdfBlocked = computed(() => pdfForm.mode === 'full' && !pdfForm.confirmFull)
+
+function openPdfDialog() {
+    Object.assign(pdfForm, { period: defaultExportPeriod(), mode: 'indices', agents: true, splitRemote: splitRemote.value, confirmFull: false })
+    showPdf.value = true
+}
+function openPdf() {
+    if (pdfBlocked.value) return
+    const params = exportParams(rangeOf(pdfForm.period), pdfForm.splitRemote, { mode: pdfForm.mode, agents: pdfForm.agents ? '1' : '0' })
+    window.open(`/callcenter-performance/report?${params}`, '_blank')
+    showPdf.value = false
 }
 
 // Rechargement à chaque changement de période
@@ -611,81 +624,100 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Performance call centers' }]">
                 <template #actions>
-                    <Button @click="openReport">
+                    <Button variant="outline" @click="openCsv">
+                        <Download class="mr-2 h-4 w-4" />
+                        Export CSV
+                    </Button>
+                    <Button @click="openPdfDialog">
                         <FileText class="mr-2 h-4 w-4" />
-                        Rapport
+                        Export PDF
                     </Button>
                 </template>
             </PageHeader>
 
-            <!-- ─── Rapport PDF / CSV ───────────────────────────────────────── -->
-            <Dialog v-model:open="showReport">
+            <!-- ─── Export CSV ──────────────────────────────────────────────── -->
+            <Dialog v-model:open="showCsv">
                 <DialogContent class="max-w-lg">
                     <DialogHeader>
-                        <DialogTitle>Rapport</DialogTitle>
-                        <DialogDescription>PDF à envoyer aux centres, ou CSV complet.</DialogDescription>
+                        <DialogTitle>Export CSV</DialogTitle>
+                        <DialogDescription>
+                            Export complet, montants compris : totaux par centre et par agent, détail jour par jour.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div class="space-y-4">
+                        <ReportPeriodPicker v-model="csvForm.period" :periods="exportPeriods" />
+                        <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                            <Checkbox :model-value="csvForm.splitRemote" @update:model-value="csvForm.splitRemote = !!$event" />
+                            Séparer Madagascar Remote
+                        </label>
+                    </div>
+                    <DialogFooter>
+                        <Button @click="downloadCsv">
+                            <Download class="mr-2 h-4 w-4" />
+                            Télécharger le CSV
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <!-- ─── Export PDF ──────────────────────────────────────────────── -->
+            <Dialog v-model:open="showPdf">
+                <DialogContent class="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Export PDF</DialogTitle>
+                        <DialogDescription>Rapport à envoyer aux centres.</DialogDescription>
                     </DialogHeader>
 
                     <div class="space-y-5">
-                        <div>
-                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Période</div>
-                            <div class="grid grid-cols-3 gap-2">
-                                <button
-                                    v-for="p in reportPeriods"
-                                    :key="p.key"
-                                    type="button"
-                                    class="rounded-md border px-3 py-2 text-left transition"
-                                    :class="reportForm.period === p.key ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 hover:bg-gray-50'"
-                                    @click="reportForm.period = p.key"
-                                >
-                                    <div class="text-sm font-medium">{{ p.label }}</div>
-                                    <div class="text-[11px]" :class="reportForm.period === p.key ? 'text-gray-300' : 'text-gray-500'">{{ formatRange(p.range.from, p.range.to) }}</div>
-                                </button>
-                            </div>
-                        </div>
+                        <ReportPeriodPicker v-model="pdfForm.period" :periods="exportPeriods" />
 
                         <div>
-                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Contenu du PDF</div>
+                            <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Contenu</div>
                             <div class="space-y-1.5">
                                 <label
-                                    v-for="m in REPORT_MODES"
+                                    v-for="m in PDF_MODES"
                                     :key="m.key"
                                     class="flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2"
-                                    :class="reportForm.mode === m.key ? 'border-gray-900' : 'border-gray-200 hover:bg-gray-50'"
+                                    :class="pdfForm.mode === m.key ? 'border-gray-900' : 'border-gray-200 hover:bg-gray-50'"
                                 >
-                                    <input v-model="reportForm.mode" type="radio" :value="m.key" class="mt-1" />
-                                    <div class="flex-1">
+                                    <input v-model="pdfForm.mode" type="radio" :value="m.key" class="mt-1" />
+                                    <div>
                                         <div class="text-sm font-medium text-gray-900">{{ m.label }}</div>
                                         <div class="text-xs text-gray-500">{{ m.hint }}</div>
-                                        <div v-if="m.key === 'indices' && reportForm.mode === 'indices'" class="mt-1.5 flex items-center gap-2 text-xs text-gray-600">
-                                            Référence = 100 :
-                                            <select v-model="reportForm.reference" class="h-7 rounded border border-gray-200 bg-white px-1.5 text-xs">
-                                                <option v-for="c in data?.centers ?? []" :key="c.id" :value="c.id">{{ c.label }}</option>
-                                            </select>
-                                        </div>
                                     </div>
                                 </label>
                             </div>
                         </div>
 
+                        <!-- Complet : avertissement + confirmation obligatoire -->
+                        <div v-if="pdfForm.mode === 'full'" class="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                            <div class="flex gap-2">
+                                <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" />
+                                <p>
+                                    Ce PDF contient <strong>tous les montants bruts</strong> : payout, coût de chaque centre, marges,
+                                    payout par agent. À ne pas envoyer aux centres.
+                                </p>
+                            </div>
+                            <label class="mt-3 flex cursor-pointer items-center gap-2 font-medium">
+                                <Checkbox :model-value="pdfForm.confirmFull" @update:model-value="pdfForm.confirmFull = !!$event" />
+                                J'ai compris, ce rapport contient les montants bruts
+                            </label>
+                        </div>
+
                         <div class="space-y-2">
                             <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                                <Checkbox :model-value="reportForm.agents" @update:model-value="reportForm.agents = !!$event" />
+                                <Checkbox :model-value="pdfForm.agents" @update:model-value="pdfForm.agents = !!$event" />
                                 Détail par agent
                             </label>
                             <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-                                <Checkbox :model-value="reportForm.splitRemote" @update:model-value="reportForm.splitRemote = !!$event" />
+                                <Checkbox :model-value="pdfForm.splitRemote" @update:model-value="pdfForm.splitRemote = !!$event" />
                                 Séparer Madagascar Remote
                             </label>
                         </div>
                     </div>
 
-                    <DialogFooter class="gap-2 sm:justify-between">
-                        <Button variant="outline" @click="downloadCsv">
-                            <Download class="mr-2 h-4 w-4" />
-                            CSV complet
-                        </Button>
-                        <Button @click="openPdf">
+                    <DialogFooter>
+                        <Button :disabled="pdfBlocked" @click="openPdf">
                             <FileText class="mr-2 h-4 w-4" />
                             Ouvrir le rapport PDF
                         </Button>

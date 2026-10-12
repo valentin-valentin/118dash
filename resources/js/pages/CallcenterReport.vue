@@ -6,7 +6,10 @@ import { addDays, addSums, daysBetween, fmt, iso, metrics, parseIso, variation }
 
 /**
  * Rapport imprimable de la page Performance (A4 paysage, enregistrable en PDF).
- * mode : full (tout), no_money (sans montants), indices (montants remplacés par des indices, référence = 100)
+ * mode : full (tout), no_money (sans montants), indices (montants remplacés par des indices)
+ *
+ * Indices : 100 = moyenne de l'ensemble des centres sur la période, calculée sur les sommes
+ * (donc pondérée par l'activité). 120 = 20 % au-dessus de la moyenne du groupe.
  */
 const props = defineProps({ query: { type: Object, default: () => ({}) } })
 
@@ -73,9 +76,22 @@ const centers = computed(() =>
     }),
 )
 
-// Centre de référence des indices (= 100)
-const reference = computed(() => centers.value.find((c) => c.id === props.query.reference) ?? centers.value[0])
-const index = (c, key) => (reference.value?.m[key] ? (c.m[key] / reference.value.m[key]) * 100 : null)
+// Ensemble des centres : référence des indices (= 100) et dernière colonne de la synthèse
+const ensemble = computed(() => {
+    const days = new Set((data.value?.daily ?? []).map((r) => r.date)).size
+    const m = metrics(addSums(centers.value))
+    const prevRows = data.value?.previous ?? []
+    return {
+        id: '_all',
+        label: 'Ensemble',
+        color: '#9ca3af',
+        m: { ...m, days, agents_per_day: days ? m.agent_days / days : null, calls_per_day: days ? m.calls / days : null },
+        // Jours d'activité inconnus sur la période précédente : pas d'évolution pour les moyennes par jour
+        prev: prevRows.length ? { ...metrics(addSums(prevRows)), agents_per_day: null, calls_per_day: null } : null,
+    }
+})
+const columns = computed(() => (centers.value.length > 1 ? [...centers.value, ensemble.value] : centers.value))
+const index = (c, key) => (ensemble.value.m[key] ? (c.m[key] / ensemble.value.m[key]) * 100 : null)
 
 // ─── Tableau de synthèse ──────────────────────────────────────────────────────
 // money : montant (masqué hors rapport complet) ; better : sens favorable d'une hausse
@@ -116,7 +132,7 @@ const SECTIONS = computed(() => [
         ],
     },
     withIndices && {
-        title: `Indices (${reference.value?.label} = 100)`,
+        title: 'Indices (100 = moyenne de l\'ensemble des centres)',
         rows: [
             { key: 'payout_per_agent_day', label: 'Production par journée-agent', index: true, better: 'up' },
             { key: 'payout_per_agent_hour', label: 'Production par heure agent', index: true, better: 'up' },
@@ -188,7 +204,7 @@ const AGENT_COLUMNS = [
         { key: 'payout_per_day', label: '€ / jour', format: (v) => fmt.eur(v) },
         { key: 'payout_per_agent_hour', label: '€ / h agent', format: (v) => fmt.eur(v, 2) },
     ] : []),
-    ...(withIndices ? [{ key: 'index_center', label: 'Indice / jour (centre = 100)', format: (v) => fmt.dec(v, 0) }] : []),
+    ...(withIndices ? [{ key: 'index_day', label: 'Indice / jour', format: (v) => fmt.dec(v, 0) }] : []),
     { key: 'avg_agent', label: 'Durée agent', format: fmt.dur },
     { key: 'avg_talk', label: 'Conversation', format: fmt.dur },
     { key: 'avg_pause', label: 'Pause', format: fmt.dur },
@@ -210,7 +226,8 @@ const agentsByCenter = computed(() =>
                         ...m,
                         calls_per_day: m.days ? m.calls / m.days : null,
                         payout_per_day: perDay,
-                        index_center: perDay !== null && c.m.payout_per_agent_day ? (perDay / c.m.payout_per_agent_day) * 100 : null,
+                        // 100 = payout par journée-agent moyen de l'ensemble des centres
+                        index_day: perDay !== null && ensemble.value.m.payout_per_agent_day ? (perDay / ensemble.value.m.payout_per_agent_day) * 100 : null,
                     },
                 }
             })
@@ -263,7 +280,12 @@ const ready = computed(() => !!data.value)
                     <thead>
                         <tr class="border-b border-gray-300">
                             <th class="py-1.5 text-left font-medium text-gray-500" />
-                            <th v-for="c in centers" :key="c.id" class="py-1.5 pl-4 text-right font-semibold text-gray-900">
+                            <th
+                                v-for="c in columns"
+                                :key="c.id"
+                                class="py-1.5 pl-4 text-right font-semibold"
+                                :class="c.id === '_all' ? 'border-l border-gray-200 text-gray-500' : 'text-gray-900'"
+                            >
                                 <span class="inline-flex items-center gap-1.5">
                                     <span class="h-2.5 w-2.5 rounded-full" :style="{ background: c.color }" />
                                     {{ c.label }}
@@ -273,12 +295,17 @@ const ready = computed(() => !!data.value)
                     </thead>
                     <tbody v-for="s in SECTIONS" :key="s.title">
                         <tr>
-                            <td :colspan="centers.length + 1" class="pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ s.title }}</td>
+                            <td :colspan="columns.length + 1" class="pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ s.title }}</td>
                         </tr>
                         <tr v-for="r in s.rows" :key="s.title + r.key" class="border-b border-gray-100">
                             <td class="py-1 text-gray-700" :class="{ 'pl-4 text-gray-500': r.indent }">{{ r.label }}</td>
-                            <td v-for="c in centers" :key="c.id" class="py-1 pl-4 text-right tabular-nums">
-                                <span class="font-medium text-gray-900">{{ cell(c, r) }}</span>
+                            <td
+                                v-for="c in columns"
+                                :key="c.id"
+                                class="py-1 pl-4 text-right tabular-nums"
+                                :class="{ 'border-l border-gray-200 bg-gray-50': c.id === '_all' }"
+                            >
+                                <span class="font-medium" :class="c.id === '_all' ? 'text-gray-600' : 'text-gray-900'">{{ cell(c, r) }}</span>
                                 <span
                                     v-if="trend(c, r) !== null"
                                     class="ml-2 inline-block w-14 text-[10px]"
@@ -294,7 +321,10 @@ const ready = computed(() => !!data.value)
                     Journée-agent : un agent qui a pris au moins un appel dans la journée. Ratio temps agent : part de la durée d'un appel
                     où un agent est mobilisé (plus il est bas, mieux c'est). Conversation / pause : répartition mesurée sur les appels où
                     l'application agent l'a enregistrée.
-                    <template v-if="withIndices"> Indices : valeur du centre divisée par celle de {{ reference?.label }}, × 100.</template>
+                    <template v-if="withIndices">
+                        Indices : 100 = moyenne de l'ensemble des centres sur la période (pondérée par l'activité) ; 120 = 20 % au-dessus de
+                        cette moyenne. Indice / jour d'un agent : sa production par jour comparée à la même moyenne.
+                    </template>
                     <template v-if="withMoney && centers.some((c) => c.cost_estimated)"> Période partielle : coût mensuel réparti au prorata des jours.</template>
                 </p>
             </section>
