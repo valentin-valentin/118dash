@@ -166,9 +166,10 @@ function bestId(key, direction) {
     return values.reduce((a, b) => ((direction === 'max' ? b.m[key] > a.m[key] : b.m[key] < a.m[key]) ? b : a)).id
 }
 
-function variationClass(v, better) {
-    if (v === null || Math.abs(v) < 0.005) return 'text-gray-500'
-    return (v > 0) === (better === 'up') ? 'text-green-700' : 'text-red-700'
+// Écarts affichés en gris, sans jugement bon / mauvais (choix volontaire, à revoir plus tard).
+// `better` indique quand même le sens favorable de chaque indicateur.
+function variationClass() {
+    return 'text-gray-500'
 }
 
 // ─── Synthèse ─────────────────────────────────────────────────────────────────

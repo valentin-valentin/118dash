@@ -160,9 +160,10 @@ function trend(c, r) {
     return variation(c.m[r.key], c.prev[r.key])
 }
 
-function trendClass(v, better) {
-    if (v === null || Math.abs(v) < 0.005) return 'text-gray-400'
-    return (v > 0) === (better === 'up') ? 'text-green-700' : 'text-red-700'
+// Écarts affichés en gris, sans jugement bon / mauvais (choix volontaire, à revoir plus tard).
+// `better` indique quand même le sens favorable de chaque indicateur.
+function trendClass() {
+    return 'text-gray-400'
 }
 
 // ─── Graphiques ───────────────────────────────────────────────────────────────
@@ -369,7 +370,6 @@ function restoreCharts(list) {
     swaps = []
 }
 
-const generatedAt = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 const ready = computed(() => !!data.value)
 </script>
 
@@ -404,7 +404,6 @@ const ready = computed(() => !!data.value)
                     </div>
                     <div class="text-right text-xs text-gray-500">
                         <div v-if="previousLabel">Évolutions comparées au {{ previousLabel }}</div>
-                        <div>Généré le {{ generatedAt }}</div>
                     </div>
                 </header>
 
