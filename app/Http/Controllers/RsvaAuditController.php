@@ -20,6 +20,9 @@ class RsvaAuditController extends Controller
 
     private const API_TOKEN = '84571f727c1a5d0d1dfeac41b094b81e0b390086d264bd9f';
 
+    // Tous nos numéros doivent être à 0,80 € / min (code tarif RSVA)
+    private const EXPECTED_TARIFF = 'D080';
+
     public function index(): Response
     {
         return Inertia::render('RsvaAudit');
@@ -37,6 +40,7 @@ class RsvaAuditController extends Controller
                 'id' => $p->id,
                 'phonenumber' => $p->phonenumber,
                 'assigned' => $p->assigned_at !== null,
+                'will_be_deleted' => (bool) $p->will_be_deleted,
                 'company' => $p->company?->only(['name', 'color']),
                 'provider' => $p->provider?->only(['name', 'color']),
             ]);
@@ -86,14 +90,20 @@ class RsvaAuditController extends Controller
             ]);
         }
 
+        $tariff = $data['tariff']['code'] ?? null;
+
         return response()->json([
-            // Retiré, fermé ou sans service déclaré : même chose pour nous
+            // Retiré, fermé ou sans service déclaré : même chose pour nous.
+            // En service mais pas au bon tarif : groupe à part.
             'group' => match ($data['status'] ?? null) {
-                'active' => 'active',
+                'active' => $tariff === self::EXPECTED_TARIFF ? 'active' : 'bad_tariff',
                 'withdrawn', 'closed', 'undeclared' => 'inactive',
                 default => 'unknown',
             },
             'status_label' => ($data['status'] ?? null) === 'active' ? 'En service' : ($data['status_label'] ?? null),
+            'tariff_code' => $tariff,
+            'tariff_label' => $data['tariff']['label'] ?? null,
+            'tariff_ok' => $tariff === self::EXPECTED_TARIFF,
             'operator' => $data['operator']['name'] ?? null,
             'holder' => $data['holder']['name'] ?? null,
             'service' => $data['service']['name'] ?? null,

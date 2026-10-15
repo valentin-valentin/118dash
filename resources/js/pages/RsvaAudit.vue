@@ -8,11 +8,13 @@ import PageHeader from '@/components/PageHeader.vue'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Play, Square, Check } from 'lucide-vue-next'
+import { xsrfToken } from '@/lib/csrf'
 
 // ─── Groupes ──────────────────────────────────────────────────────────────────
 // Ordre d'affichage : les problèmes d'abord, les numéros en service à la fin
 const GROUPS = [
     { key: 'inactive', label: 'Hors service', description: 'Aucun service déclaré', tone: 'red' },
+    { key: 'bad_tariff', label: 'Mauvais tarif', description: 'En service, mais pas à 0,80 € / min', tone: 'red' },
     { key: 'unknown', label: 'Inconnus', description: 'Pas trouvé sur Numero08', tone: 'gray' },
     { key: 'error', label: 'Erreurs', description: 'Pas de réponse de l\'API', tone: 'gray' },
     { key: 'active', label: 'En service', description: 'Service déclaré', tone: 'green' },
@@ -184,11 +186,71 @@ const columns = [
     { key: 'provider', label: 'Provider' },
     { key: 'assigned', label: 'Chez nous' },
     { key: 'status_label', label: 'Statut officiel' },
+    { key: 'tariff', label: 'Tarif' },
     { key: 'operator', label: 'Opérateur' },
     { key: 'holder', label: 'Titulaire / service' },
     { key: 'since', label: 'Depuis' },
     { key: 'public_url', label: '' },
+    { key: 'actions', label: '' },
 ]
+
+// ─── Suppression (mêmes règles que la page Numéros) ───────────────────────────
+// Numéro libre : supprimé tout de suite. Numéro assigné : marqué « Sera supprimé »,
+// il part à la fin de son affichage ; « Supprimer maintenant » le retire sans attendre.
+const pendingIds = ref([])
+
+async function post(url, body) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-XSRF-TOKEN': xsrfToken(),
+        },
+        body: JSON.stringify(body),
+    })
+    if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`)
+    return response.json()
+}
+
+async function runAction(row, action) {
+    pendingIds.value = [...pendingIds.value, row.id]
+    try {
+        await action()
+    } catch (e) {
+        alert(`Erreur : ${e.message}`)
+    } finally {
+        pendingIds.value = pendingIds.value.filter((id) => id !== row.id)
+    }
+}
+
+function deleteNumber(row) {
+    const message = row.assigned
+        ? `${row.phonenumber} est assigné : il sera supprimé à la fin de son affichage. Continuer ?`
+        : `Supprimer ${row.phonenumber} ?`
+    if (!confirm(message)) return
+    runAction(row, async () => {
+        await post('/data/phonenumbers/bulk-delete', { ids: [row.id] })
+        if (row.assigned) row.will_be_deleted = true
+        else row.deleted = true
+    })
+}
+
+function forceDelete(row) {
+    if (!confirm(`Supprimer ${row.phonenumber} maintenant ? Des appels seront perdus puisqu'il a été affiché à des clients.`)) return
+    runAction(row, async () => {
+        await post('/data/phonenumbers/force-delete', { id: row.id })
+        row.will_be_deleted = false
+        row.deleted = true
+    })
+}
+
+function cancelDeletion(row) {
+    runAction(row, async () => {
+        await post('/data/phonenumbers/cancel-deletion', { id: row.id })
+        row.will_be_deleted = false
+    })
+}
 
 function formatDate(value, withTime = false) {
     if (!value) return '-'
@@ -281,14 +343,14 @@ function formatDate(value, withTime = false) {
                     <div>
                         <p class="font-medium">
                             {{ assignedNotActive }} numéro{{ assignedNotActive > 1 ? 's' : '' }}
-                            assigné{{ assignedNotActive > 1 ? 's' : '' }} hors service
+                            assigné{{ assignedNotActive > 1 ? 's' : '' }} en anomalie (hors service ou mauvais tarif)
                         </p>
                         <p class="mt-0.5 text-red-700">En haut de chaque groupe.</p>
                     </div>
                 </div>
 
                 <!-- Compteurs par groupe -->
-                <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
                     <button
                         v-for="g in GROUPS"
                         :key="g.key"
@@ -338,7 +400,7 @@ function formatDate(value, withTime = false) {
                         <DataTable
                             :columns="columns"
                             :rows="g.rows"
-                            :row-class="(row) => (row.assigned && g.key !== 'active' ? 'bg-red-50/60' : '')"
+                            :row-class="(row) => (row.deleted ? 'opacity-40' : row.assigned && g.key !== 'active' ? 'bg-red-50/60' : '')"
                         >
                             <template #phonenumber="{ value }">
                                 <span class="font-mono font-medium text-gray-900">{{ value }}</span>
@@ -362,6 +424,18 @@ function formatDate(value, withTime = false) {
                             <template #status_label="{ row }">
                                 <span v-if="row.error" class="text-xs text-red-600">{{ row.error }}</span>
                                 <span v-else class="text-xs text-gray-600">{{ row.status_label || '-' }}</span>
+                            </template>
+
+                            <template #tariff="{ row }">
+                                <span v-if="!row.tariff_code" class="text-xs text-gray-400">-</span>
+                                <span
+                                    v-else
+                                    class="whitespace-nowrap text-xs"
+                                    :class="row.tariff_ok ? 'text-gray-600' : 'font-medium text-red-700'"
+                                    :title="row.tariff_label"
+                                >
+                                    {{ row.tariff_label?.replace(/^Service\s*/, '').replace(/\s*\+ prix d.un appel$/, '') || row.tariff_code }}
+                                </span>
                             </template>
 
                             <template #operator="{ value }">
@@ -390,6 +464,43 @@ function formatDate(value, withTime = false) {
                                 >
                                     <ExternalLink class="h-4 w-4" />
                                 </a>
+                            </template>
+
+                            <template #actions="{ row }">
+                                <div class="flex items-center justify-end gap-1 whitespace-nowrap">
+                                    <span v-if="row.deleted" class="text-xs text-gray-400">Supprimé</span>
+                                    <template v-else-if="row.will_be_deleted">
+                                        <span class="text-xs font-medium text-red-600">Sera supprimé</span>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            class="h-6 px-2 text-xs text-gray-500"
+                                            :disabled="pendingIds.includes(row.id)"
+                                            @click="cancelDeletion(row)"
+                                        >
+                                            Annuler
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            class="h-6 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                                            :disabled="pendingIds.includes(row.id)"
+                                            @click="forceDelete(row)"
+                                        >
+                                            Supprimer maintenant
+                                        </Button>
+                                    </template>
+                                    <Button
+                                        v-else
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-6 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                                        :disabled="pendingIds.includes(row.id)"
+                                        @click="deleteNumber(row)"
+                                    >
+                                        Supprimer
+                                    </Button>
+                                </div>
                             </template>
                         </DataTable>
                     </div>
