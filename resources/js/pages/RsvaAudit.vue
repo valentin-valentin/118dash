@@ -1,14 +1,18 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import ColorBadge from '@/components/ColorBadge.vue'
 import DataTable from '@/components/DataTable.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Play, Square, Check } from 'lucide-vue-next'
 import { xsrfToken } from '@/lib/csrf'
+import { useApi } from '@/composables/useApi'
 
 // ─── Groupes ──────────────────────────────────────────────────────────────────
 // Ordre d'affichage : les problèmes d'abord, les numéros en service à la fin
@@ -69,6 +73,41 @@ async function getJson(url) {
     return { status: response.status, data: response.ok || response.status === 429 ? await response.json() : null }
 }
 
+// ─── Numéros à vérifier : mêmes filtres que la page Numéros ────────────────────
+const DEFAULT_FILTERS = {
+    search: '', company_id: '', provider_id: '', only_source_id: '', source_id: '',
+    only_deleted: '', assigned_status: '', routing_status: '',
+}
+const auditFilters = reactive({ ...DEFAULT_FILTERS })
+const filterOptions = useApi('/data/phonenumbers/filter-options')
+const hasAuditFilters = computed(() => Object.values(auditFilters).some((v) => v !== ''))
+const resetAuditFilters = () => Object.assign(auditFilters, DEFAULT_FILTERS)
+
+const numbersUrl = () => {
+    const params = new URLSearchParams(Object.entries(auditFilters).filter(([, v]) => v !== ''))
+    return `/data/phonenumbers/rsva-audit/numbers?${params}`
+}
+
+// Aperçu : combien de numéros seront vérifiés, et en combien de temps
+const preview = ref(null)
+const previewLoading = ref(false)
+const loadPreview = useDebounceFn(async () => {
+    previewLoading.value = true
+    try {
+        preview.value = (await getJson(numbersUrl())).data
+    } finally {
+        previewLoading.value = false
+    }
+}, 300)
+watch(auditFilters, loadPreview, { deep: true })
+
+// Débit réel ≈ un numéro toutes les MIN_INTERVAL_MS (limite de l'API)
+function durationLabel(count) {
+    const seconds = Math.ceil((count * MIN_INTERVAL_MS) / 1000)
+    if (seconds < 60) return "moins d'une minute"
+    return `environ ${Math.ceil(seconds / 60)} min`
+}
+
 async function startAudit() {
     running.value = true
     stopRequested.value = false
@@ -76,7 +115,7 @@ async function startAudit() {
     actionError.value = null
 
     try {
-        const { data } = await getJson('/data/phonenumbers/rsva-audit/numbers')
+        const { data } = await getJson(numbersUrl())
         if (!data) throw new Error('Impossible de récupérer la liste des numéros')
         results.value = data.map((n) => ({ ...n, group: null }))
 
@@ -139,7 +178,11 @@ function stopAudit() {
 function onBeforeUnload(e) {
     if (running.value) e.preventDefault()
 }
-onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onMounted(() => {
+    window.addEventListener('beforeunload', onBeforeUnload)
+    filterOptions.load()
+    loadPreview()
+})
 onUnmounted(() => {
     stopRequested.value = true
     window.removeEventListener('beforeunload', onBeforeUnload)
@@ -285,26 +328,84 @@ function formatDate(value, withTime = false) {
                         <Square class="mr-2 h-4 w-4" />
                         Arrêter l'audit
                     </Button>
-                    <Button v-else @click="startAudit">
-                        <Play class="mr-2 h-4 w-4" />
-                        {{ results.length ? 'Relancer l\'audit' : 'Lancer l\'audit' }}
-                    </Button>
                 </template>
             </PageHeader>
 
             <p v-if="actionError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ actionError }}</p>
 
-            <!-- Aucun audit -->
-            <div
-                v-if="!results.length && !running"
-                class="rounded-lg border border-dashed border-gray-200 bg-white p-10 text-center text-sm text-gray-500"
+            <!-- Numéros à vérifier -->
+            <FilterBar
+                title="Numéros à vérifier"
+                :has-active-filters="hasAuditFilters && !running"
+                @reset="resetAuditFilters"
             >
-                <p>Interroge chaque numéro sur Numero08.com, garder la page ouverte jusqu'à la fin de l'audit.</p>
-                <Button size="lg" class="mt-6" @click="startAudit">
-                    <Play class="mr-2 h-4 w-4" />
-                    Lancer l'audit
-                </Button>
-            </div>
+                <fieldset :disabled="running" class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4" :class="{ 'opacity-50': running }">
+                    <Input v-model="auditFilters.search" type="text" placeholder="Rechercher un numéro..." class="h-8" />
+                    <FilterSelect
+                        v-model="auditFilters.company_id"
+                        :options="filterOptions.data?.companies || []"
+                        placeholder="Toutes les companies"
+                        :searchable="true"
+                        :loading="filterOptions.loading"
+                    />
+                    <FilterSelect
+                        v-model="auditFilters.provider_id"
+                        :options="filterOptions.data?.providers || []"
+                        placeholder="Tous les providers"
+                        :searchable="true"
+                        :loading="filterOptions.loading"
+                    />
+                    <FilterSelect
+                        v-model="auditFilters.only_source_id"
+                        :options="[{ value: 'null', label: 'Sans source dédiée' }, ...(filterOptions.data?.sources || [])]"
+                        placeholder="Toutes sources dédiées"
+                        :searchable="true"
+                        :loading="filterOptions.loading"
+                    />
+                    <FilterSelect
+                        v-model="auditFilters.source_id"
+                        :options="[{ value: 'null', label: 'Non assigné' }, ...(filterOptions.data?.sources || [])]"
+                        placeholder="Toutes sources actuelles"
+                        :searchable="true"
+                        :loading="filterOptions.loading"
+                    />
+                    <FilterSelect
+                        v-model="auditFilters.only_deleted"
+                        :options="[{ value: 'yes', label: 'Supprimés uniquement' }]"
+                        placeholder="Actifs uniquement"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="auditFilters.assigned_status"
+                        :options="[{ value: 'assigned', label: 'Assignés' }, { value: 'unassigned', label: 'Non assignés' }]"
+                        placeholder="Tous les statuts"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="auditFilters.routing_status"
+                        :options="[{ value: 'error', label: 'Routing en erreur' }, { value: 'no_error', label: 'Routing sans erreur' }]"
+                        placeholder="Tous les routings"
+                        :searchable="false"
+                    />
+                </fieldset>
+
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+                    <div class="text-sm text-gray-600">
+                        <span v-if="previewLoading && !preview" class="text-gray-400">Calcul…</span>
+                        <template v-else-if="preview">
+                            <span class="font-semibold text-gray-900">{{ preview.length }}</span>
+                            numéro{{ preview.length > 1 ? 's' : '' }} {{ preview.length > 1 ? 'seront vérifiés' : 'sera vérifié' }}
+                            <span v-if="preview.length"> · {{ durationLabel(preview.length) }}</span>
+                            <span v-if="!hasAuditFilters" class="text-gray-400"> · tous les numéros</span>
+                        </template>
+                        <div class="mt-0.5 text-xs text-gray-400">Interroge chaque numéro sur Numero08.com, garder la page ouverte jusqu'à la fin de l'audit.</div>
+                    </div>
+                    <Button :disabled="running || previewLoading || !preview?.length" @click="startAudit">
+                        <Play class="mr-2 h-4 w-4" />
+                        {{ results.length ? 'Relancer l\'audit' : 'Lancer l\'audit' }}
+                    </Button>
+                </div>
+            </FilterBar>
 
             <template v-if="results.length">
                 <!-- État / progression -->

@@ -93,60 +93,8 @@ class PhonenumberController extends Controller
     {
         $query = Phonenumber::with(['company', 'provider', 'onlySource', 'source']);
 
-        // Inclure les numéros supprimés si demandé
-        if ($request->filled('include_deleted') && $request->include_deleted === 'yes') {
-            $query->withTrashed();
-        } elseif ($request->filled('only_deleted') && $request->only_deleted === 'yes') {
-            $query->onlyTrashed();
-        }
-
-        // Filtres
-        if ($request->filled('search')) {
-            // Numéros stockés en +33... : "0891 24", "08.91.24" ou "+33 8 91" doivent aussi matcher
-            $search = preg_replace('/[\s.\-]/', '', $request->search);
-            $search = preg_replace('/^(\+33|0033|0)/', '+33', $search);
-            $query->where('phonenumber', 'like', "%{$search}%");
-        }
-
-        if ($request->filled('company_id')) {
-            $query->where('company_id', (int) $request->company_id);
-        }
-
-        if ($request->filled('provider_id')) {
-            $query->where('provider_id', (int) $request->provider_id);
-        }
-
-        if ($request->filled('only_source_id')) {
-            if ($request->only_source_id === 'null') {
-                $query->whereNull('only_source_id');
-            } else {
-                $query->where('only_source_id', (int) $request->only_source_id);
-            }
-        }
-
-        if ($request->filled('source_id')) {
-            if ($request->source_id === 'null') {
-                $query->whereNull('source_id');
-            } else {
-                $query->where('source_id', (int) $request->source_id);
-            }
-        }
-
-        if ($request->filled('assigned_status')) {
-            if ($request->assigned_status === 'assigned') {
-                $query->whereNotNull('assigned_at');
-            } elseif ($request->assigned_status === 'unassigned') {
-                $query->whereNull('assigned_at');
-            }
-        }
-
-        if ($request->filled('routing_status')) {
-            if ($request->routing_status === 'error') {
-                $query->whereNotNull('routing_error');
-            } elseif ($request->routing_status === 'no_error') {
-                $query->whereNull('routing_error');
-            }
-        }
+        // Mêmes filtres que l'Audit RSVA (Phonenumber::scopeFilter)
+        $query->filter($request->all());
 
         // Tri
         $sortable = ['id', 'phonenumber', 'company_id', 'provider_id', 'assigned_at', 'created_at', 'total_assignments', 'total_duration'];

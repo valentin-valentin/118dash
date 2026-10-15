@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Phonenumber;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -29,11 +30,12 @@ class RsvaAuditController extends Controller
     }
 
     /**
-     * Liste des numéros à vérifier.
+     * Liste des numéros à vérifier, avec les mêmes filtres que la page Numéros.
      */
-    public function numbers(): JsonResponse
+    public function numbers(Request $request): JsonResponse
     {
         $numbers = Phonenumber::with(['company:id,name,color', 'provider:id,name,color'])
+            ->filter($request->all())
             ->orderBy('phonenumber')
             ->get()
             ->map(fn (Phonenumber $p) => [

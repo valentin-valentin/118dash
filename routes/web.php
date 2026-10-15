@@ -137,7 +137,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/cancel-deletion', [PhonenumberController::class, 'cancelDeletion']);
         Route::post('/phonenumbers/force-delete', [PhonenumberController::class, 'forceDelete']);
         Route::get('/phonenumbers/rsva-audit/numbers', [RsvaAuditController::class, 'numbers']);
-        Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check']);
+        Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check'])->withTrashed();
 
         Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
         Route::get('/callcenter-performance/agent', [CallcenterPerformanceController::class, 'agentDaily']);
