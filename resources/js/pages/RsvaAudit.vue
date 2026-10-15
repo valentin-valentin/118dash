@@ -204,13 +204,17 @@ const filteredResults = computed(() => {
     })
 })
 
+// Tri des tableaux : provider, puis company, puis numéro (sans provider / company en dernier)
+const byName = (a, b) => (a ? (b ? a.localeCompare(b, 'fr', { sensitivity: 'base' }) : -1) : b ? 1 : 0)
+const byProviderCompany = (a, b) =>
+    byName(a.provider?.name, b.provider?.name) || byName(a.company?.name, b.company?.name) || a.phonenumber.localeCompare(b.phonenumber)
+
 const grouped = computed(() =>
     GROUPS.map((g) => ({
         ...g,
         rows: filteredResults.value
             .filter((r) => r.group === g.key)
-            // Les numéros assignés (donc affichés) d'abord
-            .sort((a, b) => (b.assigned - a.assigned) || a.phonenumber.localeCompare(b.phonenumber)),
+            .sort(byProviderCompany),
     })).filter((g) => g.rows.length),
 )
 
@@ -446,7 +450,7 @@ function formatDate(value, withTime = false) {
                             {{ assignedNotActive }} numéro{{ assignedNotActive > 1 ? 's' : '' }}
                             assigné{{ assignedNotActive > 1 ? 's' : '' }} en anomalie (hors service ou mauvais tarif)
                         </p>
-                        <p class="mt-0.5 text-red-700">En haut de chaque groupe.</p>
+                        <p class="mt-0.5 text-red-700">Surlignés en rouge dans les tableaux. « Uniquement les numéros assignés » pour ne voir qu'eux.</p>
                     </div>
                 </div>
 

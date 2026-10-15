@@ -36,8 +36,14 @@ class RsvaAuditController extends Controller
     {
         $numbers = Phonenumber::with(['company:id,name,color', 'provider:id,name,color'])
             ->filter($request->all())
-            ->orderBy('phonenumber')
             ->get()
+            // Vérifiés et affichés dans cet ordre : provider, puis company, puis numéro
+            ->sortBy([
+                fn ($a, $b) => strcasecmp($a->provider->name ?? "\u{10FFFF}", $b->provider->name ?? "\u{10FFFF}"),
+                fn ($a, $b) => strcasecmp($a->company->name ?? "\u{10FFFF}", $b->company->name ?? "\u{10FFFF}"),
+                fn ($a, $b) => strcmp($a->phonenumber, $b->phonenumber),
+            ])
+            ->values()
             ->map(fn (Phonenumber $p) => [
                 'id' => $p->id,
                 'phonenumber' => $p->phonenumber,
