@@ -40,6 +40,18 @@ onUnmounted(() => stopSound())
 
 const configured = computed(() => data.value?.configured !== false)
 const version = computed(() => data.value?.health?.data?.version?.match(/Asterisk ([\d.]+)/)?.[1] ?? '—')
+const health = computed(() => data.value?.health?.data ?? {})
+const usage = computed(() => health.value.data_usage ?? null)
+
+// Tailles lisibles : Ko, Mo, Go
+function size(bytes) {
+    if (bytes == null) return '—'
+    const units = [['Go', 1e9], ['Mo', 1e6], ['Ko', 1e3]]
+    const [unit, factor] = units.find(([, f]) => bytes >= f) ?? ['Ko', 1e3]
+    return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: bytes >= 10 * factor ? 0 : 1 }).format(bytes / factor)} ${unit}`
+}
+const used = (prefix) => (health.value[`${prefix}_total`] ? `${size(health.value[`${prefix}_used`])} utilisés sur ${size(health.value[`${prefix}_total`])}` : '—')
+
 const formatDate = (v) => (v ? new Date(v).toLocaleDateString('fr-FR') : '—')
 const seconds = (v) => (v != null ? `${Number(v).toLocaleString('fr-FR')} s` : '—')
 
@@ -334,6 +346,27 @@ function removeIp(ip) {
                                 <div class="flex justify-between gap-4"><dt class="text-gray-500">Machine</dt><dd class="text-gray-900">OVH RISE-2 · Gravelines</dd></div>
                                 <div class="flex justify-between gap-4"><dt class="text-gray-500">Système</dt><dd class="text-gray-900">Ubuntu 26.04 · Asterisk {{ version }}</dd></div>
                             </dl>
+
+                            <h3 class="mb-2 mt-5 text-sm font-semibold text-gray-900">Stockage</h3>
+                            <dl class="space-y-2 text-sm">
+                                <div class="flex justify-between gap-4"><dt class="text-gray-500">Disque des enregistrements</dt><dd class="tabular-nums text-gray-900">{{ used('disk_data') }}</dd></div>
+                                <template v-if="usage">
+                                    <div class="flex justify-between gap-4 pl-4">
+                                        <dt class="text-gray-500">Enregistrements d'appels</dt>
+                                        <dd class="tabular-nums text-gray-900">{{ size(usage.recordings?.bytes) }} · {{ (usage.recordings?.files ?? 0).toLocaleString('fr-FR') }} fichier{{ usage.recordings?.files > 1 ? 's' : '' }}</dd>
+                                    </div>
+                                    <div class="flex justify-between gap-4 pl-4">
+                                        <dt class="text-gray-500">Plus ancien enregistrement</dt>
+                                        <dd class="text-gray-900">{{ usage.recordings?.oldest_recording ? formatDate(usage.recordings.oldest_recording) : '—' }}</dd>
+                                    </div>
+                                    <div class="flex justify-between gap-4 pl-4"><dt class="text-gray-500">Sons du service interne</dt><dd class="tabular-nums text-gray-900">{{ size(usage.sounds?.bytes) }}</dd></div>
+                                    <div class="flex justify-between gap-4 pl-4"><dt class="text-gray-500">Autre</dt><dd class="tabular-nums text-gray-900">{{ size(usage.other?.bytes) }}</dd></div>
+                                </template>
+                                <div class="flex justify-between gap-4"><dt class="text-gray-500">Disque système</dt><dd class="tabular-nums text-gray-900">{{ used('disk_root') }}</dd></div>
+                            </dl>
+                            <p v-if="usage?.computed_at" class="mt-3 text-xs text-gray-400">
+                                Détail calculé à {{ new Date(usage.computed_at).toLocaleTimeString('fr-FR') }} (toutes les 5 min). Purge prévue : enregistrements agent après 120 j, transfert après 30 j, blacklist conservés.
+                            </p>
                         </div>
                     </div>
                 </div>

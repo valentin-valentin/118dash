@@ -66,7 +66,36 @@ function uptime(seconds) {
     return d ? `${d} j ${h} h` : h ? `${h} h ${m} min` : `${m} min`
 }
 
-const gb = (bytes) => (bytes || bytes === 0 ? `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(bytes / 1e9)} Go` : '—')
+// Stockage des enregistrements (/data) et disque système : alerte au-delà de 90 % ou sous ces seuils
+const DATA_LOW_BYTES = 20e9
+const ROOT_LOW_BYTES = 5e9
+const disk = (prefix) => {
+    const d = health.value?.data ?? {}
+    const total = d[`${prefix}_total`]
+    const used = d[`${prefix}_used`]
+    const free = d[`${prefix}_free`]
+    return { total, used, free, pct: total ? used / total : null }
+}
+const dataDisk = computed(() => disk('disk_data'))
+const rootDisk = computed(() => disk('disk_root'))
+const isLow = (dk, min) => (dk.pct !== null && dk.pct > 0.9) || (dk.free != null && dk.free < min)
+const storageLow = computed(() => isLow(dataDisk.value, DATA_LOW_BYTES) || isLow(rootDisk.value, ROOT_LOW_BYTES))
+const storageValue = computed(() => (dataDisk.value.pct !== null ? `${percent(dataDisk.value.pct)} utilisé` : '—'))
+const storageSub = computed(() => {
+    if (isLow(rootDisk.value, ROOT_LOW_BYTES)) return `Disque système presque plein : ${size(rootDisk.value.free)} libres`
+    if (isLow(dataDisk.value, DATA_LOW_BYTES)) return `Presque plein : ${size(dataDisk.value.free)} libres`
+    return dataDisk.value.total ? `${size(dataDisk.value.used)} sur ${size(dataDisk.value.total)} · enregistrements d'appels` : ''
+})
+
+// Tailles lisibles : Ko, Mo, Go
+function size(bytes) {
+    if (bytes == null) return '—'
+    const units = [['Go', 1e9], ['Mo', 1e6], ['Ko', 1e3]]
+    const [unit, factor] = units.find(([, f]) => bytes >= f) ?? ['Ko', 1e3]
+    return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: bytes >= 10 * factor ? 0 : 1 }).format(bytes / factor)} ${unit}`
+}
+const percent = (ratio) => `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: ratio < 0.1 ? 1 : 0 }).format(ratio * 100)} %`
+
 
 // ─── Appels en cours : un appel = plusieurs canaux, regroupés par linkedid ────
 const CONTEXTS = {
@@ -174,10 +203,11 @@ const agentColumns = [
                     />
                     <StatCard label="Agents connectés" :value="`${registeredAgents} / ${agents.length}`" :loading="loading" />
                     <StatCard
-                        label="Disque enregistrements"
-                        :value="gb(health?.data?.disk_data_free)"
-                        :sub="`Système : ${gb(health?.data?.disk_root_free)} libres`"
+                        label="Stockage"
+                        :value="storageValue"
+                        :sub="storageSub"
                         :loading="loading"
+                        :variant="storageLow ? 'danger' : 'default'"
                     />
                 </div>
 
