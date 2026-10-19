@@ -75,7 +75,10 @@ async function ensureConnected(): Promise<UserAgent> {
 
     if (!userAgent) {
         const response = await fetch('/data/softphone/credentials', { headers: { Accept: 'application/json' } });
-        if (!response.ok) throw new Error('Softphone indisponible');
+        if (!response.ok) {
+            const body = await response.json().catch(() => null);
+            throw new Error(body?.message || `softphone indisponible (HTTP ${response.status})`);
+        }
         const credentials: Credentials = await response.json();
         const uri = UserAgent.makeURI(credentials.uri);
         if (!uri) throw new Error('Configuration du softphone invalide');

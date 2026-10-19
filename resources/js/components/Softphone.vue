@@ -15,7 +15,7 @@ const enabled = computed(() => !!page.props.softphone?.enabled)
 const input = ref('')
 const inCall = computed(() => isInCall())
 
-// Chronomètre : durée depuis le décroché (ou depuis le début de l'annonce avant)
+// Chronomètre : durée de l'appel, à partir du décroché seulement
 const now = ref(Date.now())
 let timer = null
 onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 500)))
@@ -37,11 +37,7 @@ const STATUS = {
     ended: { label: 'Terminé', tone: 'text-gray-500' },
 }
 const statusInfo = computed(() => STATUS[softphone.status])
-const statusTimer = computed(() => {
-    if (softphone.status === 'established') return duration(softphone.answeredAt)
-    if (softphone.status === 'early') return duration(softphone.earlyAt)
-    return ''
-})
+const statusTimer = computed(() => (softphone.status === 'established' ? duration(softphone.answeredAt) : ''))
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
 
@@ -214,7 +210,7 @@ onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
             <span class="flex items-center gap-2">
                 <span class="h-2 w-2 animate-pulse rounded-full" :class="softphone.status === 'established' ? 'bg-green-400' : 'bg-amber-400'" />
                 <span class="font-mono">{{ softphone.number }}</span>
-                <span class="tabular-nums text-gray-300">{{ statusTimer }}</span>
+                <span class="tabular-nums text-gray-300">{{ statusTimer || statusInfo.label }}</span>
             </span>
             <span class="flex h-8 w-8 items-center justify-center rounded-full bg-red-600 hover:bg-red-700" title="Raccrocher" @click.stop="hangup">
                 <PhoneOff class="h-4 w-4" />
