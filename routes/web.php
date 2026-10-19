@@ -14,6 +14,7 @@ use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RejectedCallController;
 use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\RsvaAuditController;
+use App\Http\Controllers\SipServerController;
 use App\Http\Controllers\SoftphoneController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\SourcePaymentController;
@@ -71,6 +72,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/phonenumbers/{phonenumber}/edit', [PhonenumberController::class, 'edit'])->name('phonenumbers.edit');
     Route::put('/phonenumbers/{phonenumber}', [PhonenumberController::class, 'update'])->name('phonenumbers.update');
 
+    Route::get('/sip-server', [SipServerController::class, 'index'])->name('sip-server.index');
     Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'index'])->name('callcenter-performance.index');
     Route::get('/callcenter-performance/report', [CallcenterPerformanceController::class, 'report'])->name('callcenter-performance.report');
 
@@ -141,6 +143,13 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check'])->withTrashed();
 
         Route::get('/softphone/credentials', [SoftphoneController::class, 'credentials']);
+        Route::get('/sip/status', [SipServerController::class, 'status']);
+        Route::get('/sip/sounds/{name}', [SipServerController::class, 'sound']);
+        Route::post('/sip/trusted-ips', [SipServerController::class, 'addIp']);
+        Route::delete('/sip/trusted-ips/{ip}', [SipServerController::class, 'deleteIp'])->where('ip', '.*');
+        Route::post('/sip/sounds', [SipServerController::class, 'uploadSound']);
+        Route::delete('/sip/sounds/{name}', [SipServerController::class, 'deleteSound']);
+        Route::put('/sip/playlist', [SipServerController::class, 'updatePlaylist']);
 
         Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
         Route::get('/callcenter-performance/agent', [CallcenterPerformanceController::class, 'agentDaily']);

@@ -45,4 +45,11 @@ return [
         'password' => env('SIP_WEBRTC_PASSWORD'),
     ],
 
+    // API de contrôle du serveur Asterisk (pilotée par voxnode118). Token en LECTURE SEULE :
+    // le panel ne fait que de la visualisation (page « Serveur SIP »), appels côté serveur uniquement.
+    'sip_api' => [
+        'url' => rtrim((string) env('SIP_API_URL'), '/'),
+        'token' => env('SIP_API_TOKEN'),
+    ],
+
 ];
