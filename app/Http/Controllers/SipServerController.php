@@ -36,6 +36,14 @@ class SipServerController extends Controller
         return Inertia::render('SipServer');
     }
 
+    /**
+     * Configuration (rarement modifiée) : service interne, IP des providers, infos du serveur.
+     */
+    public function settings(): Response
+    {
+        return Inertia::render('SipServerSettings');
+    }
+
     public function status(): JsonResponse
     {
         if (!$this->configured()) {

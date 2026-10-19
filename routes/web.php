@@ -73,6 +73,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/phonenumbers/{phonenumber}', [PhonenumberController::class, 'update'])->name('phonenumbers.update');
 
     Route::get('/sip-server', [SipServerController::class, 'index'])->name('sip-server.index');
+    Route::get('/sip-server/settings', [SipServerController::class, 'settings'])->name('sip-server.settings');
     Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'index'])->name('callcenter-performance.index');
     Route::get('/callcenter-performance/report', [CallcenterPerformanceController::class, 'report'])->name('callcenter-performance.report');
 
