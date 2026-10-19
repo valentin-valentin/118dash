@@ -1,7 +1,7 @@
 <script setup>
 import { xsrfToken } from '@/lib/csrf'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Head, Link, router } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import ColorBadge from '@/components/ColorBadge.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -13,7 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3, Zap, ShieldCheck } from 'lucide-vue-next'
+import { Plus, Pencil, AlertTriangle, Check, X, Trash2, RefreshCw, Edit3, Zap, ShieldCheck, Phone } from 'lucide-vue-next'
+import { call as callNumber } from '@/composables/useSoftphone'
 import {
     Dialog,
     DialogContent,
@@ -21,6 +22,9 @@ import {
     DialogTitle,
     DialogFooter,
 } from '@/components/ui/dialog'
+
+// Softphone (SIP_ENABLED) : bouton d'appel à côté de chaque numéro
+const softphoneEnabled = computed(() => !!usePage().props.softphone?.enabled)
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/phonenumbers/stats')
@@ -605,7 +609,18 @@ onUnmounted(() => {
 
                     <template #phonenumber="{ row, value }">
                         <div class="space-y-1">
-                            <span class="font-mono font-semibold text-gray-900">{{ value }}</span>
+                            <div class="flex items-center gap-1.5">
+                                <span class="font-mono font-semibold text-gray-900">{{ value }}</span>
+                                <button
+                                    v-if="softphoneEnabled && !row.deleted_at"
+                                    type="button"
+                                    class="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-green-50 hover:text-green-700"
+                                    :title="`Tester ${value} avec le softphone`"
+                                    @click.stop="callNumber(value)"
+                                >
+                                    <Phone class="h-3.5 w-3.5" />
+                                </button>
+                            </div>
                             <div v-if="row.deleted_at" class="flex items-center gap-2">
                                 <span class="text-xs font-medium text-gray-400">Supprimé</span>
                             </div>

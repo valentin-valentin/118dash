@@ -14,6 +14,7 @@ use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RejectedCallController;
 use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\RsvaAuditController;
+use App\Http\Controllers\SoftphoneController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\SourcePaymentController;
 use Illuminate\Support\Facades\Route;
@@ -138,6 +139,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/phonenumbers/force-delete', [PhonenumberController::class, 'forceDelete']);
         Route::get('/phonenumbers/rsva-audit/numbers', [RsvaAuditController::class, 'numbers']);
         Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check'])->withTrashed();
+
+        Route::get('/softphone/credentials', [SoftphoneController::class, 'credentials']);
 
         Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
         Route::get('/callcenter-performance/agent', [CallcenterPerformanceController::class, 'agentDaily']);

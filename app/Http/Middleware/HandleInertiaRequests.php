@@ -41,6 +41,10 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // Softphone : seulement l'interrupteur, les identifiants passent par /data/softphone/credentials
+            'softphone' => [
+                'enabled' => $request->user() !== null && config('services.softphone.enabled'),
+            ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

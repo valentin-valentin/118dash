@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    // Softphone du panel : WebRTC vers le serveur Asterisk (sip.118.ae), qui sort sur la ligne OVH.
+    // Les identifiants de la ligne OVH restent sur le serveur Asterisk, jamais dans le navigateur.
+    'softphone' => [
+        'enabled' => (bool) env('SIP_ENABLED', false),
+        'ws_url' => env('SIP_WS_URL'),
+        'uri' => env('SIP_WEBRTC_URI'),
+        'username' => env('SIP_WEBRTC_USERNAME'),
+        'password' => env('SIP_WEBRTC_PASSWORD'),
+    ],
+
 ];
