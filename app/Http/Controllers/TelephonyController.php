@@ -53,9 +53,16 @@ class TelephonyController extends Controller
             'selfhosted_manual_off' => 'sometimes|boolean',
             'voxnode_manual_off' => 'sometimes|boolean',
             'pbx_recovery_minutes' => 'sometimes|integer|between:1,120',
+            // Régulateur : déplacements automatiques des agents entre les plateformes
+            'regulator_max_moves' => 'sometimes|integer|between:1,10',
+            'regulator_cooldown_minutes' => 'sometimes|integer|between:0,60',
+            'regulator_wait_seconds' => 'sometimes|integer|between:0,600',
         ], [
             'selfhosted_percent.between' => 'Part du trafic : entre 0 et 100 %.',
             'pbx_recovery_minutes.between' => 'Délai de retour : entre 1 et 120 minutes.',
+            'regulator_max_moves.between' => 'Agents déplacés par cycle : entre 1 et 10.',
+            'regulator_cooldown_minutes.between' => 'Délai entre deux déplacements : entre 0 et 60 minutes.',
+            'regulator_wait_seconds.between' => "Seuil d'attente : entre 0 et 600 secondes.",
         ]);
         abort_if(empty($validated), 422, 'Aucun réglage à modifier.');
 

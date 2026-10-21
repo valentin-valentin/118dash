@@ -169,6 +169,18 @@ const voxnodeState = computed(() => {
     return { label: 'Disponible', sub: '', variant: 'default' }
 })
 
+// ─── Régulateur (déplacements automatiques d'agents, toutes les 30 s) ─────────
+// Absent de l'API avant le déploiement de voxnode118 du 23/10 : la section reste masquée.
+const regulator = computed(() => tel.value?.regulator ?? null)
+const lastRun = computed(() => regulator.value?.last_run ?? null)
+// Pas de décision depuis 2 min : le régulateur ne tourne plus
+const regulatorStale = computed(() => {
+    if (!regulator.value) return false
+    return !lastRun.value?.at || Date.now() - new Date(lastRun.value.at).getTime() > 2 * 60 * 1000
+})
+const regulatorEvents = computed(() => (regulator.value?.events ?? []).slice(0, 10))
+const simulateMode = computed(() => telSettings.value.pbx_failover_mode === 'simulate')
+
 const formatTime = (v) => (v ? new Date(v).toLocaleTimeString('fr-FR') : '—')
 
 // ─── Agents : ceux de voxnode118 (plateforme voulue / réelle) si l'API est là, sinon ceux d'Asterisk ─
@@ -278,6 +290,46 @@ const agentColumns = [
                                     <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
                                 </li>
                             </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ─── Régulateur (voxnode118) ───────────────────────────── -->
+                <div v-if="regulator">
+                    <h2 class="mb-3 text-base font-semibold text-gray-900">Régulateur</h2>
+                    <p v-if="regulatorStale" class="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        Le régulateur ne tourne plus : dernière décision {{ lastRun?.at ? `à ${formatTime(lastRun.at)}` : 'inconnue' }}, alors qu'il décide toutes les 30 s.
+                    </p>
+                    <div class="grid gap-4 lg:grid-cols-3">
+                        <div class="rounded-lg border border-gray-100 bg-white p-4 lg:col-span-1">
+                            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Dernière décision</p>
+                            <p class="mt-1.5 text-sm text-gray-900">{{ lastRun?.reason || '—' }}</p>
+                            <dl class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-xs">
+                                <div class="flex justify-between"><dt class="text-gray-500">Agents automatiques en ligne</dt><dd class="tabular-nums text-gray-900">{{ lastRun?.active_agents ?? '—' }}</dd></div>
+                                <div class="flex justify-between"><dt class="text-gray-500">Chez nous / objectif</dt><dd class="tabular-nums text-gray-900">{{ lastRun?.on_selfhosted ?? '—' }} / {{ lastRun?.target ?? '—' }}</dd></div>
+                                <template v-if="lastRun?.queue">
+                                    <div class="flex justify-between"><dt class="text-gray-500">Clients en file</dt><dd class="tabular-nums text-gray-900">{{ lastRun.queue.waiting }}<template v-if="lastRun.queue.waiting_long"> · {{ lastRun.queue.waiting_long }} depuis longtemps</template></dd></div>
+                                    <div class="flex justify-between"><dt class="text-gray-500">Attente la plus longue</dt><dd class="tabular-nums text-gray-900">{{ lastRun.queue.max_wait }} s</dd></div>
+                                    <div class="flex justify-between"><dt class="text-gray-500">En introduction / attente forcée</dt><dd class="tabular-nums text-gray-900">{{ lastRun.queue.incoming }}</dd></div>
+                                </template>
+                                <div class="flex justify-between"><dt class="text-gray-500">À</dt><dd class="tabular-nums text-gray-500">{{ formatTime(lastRun?.at) }} · toutes les 30 s</dd></div>
+                            </dl>
+                            <p v-if="simulateMode" class="mt-2 text-xs text-amber-700">Mode simulation : les bascules ne sont pas appliquées.</p>
+                        </div>
+                        <div class="rounded-lg border border-gray-100 bg-white lg:col-span-2">
+                            <p class="px-4 pt-4 text-xs font-medium uppercase tracking-wide text-gray-400">Derniers déplacements d'agents</p>
+                            <ul v-if="regulatorEvents.length" class="mt-2">
+                                <li v-for="(e, i) in regulatorEvents" :key="i" class="flex gap-3 border-t border-gray-50 px-4 py-2 text-xs">
+                                    <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
+                                    <span class="min-w-0 flex-1">
+                                        <span class="text-gray-700">{{ e.type === 'reset' ? 'Réinitialisation' : e.reason }}</span>
+                                        <span v-if="e.to_selfhosted?.length" class="ml-2 text-gray-500">→ notre serveur : <span class="font-mono text-gray-800">{{ e.to_selfhosted.join(', ') }}</span></span>
+                                        <span v-if="e.to_voxnode?.length" class="ml-2 text-gray-500">→ Voxnode : <span class="font-mono text-gray-800">{{ e.to_voxnode.join(', ') }}</span></span>
+                                        <span v-if="e.type === 'reset' && e.reason" class="ml-2 text-gray-500">{{ e.reason }}</span>
+                                    </span>
+                                </li>
+                            </ul>
+                            <p v-else class="px-4 py-6 text-center text-sm text-gray-400">Aucun déplacement récent</p>
                         </div>
                     </div>
                 </div>

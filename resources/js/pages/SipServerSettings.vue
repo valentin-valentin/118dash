@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -242,58 +242,70 @@ const saveTelephony = (payload, success) => run(() => send('PUT', '/data/telepho
 function toggleSelfhosted(enabled) {
     const message = enabled
         ? "Activer notre serveur ?\n\nIl recevra la part du trafic réglée ci-dessous."
-        : "Désactiver notre serveur ?\n\nIl ne recevra plus aucun nouvel appel : tout part chez Voxnode."
+        : "Désactiver notre serveur ?\n\nSes numéros repartent immédiatement chez Voxnode. Ses agents partent progressivement : le dernier attend qu'il ne reste plus aucun client ni numéro (au moins 3 min 30)."
     if (!confirm(message)) return
     saveTelephony({ selfhosted_enabled: enabled }, enabled ? 'Notre serveur est activé' : 'Notre serveur est désactivé')
 }
 
 // Champs numériques : modifiés ici, enregistrés au clic
-const percent = ref(null)
-const recovery = ref(null)
+// Réglages numériques (bornes = celles de l'API). Les réglages du régulateur n'apparaissent
+// qu'une fois présents dans l'API (déploiement de voxnode118 du 23/10).
+const NUMBER_FIELDS = {
+    selfhosted_percent: { min: 0, max: 100, error: 'Part du trafic : un nombre entier entre 0 et 100.' },
+    pbx_recovery_minutes: { min: 1, max: 120, error: 'Délai de retour : entre 1 et 120 minutes.' },
+    regulator_max_moves: { min: 1, max: 10, error: 'Agents déplacés par cycle : entre 1 et 10.' },
+    regulator_cooldown_minutes: { min: 0, max: 60, error: 'Délai entre deux déplacements : entre 0 et 60 minutes.' },
+    regulator_wait_seconds: { min: 0, max: 600, error: "Seuil d'attente : entre 0 et 600 secondes." },
+}
+const numbers = reactive({})
 const numbersEdited = ref(false)
+const availableNumbers = computed(() => Object.keys(NUMBER_FIELDS).filter((k) => telSettings.value && k in telSettings.value))
+const hasRegulator = computed(() => availableNumbers.value.includes('regulator_max_moves'))
+const numbersDiffer = () => availableNumbers.value.some((k) => Number(numbers[k]) !== telSettings.value[k])
+
 watch(telSettings, (st) => {
-    if (st && !numbersEdited.value) {
-        percent.value = st.selfhosted_percent
-        recovery.value = st.pbx_recovery_minutes
-    }
+    if (st && !numbersEdited.value) for (const k of availableNumbers.value) numbers[k] = st[k]
 }, { immediate: true })
-watch([percent, recovery], () => {
-    const st = telSettings.value
-    if (st && (Number(percent.value) !== st.selfhosted_percent || Number(recovery.value) !== st.pbx_recovery_minutes)) numbersEdited.value = true
-})
-const numbersDirty = computed(() => {
-    const st = telSettings.value
-    return numbersEdited.value && !!st && (Number(percent.value) !== st.selfhosted_percent || Number(recovery.value) !== st.pbx_recovery_minutes)
-})
+watch(numbers, () => {
+    if (telSettings.value && numbersDiffer()) numbersEdited.value = true
+}, { deep: true })
+
+const numbersDirty = computed(() => numbersEdited.value && !!telSettings.value && numbersDiffer())
 const numbersError = computed(() => {
-    const p = Number(percent.value)
-    const r = Number(recovery.value)
-    if (!Number.isInteger(p) || p < 0 || p > 100) return 'Part du trafic : un nombre entier entre 0 et 100.'
-    if (!Number.isInteger(r) || r < 1 || r > 120) return 'Délai de retour : entre 1 et 120 minutes.'
+    for (const k of availableNumbers.value) {
+        const v = Number(numbers[k])
+        const { min, max, error } = NUMBER_FIELDS[k]
+        if (!Number.isInteger(v) || v < min || v > max) return error
+    }
     return null
 })
 async function saveNumbers() {
     if (numbersError.value) return
-    const ok = await saveTelephony(
-        { selfhosted_percent: Number(percent.value), pbx_recovery_minutes: Number(recovery.value) },
-        `Enregistré : ${percent.value} % du trafic, retour après ${recovery.value} min`,
-    )
-    if (ok) numbersEdited.value = false
+    // Seulement les valeurs modifiées
+    const payload = Object.fromEntries(availableNumbers.value.filter((k) => Number(numbers[k]) !== telSettings.value[k]).map((k) => [k, Number(numbers[k])]))
+    if (await saveTelephony(payload, 'Réglages enregistrés')) numbersEdited.value = false
 }
 function resetNumbers() {
-    percent.value = telSettings.value?.selfhosted_percent
-    recovery.value = telSettings.value?.pbx_recovery_minutes
+    for (const k of availableNumbers.value) numbers[k] = telSettings.value[k]
     numbersEdited.value = false
 }
 
-// Coupures d'urgence
+// Coupures d'urgence. L'API refuse de couper les deux plateformes, ou Voxnode quand notre serveur est désactivé.
+function cutBlockedReason(platform) {
+    const st = telSettings.value
+    if (!st) return ''
+    const other = platform === 'selfhosted' ? 'voxnode' : 'selfhosted'
+    if (st[`${other}_manual_off`]) return "Impossible : l'autre plateforme est déjà coupée"
+    if (platform === 'voxnode' && !st.selfhosted_enabled) return 'Impossible : notre serveur est désactivé'
+    return ''
+}
 function setManualOff(platform, off) {
     const key = platform === 'selfhosted' ? 'selfhosted_manual_off' : 'voxnode_manual_off'
     const messages = {
-        'selfhosted-on': "COUPER NOTRE SERVEUR ?\n\nTout le trafic et tous les agents automatiques partent immédiatement chez Voxnode.",
+        'selfhosted-on': "COUPER NOTRE SERVEUR ?\n\nSes numéros repartent immédiatement chez Voxnode. Ses agents partent progressivement : le dernier attend qu'il ne reste plus aucun client ni numéro (au moins 3 min 30).",
         'selfhosted-off': 'Rétablir notre serveur ?\n\nIl recevra de nouveau sa part du trafic.',
-        'voxnode-on': "COUPER VOXNODE ?\n\nTout ce qui peut partir chez nous y va immédiatement.",
-        'voxnode-off': 'Rétablir Voxnode ?',
+        'voxnode-on': "COUPER VOXNODE ?\n\nLes numéros dont le provider est autorisé chez nous arrivent chez nous, ainsi que tous les agents automatiques.",
+        'voxnode-off': "Rétablir Voxnode ?\n\nNotre serveur ne garde que la part de trafic réglée ; les autres numéros et agents repartent progressivement.",
     }
     if (!confirm(messages[`${platform}-${off ? 'on' : 'off'}`])) return
     const name = platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode'
@@ -398,27 +410,56 @@ function removeIp(ip) {
                             <div class="flex items-center justify-between gap-4 border-b border-gray-50 px-4 py-3">
                                 <div>
                                     <div class="text-sm font-medium text-gray-900">Notre serveur reçoit du trafic</div>
-                                    <div class="text-xs text-gray-500">Désactivé : aucun nouvel appel n'arrive chez nous.</div>
+                                    <div class="text-xs text-gray-500">Désactivé : ses numéros repartent tout de suite chez Voxnode, ses agents progressivement.</div>
                                 </div>
                                 <Switch :checked="telSettings.selfhosted_enabled" :disabled="busy" @update:checked="toggleSelfhosted" />
                             </div>
                             <!-- Part du trafic et délai de retour -->
-                            <form class="flex flex-wrap items-end gap-4 px-4 py-3" @submit.prevent="saveNumbers">
-                                <div class="space-y-1.5">
-                                    <Label for="tel-percent">Part du trafic chez nous (%)</Label>
-                                    <Input id="tel-percent" v-model.number="percent" type="number" min="0" max="100" class="h-9 w-32 tabular-nums" />
+                            <form class="space-y-4 px-4 py-3" @submit.prevent="saveNumbers">
+                                <div class="flex flex-wrap items-end gap-4">
+                                    <div class="space-y-1.5">
+                                        <Label for="tel-percent">Part du trafic chez nous (%)</Label>
+                                        <Input id="tel-percent" v-model.number="numbers.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-32 tabular-nums" />
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <Label for="tel-recovery">Retour après une panne (min)</Label>
+                                        <Input id="tel-recovery" v-model.number="numbers.pbx_recovery_minutes" type="number" min="1" max="120" class="h-9 w-32 tabular-nums" />
+                                    </div>
+                                    <p class="pb-2 text-xs text-gray-500">
+                                        Baisser la part : on ne garde que la part demandée, les agents partent progressivement.
+                                        Après une panne, retour après {{ numbers.pbx_recovery_minutes }} min de bonne santé.
+                                    </p>
                                 </div>
-                                <div class="space-y-1.5">
-                                    <Label for="tel-recovery">Retour après une panne (min)</Label>
-                                    <Input id="tel-recovery" v-model.number="recovery" type="number" min="1" max="120" class="h-9 w-32 tabular-nums" />
+
+                                <!-- Régulateur : déplace les agents automatiques toutes les 30 s -->
+                                <div v-if="hasRegulator" class="border-t border-gray-50 pt-3">
+                                    <div class="text-sm font-medium text-gray-900">Régulateur des agents</div>
+                                    <div class="mb-2 text-xs text-gray-500">Toutes les 30 s, il déplace des agents automatiques vers la plateforme qui en a besoin.</div>
+                                    <div class="flex flex-wrap items-end gap-4">
+                                        <div class="space-y-1.5">
+                                            <Label for="reg-moves">Agents déplacés par cycle</Label>
+                                            <Input id="reg-moves" v-model.number="numbers.regulator_max_moves" type="number" min="1" max="10" class="h-9 w-32 tabular-nums" />
+                                        </div>
+                                        <div class="space-y-1.5">
+                                            <Label for="reg-cooldown">Repos entre deux déplacements (min)</Label>
+                                            <Input id="reg-cooldown" v-model.number="numbers.regulator_cooldown_minutes" type="number" min="0" max="60" class="h-9 w-32 tabular-nums" />
+                                        </div>
+                                        <div class="space-y-1.5">
+                                            <Label for="reg-wait">Attente qui déclenche un renfort (s)</Label>
+                                            <Input id="reg-wait" v-model.number="numbers.regulator_wait_seconds" type="number" min="0" max="600" class="h-9 w-32 tabular-nums" />
+                                        </div>
+                                        <p class="pb-2 text-xs text-gray-500">
+                                            Un client qui attend plus de {{ numbers.regulator_wait_seconds }} s dans notre file compte comme un besoin d'agents.
+                                        </p>
+                                    </div>
                                 </div>
-                                <p class="pb-2 text-xs text-gray-500">
-                                    <span v-if="numbersError" class="text-red-600">{{ numbersError }}</span>
-                                    <template v-else>Après une panne, notre serveur reprend du trafic après {{ recovery }} min de bonne santé.</template>
-                                </p>
-                                <div v-if="numbersDirty" class="ml-auto flex gap-2">
-                                    <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetNumbers">Annuler</Button>
-                                    <Button type="submit" size="sm" :disabled="busy || !!numbersError">Enregistrer</Button>
+
+                                <div v-if="numbersError || numbersDirty" class="flex items-center justify-end gap-3">
+                                    <span v-if="numbersError" class="mr-auto text-xs text-red-600">{{ numbersError }}</span>
+                                    <template v-if="numbersDirty">
+                                        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetNumbers">Annuler</Button>
+                                        <Button type="submit" size="sm" :disabled="busy || !!numbersError">Enregistrer</Button>
+                                    </template>
                                 </div>
                             </form>
                         </div>
@@ -436,7 +477,9 @@ function removeIp(ip) {
                                         {{ PLATFORMS[p] }} : {{ telSettings[`${p}_manual_off`] ? 'coupé' : 'actif' }}
                                     </div>
                                     <div class="text-xs text-gray-500">
-                                        {{ p === 'selfhosted' ? 'Couper envoie tout le trafic et les agents automatiques chez Voxnode.' : 'Couper envoie chez nous tout ce qui peut y aller.' }}
+                                        {{ p === 'selfhosted'
+                                            ? 'Couper : ses numéros repartent tout de suite chez Voxnode, ses agents progressivement (au moins 3 min 30).'
+                                            : 'Couper : les numéros autorisés chez nous et tous les agents automatiques viennent chez nous.' }}
                                     </div>
                                 </div>
                                 <Button
@@ -453,8 +496,8 @@ function removeIp(ip) {
                                     size="sm"
                                     variant="outline"
                                     class="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
-                                    :disabled="busy || telSettings[`${p === 'selfhosted' ? 'voxnode' : 'selfhosted'}_manual_off`]"
-                                    :title="telSettings[`${p === 'selfhosted' ? 'voxnode' : 'selfhosted'}_manual_off`] ? 'Impossible : l\'autre plateforme est déjà coupée' : ''"
+                                    :disabled="busy || !!cutBlockedReason(p)"
+                                    :title="cutBlockedReason(p)"
                                     @click="setManualOff(p, true)"
                                 >
                                     Couper
@@ -466,7 +509,8 @@ function removeIp(ip) {
                         <div>
                             <h3 class="text-sm font-semibold text-gray-900">Mode des agents</h3>
                             <p class="mb-3 mt-0.5 text-sm text-gray-500">
-                                Automatique : l'agent suit la répartition et les bascules. Sinon il reste toujours sur la même plateforme, même en cas de panne.
+                                Automatique : l'agent suit la répartition et les bascules (après un retour en automatique, le régulateur attend le délai de repos avant de le déplacer).
+                                Sinon il reste toujours sur la même plateforme, même en cas de panne.
                             </p>
                             <div class="rounded-lg border border-gray-100 bg-white">
                                 <DataTable :columns="agentColumns" :rows="telAgents" :loading="loading" empty-message="Aucun agent">
