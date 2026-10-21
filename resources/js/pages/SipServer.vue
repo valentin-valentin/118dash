@@ -16,14 +16,19 @@ import { Settings } from 'lucide-vue-next'
 const REFRESH_MS = 5000
 
 const data = ref(null)
+const telephony = ref(null) // API voxnode118 : plateformes, santé, agents
 const loading = ref(true)
 const error = ref(null)
 
 async function load() {
     try {
-        const res = await fetch('/data/sip/status', { headers: { Accept: 'application/json' } })
+        const [res, tel] = await Promise.all([
+            fetch('/data/sip/status', { headers: { Accept: 'application/json' } }),
+            fetch('/data/telephony', { headers: { Accept: 'application/json' } }),
+        ])
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
         data.value = await res.json()
+        telephony.value = tel.ok ? await tel.json() : { configured: true, ok: false, error: `Erreur HTTP ${tel.status}` }
         error.value = null
     } catch (e) {
         error.value = e.message
@@ -142,9 +147,46 @@ const callColumns = [
     { key: 'duration', label: 'Durée' },
 ]
 
-// ─── Agents ───────────────────────────────────────────────────────────────────
-const agents = computed(() => data.value?.agents?.data?.agents ?? [])
+// ─── Plateformes (voxnode118) ─────────────────────────────────────────────────
+const tel = computed(() => (telephony.value?.ok ? telephony.value.data : null))
+const telSettings = computed(() => tel.value?.settings ?? {})
+const telHealth = computed(() => tel.value?.health ?? null)
+const healthEvents = computed(() => [...(telHealth.value?.events ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 6))
+
+// État de notre serveur côté routage : neutre quand c'est normal, rouge quand il est coupé ou en panne
+const selfhostedState = computed(() => {
+    const st = telSettings.value
+    if (!tel.value) return null
+    if (!st.selfhosted_enabled) return { label: 'Désactivé', sub: "Ne reçoit pas de trafic (interrupteur général)", variant: 'default' }
+    if (st.selfhosted_manual_off) return { label: 'Coupé', sub: 'Coupé manuellement : tout part chez Voxnode', variant: 'danger' }
+    if (!tel.value.available?.selfhosted) return { label: 'En panne', sub: `Bascule automatique vers Voxnode · retour après ${st.pbx_recovery_minutes} min de bonne santé`, variant: 'danger' }
+    return { label: `${st.selfhosted_percent} % du trafic`, sub: 'des nouvelles assignations', variant: 'default' }
+})
+const voxnodeState = computed(() => {
+    if (!tel.value) return null
+    if (telSettings.value.voxnode_manual_off) return { label: 'Coupé', sub: 'Coupé manuellement : tout ce qui peut part chez nous', variant: 'danger' }
+    if (!tel.value.available?.voxnode) return { label: 'Indisponible', sub: '', variant: 'danger' }
+    return { label: 'Disponible', sub: '', variant: 'default' }
+})
+
+const formatTime = (v) => (v ? new Date(v).toLocaleTimeString('fr-FR') : '—')
+
+// ─── Agents : ceux de voxnode118 (plateforme voulue / réelle) si l'API est là, sinon ceux d'Asterisk ─
+const PLATFORMS = { selfhosted: 'Notre serveur', voxnode: 'Voxnode' }
+const PIN_LABELS = { selfhosted: 'Toujours notre serveur', voxnode: 'Toujours Voxnode' }
+const telAgents = computed(() => tel.value?.agents ?? null)
+const agents = computed(() => telAgents.value ?? data.value?.agents?.data?.agents ?? [])
 const registeredAgents = computed(() => agents.value.filter((a) => a.registered).length)
+
+const telAgentColumns = [
+    { key: 'name', label: 'Agent' },
+    { key: 'callcenter', label: 'Centre' },
+    { key: 'online', label: 'En ligne' },
+    { key: 'pin', label: 'Mode' },
+    { key: 'platform', label: 'Plateforme' },
+    { key: 'in_call', label: 'En appel' },
+    { key: 'switch_failed', label: 'Bascule' },
+]
 
 const agentColumns = [
     { key: 'username', label: 'Agent' },
@@ -211,6 +253,35 @@ const agentColumns = [
                     />
                 </div>
 
+                <!-- ─── Plateformes : notre serveur / Voxnode (voxnode118) ─── -->
+                <div v-if="telephony?.configured">
+                    <h2 class="mb-3 text-base font-semibold text-gray-900">Plateformes</h2>
+                    <p v-if="telephony.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        État des plateformes indisponible : {{ telephony.error }}
+                    </p>
+                    <div v-else class="grid gap-4 lg:grid-cols-3">
+                        <StatCard label="Notre serveur" :value="selfhostedState?.label" :sub="selfhostedState?.sub" :variant="selfhostedState?.variant" :loading="loading" />
+                        <StatCard label="Voxnode" :value="voxnodeState?.label" :sub="voxnodeState?.sub" :variant="voxnodeState?.variant" :loading="loading" />
+                        <div class="rounded-lg border bg-white p-4" :class="telHealth?.state === 'down' ? 'border-red-100' : 'border-gray-100'">
+                            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Santé de notre serveur</p>
+                            <p class="mt-1.5 text-2xl font-semibold" :class="telHealth?.state === 'down' ? 'text-red-600' : 'text-gray-900'">
+                                {{ telHealth?.state === 'down' ? 'En panne' : telHealth?.state === 'up' ? 'OK' : '—' }}
+                            </p>
+                            <p class="mt-1 text-xs text-gray-400">
+                                Vérifiée à {{ formatTime(telHealth?.last_check_at) }}<template v-if="telHealth?.failures"> · {{ telHealth.failures }} échec(s) d'affilée</template>
+                            </p>
+                            <ul v-if="healthEvents.length" class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-xs">
+                                <li v-for="(e, i) in healthEvents" :key="i" class="flex gap-2">
+                                    <span class="tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
+                                    <span :class="e.state === 'down' ? 'text-red-600' : 'text-gray-700'">{{ e.state === 'down' ? 'Panne' : 'Rétabli' }}</span>
+                                    <span class="truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
+                                    <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ─── Appels en cours ───────────────────────────────────── -->
                 <div>
                     <div class="mb-3 flex items-baseline justify-between">
@@ -236,7 +307,35 @@ const agentColumns = [
                 <!-- ─── Agents ────────────────────────────────────────────── -->
                 <div>
                     <h2 class="mb-3 text-base font-semibold text-gray-900">Agents</h2>
-                    <div class="rounded-lg border border-gray-100 bg-white">
+                    <div v-if="telAgents" class="rounded-lg border border-gray-100 bg-white">
+                        <DataTable :columns="telAgentColumns" :rows="telAgents" :loading="loading" empty-message="Aucun agent">
+                            <template #name="{ row }">
+                                <span class="font-medium text-gray-900">{{ row.name || row.username }}</span>
+                                <span v-if="row.name && row.username" class="ml-2 font-mono text-xs text-gray-400">{{ row.username }}</span>
+                            </template>
+                            <template #callcenter="{ value }"><span class="text-sm text-gray-600">{{ value || '—' }}</span></template>
+                            <template #online="{ value }">
+                                <span class="flex items-center gap-1.5 text-xs" :class="value ? 'text-gray-700' : 'text-gray-400'">
+                                    <span class="h-2 w-2 rounded-full" :class="value ? 'bg-green-500' : 'bg-gray-300'" />
+                                    {{ value ? 'En ligne' : 'Hors ligne' }}
+                                </span>
+                            </template>
+                            <template #pin="{ value }"><span class="text-xs text-gray-600">{{ PIN_LABELS[value] ?? 'Automatique' }}</span></template>
+                            <template #platform="{ row }">
+                                <span class="text-xs" :class="row.current_platform && row.current_platform !== row.wanted_platform ? 'font-medium text-amber-700' : 'text-gray-700'">
+                                    {{ PLATFORMS[row.current_platform] ?? '—' }}
+                                    <template v-if="row.current_platform !== row.wanted_platform"> → {{ PLATFORMS[row.wanted_platform] ?? row.wanted_platform }}</template>
+                                </span>
+                                <span v-if="!row.registered" class="ml-1 text-xs text-gray-400">(non enregistré)</span>
+                            </template>
+                            <template #in_call="{ value }"><span class="text-xs" :class="value ? 'font-medium text-gray-900' : 'text-gray-400'">{{ value ? 'En appel' : '—' }}</span></template>
+                            <template #switch_failed="{ row }">
+                                <span v-if="row.switch_failed" class="text-xs text-red-600">Échec · {{ formatDateTime(row.switch_failed_at) }}</span>
+                                <span v-else class="text-xs text-gray-400">—</span>
+                            </template>
+                        </DataTable>
+                    </div>
+                    <div v-else class="rounded-lg border border-gray-100 bg-white">
                         <DataTable
                             :columns="agentColumns"
                             :rows="agents"
@@ -260,7 +359,9 @@ const agentColumns = [
                             <template #last_call="{ value }"><span class="text-sm text-gray-600">{{ formatDateTime(value) }}</span></template>
                         </DataTable>
                     </div>
-                    <p class="mt-2 text-xs text-gray-500">Agents, routage et basculement des numéros se gèrent dans voxnode118.</p>
+                    <p class="mt-2 text-xs text-gray-500">
+                        Plateforme : où l'agent est réellement → où il doit aller (en orange pendant une bascule). Le mode et la répartition du trafic se règlent dans Configuration.
+                    </p>
                 </div>
             </template>
         </div>

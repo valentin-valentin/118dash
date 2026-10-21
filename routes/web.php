@@ -17,6 +17,7 @@ use App\Http\Controllers\RsvaAuditController;
 use App\Http\Controllers\SipServerController;
 use App\Http\Controllers\SoftphoneController;
 use App\Http\Controllers\SourceController;
+use App\Http\Controllers\TelephonyController;
 use App\Http\Controllers\SourcePaymentController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -151,6 +152,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sip/sounds', [SipServerController::class, 'uploadSound']);
         Route::delete('/sip/sounds/{name}', [SipServerController::class, 'deleteSound']);
         Route::put('/sip/playlist', [SipServerController::class, 'updatePlaylist']);
+        Route::put('/sip/welcome', [SipServerController::class, 'updateWelcome']);
+        Route::get('/telephony', [TelephonyController::class, 'status']);
+        Route::put('/telephony/settings', [TelephonyController::class, 'updateSettings']);
+        Route::put('/telephony/agents/{agent}', [TelephonyController::class, 'updateAgent'])->whereNumber('agent');
 
         Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'data']);
         Route::get('/callcenter-performance/agent', [CallcenterPerformanceController::class, 'agentDaily']);

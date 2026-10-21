@@ -1,14 +1,16 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import SipSoundSequence from '@/components/SipSoundSequence.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, Pause, Play, Plus, Trash2 } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, Pause, Play, Plus, Trash2 } from 'lucide-vue-next'
 import { xsrfToken } from '@/lib/csrf'
 
 /**
@@ -20,14 +22,19 @@ const INTERNAL_SERVICE_NUMBER = '01 84 13 15 72'
 const VOXNODE_IP = '13.36.113.246'
 
 const data = ref(null)
+const telephony = ref(null) // API voxnode118 : répartition du trafic, agents
 const loading = ref(true)
 const error = ref(null)
 
 async function load() {
     try {
-        const res = await fetch('/data/sip/status', { headers: { Accept: 'application/json' } })
+        const [res, tel] = await Promise.all([
+            fetch('/data/sip/status', { headers: { Accept: 'application/json' } }),
+            fetch('/data/telephony', { headers: { Accept: 'application/json' } }),
+        ])
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
         data.value = await res.json()
+        telephony.value = tel.ok ? await tel.json() : { configured: true, ok: false, error: `Erreur HTTP ${tel.status}` }
         error.value = null
     } catch (e) {
         error.value = e.message
@@ -112,45 +119,49 @@ function stopSound() {
     playing.value = null
 }
 
-// ─── Service interne ──────────────────────────────────────────────────────────
-// « Lecture » = la playlist du serveur : ce qu'entend l'appelant, dans l'ordre, en boucle.
+// ─── Sons : trois listes ordonnées, appliquées immédiatement ─────────────────
+// internal = playlist du service interne ; intro / hold = accueil des appels entrants
 const sounds = computed(() => data.value?.sounds?.data?.sounds ?? [])
-const playlist = computed(() => data.value?.sounds?.data?.playlist ?? [])
-const soundInfo = (name) => sounds.value.find((s) => s.name === name)
-const unusedSounds = computed(() => sounds.value.filter((s) => !playlist.value.includes(s.name)))
+const welcome = computed(() => data.value?.welcome?.data ?? null)
+const sequences = computed(() => ({
+    internal: data.value?.sounds?.data?.playlist ?? [],
+    intro: welcome.value?.intro ?? [],
+    hold: welcome.value?.hold ?? [],
+}))
+// Un fichier peut être supprimé seulement s'il n'est joué nulle part
+const usedNames = computed(() => new Set(Object.values(sequences.value).flat()))
+const unusedSounds = computed(() => sounds.value.filter((s) => !usedNames.value.has(s.name)))
 
-const savePlaylist = (list, success) => run(() => send('PUT', '/data/sip/playlist', { sounds: list }), success)
+const SEQUENCE_LABELS = { internal: 'au service interne', intro: "à l'introduction", hold: "à l'audio d'attente" }
 
-function move(index, to) {
-    const list = [...playlist.value]
-    const [item] = list.splice(index, 1)
-    list.splice(to, 0, item)
-    savePlaylist(list, 'Ordre mis à jour')
+function sequenceRequest(target, list) {
+    return target === 'internal'
+        ? send('PUT', '/data/sip/playlist', { sounds: list })
+        : send('PUT', '/data/sip/welcome', { [target]: list })
 }
-
-function removeFromPlaylist(index) {
-    const name = playlist.value[index]
-    if (!confirm(`Ne plus jouer « ${name} » pendant les transferts ?\n\nLe fichier est conservé, il pourra être remis plus tard.`)) return
-    savePlaylist(playlist.value.filter((_, i) => i !== index), `« ${name} » n'est plus joué`)
-}
+const saveSequence = (target, list, success) => run(() => sequenceRequest(target, list), success)
 
 function deleteSound(name) {
     if (!confirm(`Supprimer définitivement le fichier « ${name} » ?`)) return
     run(() => send('DELETE', `/data/sip/sounds/${encodeURIComponent(name)}`), `Fichier « ${name} » supprimé`)
 }
 
-// Ajout : un nouveau fichier, ou un son déjà envoyé mais pas joué
+// Ajout dans une liste : un nouveau fichier, ou un fichier déjà envoyé
 const showSoundDialog = ref(false)
+const soundTarget = ref('internal')
 const soundSource = ref('upload') // 'upload' | 'existing'
 const soundFile = ref(null)
 const soundName = ref('')
 const existingName = ref('')
+// Fichiers proposables : tous ceux qui ne sont pas déjà dans la liste visée
+const addableSounds = computed(() => sounds.value.filter((s) => !sequences.value[soundTarget.value].includes(s.name)))
 
-function openSoundDialog() {
+function openSoundDialog(target) {
+    soundTarget.value = target
     soundSource.value = 'upload'
     soundFile.value = null
     soundName.value = ''
-    existingName.value = unusedSounds.value[0]?.name ?? ''
+    existingName.value = addableSounds.value[0]?.name ?? ''
     showSoundDialog.value = true
 }
 
@@ -165,6 +176,7 @@ function onFile(e) {
 const canAddSound = computed(() => (soundSource.value === 'upload' ? !!soundFile.value : !!existingName.value))
 
 async function addSound() {
+    const target = soundTarget.value
     let name = existingName.value
     const ok = await run(async () => {
         if (soundSource.value === 'upload') {
@@ -173,9 +185,139 @@ async function addSound() {
             if (soundName.value) form.append('name', soundName.value)
             name = (await send('POST', '/data/sip/sounds', form)).sound.name
         }
-        await send('PUT', '/data/sip/playlist', { sounds: [...playlist.value, name] })
-    }, 'Son ajouté à la fin de la lecture')
+        await sequenceRequest(target, [...sequences.value[target], name])
+    }, `Son ajouté ${SEQUENCE_LABELS[target]}`)
     if (ok) showSoundDialog.value = false
+}
+
+// ─── Attente forcée (secondes, tirée au hasard entre min et max à chaque appel) ─
+const waitMin = ref(null)
+const waitMax = ref(null)
+const waitEdited = ref(false)
+const waitDirty = computed(() => waitEdited.value && !!welcome.value && (Number(waitMin.value) !== welcome.value.wait_min || Number(waitMax.value) !== welcome.value.wait_max))
+// Tant qu'on ne les a pas modifiées ici, les valeurs suivent le serveur
+watch(welcome, (w) => {
+    if (w && !waitEdited.value) {
+        waitMin.value = w.wait_min
+        waitMax.value = w.wait_max
+    }
+}, { immediate: true })
+watch([waitMin, waitMax], () => {
+    if (welcome.value && (Number(waitMin.value) !== welcome.value.wait_min || Number(waitMax.value) !== welcome.value.wait_max)) waitEdited.value = true
+})
+const waitError = computed(() => {
+    const min = Number(waitMin.value)
+    const max = Number(waitMax.value)
+    if (!Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 1800) return 'Durées en secondes, entre 0 et 1800.'
+    if (min > max) return 'Le minimum doit être inférieur ou égal au maximum.'
+    return null
+})
+const minutes = (sec) => {
+    const n = Number(sec)
+    if (!Number.isFinite(n)) return ''
+    const m = Math.floor(n / 60)
+    const r = n % 60
+    return m ? `${m} min${r ? ` ${String(r).padStart(2, '0')}` : ''}` : `${r} s`
+}
+
+function saveWait() {
+    if (waitError.value) return
+    const min = Number(waitMin.value)
+    const max = Number(waitMax.value)
+    run(() => send('PUT', '/data/sip/welcome', { wait_min: min, wait_max: max }), `Attente forcée : entre ${minutes(min)} et ${minutes(max)}`).then((ok) => {
+        if (ok) waitEdited.value = false
+    })
+}
+function resetWait() {
+    waitMin.value = welcome.value?.wait_min
+    waitMax.value = welcome.value?.wait_max
+    waitEdited.value = false
+}
+
+// ─── Répartition du trafic entre notre serveur et Voxnode (voxnode118) ───────
+const tel = computed(() => (telephony.value?.ok ? telephony.value.data : null))
+const telSettings = computed(() => tel.value?.settings ?? null)
+const saveTelephony = (payload, success) => run(() => send('PUT', '/data/telephony/settings', payload), success)
+
+function toggleSelfhosted(enabled) {
+    const message = enabled
+        ? "Activer notre serveur ?\n\nIl recevra la part du trafic réglée ci-dessous."
+        : "Désactiver notre serveur ?\n\nIl ne recevra plus aucun nouvel appel : tout part chez Voxnode."
+    if (!confirm(message)) return
+    saveTelephony({ selfhosted_enabled: enabled }, enabled ? 'Notre serveur est activé' : 'Notre serveur est désactivé')
+}
+
+// Champs numériques : modifiés ici, enregistrés au clic
+const percent = ref(null)
+const recovery = ref(null)
+const numbersEdited = ref(false)
+watch(telSettings, (st) => {
+    if (st && !numbersEdited.value) {
+        percent.value = st.selfhosted_percent
+        recovery.value = st.pbx_recovery_minutes
+    }
+}, { immediate: true })
+watch([percent, recovery], () => {
+    const st = telSettings.value
+    if (st && (Number(percent.value) !== st.selfhosted_percent || Number(recovery.value) !== st.pbx_recovery_minutes)) numbersEdited.value = true
+})
+const numbersDirty = computed(() => {
+    const st = telSettings.value
+    return numbersEdited.value && !!st && (Number(percent.value) !== st.selfhosted_percent || Number(recovery.value) !== st.pbx_recovery_minutes)
+})
+const numbersError = computed(() => {
+    const p = Number(percent.value)
+    const r = Number(recovery.value)
+    if (!Number.isInteger(p) || p < 0 || p > 100) return 'Part du trafic : un nombre entier entre 0 et 100.'
+    if (!Number.isInteger(r) || r < 1 || r > 120) return 'Délai de retour : entre 1 et 120 minutes.'
+    return null
+})
+async function saveNumbers() {
+    if (numbersError.value) return
+    const ok = await saveTelephony(
+        { selfhosted_percent: Number(percent.value), pbx_recovery_minutes: Number(recovery.value) },
+        `Enregistré : ${percent.value} % du trafic, retour après ${recovery.value} min`,
+    )
+    if (ok) numbersEdited.value = false
+}
+function resetNumbers() {
+    percent.value = telSettings.value?.selfhosted_percent
+    recovery.value = telSettings.value?.pbx_recovery_minutes
+    numbersEdited.value = false
+}
+
+// Coupures d'urgence
+function setManualOff(platform, off) {
+    const key = platform === 'selfhosted' ? 'selfhosted_manual_off' : 'voxnode_manual_off'
+    const messages = {
+        'selfhosted-on': "COUPER NOTRE SERVEUR ?\n\nTout le trafic et tous les agents automatiques partent immédiatement chez Voxnode.",
+        'selfhosted-off': 'Rétablir notre serveur ?\n\nIl recevra de nouveau sa part du trafic.',
+        'voxnode-on': "COUPER VOXNODE ?\n\nTout ce qui peut partir chez nous y va immédiatement.",
+        'voxnode-off': 'Rétablir Voxnode ?',
+    }
+    if (!confirm(messages[`${platform}-${off ? 'on' : 'off'}`])) return
+    const name = platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode'
+    saveTelephony({ [key]: off }, off ? `${name} est coupé` : `${name} est rétabli`)
+}
+
+// Mode des agents
+const PIN_OPTIONS = [
+    { value: '', label: 'Automatique' },
+    { value: 'selfhosted', label: 'Toujours notre serveur' },
+    { value: 'voxnode', label: 'Toujours Voxnode' },
+]
+const PLATFORMS = { selfhosted: 'Notre serveur', voxnode: 'Voxnode' }
+const telAgents = computed(() => tel.value?.agents ?? [])
+const agentColumns = [
+    { key: 'name', label: 'Agent' },
+    { key: 'callcenter', label: 'Centre' },
+    { key: 'platform', label: 'Plateforme actuelle' },
+    { key: 'pin', label: 'Mode' },
+]
+function setPin(agent, value) {
+    const pin = value || null
+    const label = PIN_OPTIONS.find((o) => o.value === value)?.label
+    run(() => send('PUT', `/data/telephony/agents/${agent.id}`, { pin }), `${agent.name || agent.username} : ${label}`)
 }
 
 // ─── IP des providers ─────────────────────────────────────────────────────────
@@ -242,51 +384,201 @@ function removeIp(ip) {
             </div>
 
             <template v-else>
+                <!-- ─── Répartition du trafic (voxnode118) ────────────────── -->
+                <div v-if="telephony?.configured">
+                    <h2 class="text-base font-semibold text-gray-900">Répartition du trafic</h2>
+                    <p class="mb-4 mt-0.5 text-sm text-gray-500">Entre notre serveur et Voxnode. S'applique aux nouvelles assignations de numéros et aux agents automatiques.</p>
+
+                    <p v-if="telephony.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        API téléphonie indisponible : {{ telephony.error }}
+                    </p>
+                    <div v-else-if="telSettings" class="space-y-4">
+                        <div class="rounded-lg border border-gray-100 bg-white">
+                            <!-- Interrupteur général -->
+                            <div class="flex items-center justify-between gap-4 border-b border-gray-50 px-4 py-3">
+                                <div>
+                                    <div class="text-sm font-medium text-gray-900">Notre serveur reçoit du trafic</div>
+                                    <div class="text-xs text-gray-500">Désactivé : aucun nouvel appel n'arrive chez nous.</div>
+                                </div>
+                                <Switch :checked="telSettings.selfhosted_enabled" :disabled="busy" @update:checked="toggleSelfhosted" />
+                            </div>
+                            <!-- Part du trafic et délai de retour -->
+                            <form class="flex flex-wrap items-end gap-4 px-4 py-3" @submit.prevent="saveNumbers">
+                                <div class="space-y-1.5">
+                                    <Label for="tel-percent">Part du trafic chez nous (%)</Label>
+                                    <Input id="tel-percent" v-model.number="percent" type="number" min="0" max="100" class="h-9 w-32 tabular-nums" />
+                                </div>
+                                <div class="space-y-1.5">
+                                    <Label for="tel-recovery">Retour après une panne (min)</Label>
+                                    <Input id="tel-recovery" v-model.number="recovery" type="number" min="1" max="120" class="h-9 w-32 tabular-nums" />
+                                </div>
+                                <p class="pb-2 text-xs text-gray-500">
+                                    <span v-if="numbersError" class="text-red-600">{{ numbersError }}</span>
+                                    <template v-else>Après une panne, notre serveur reprend du trafic après {{ recovery }} min de bonne santé.</template>
+                                </p>
+                                <div v-if="numbersDirty" class="ml-auto flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetNumbers">Annuler</Button>
+                                    <Button type="submit" size="sm" :disabled="busy || !!numbersError">Enregistrer</Button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Coupures d'urgence -->
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div
+                                v-for="p in ['selfhosted', 'voxnode']"
+                                :key="p"
+                                class="flex items-center justify-between gap-4 rounded-lg border p-4"
+                                :class="telSettings[`${p}_manual_off`] ? 'border-red-200 bg-red-50' : 'border-gray-100 bg-white'"
+                            >
+                                <div>
+                                    <div class="text-sm font-medium" :class="telSettings[`${p}_manual_off`] ? 'text-red-700' : 'text-gray-900'">
+                                        {{ PLATFORMS[p] }} : {{ telSettings[`${p}_manual_off`] ? 'coupé' : 'actif' }}
+                                    </div>
+                                    <div class="text-xs text-gray-500">
+                                        {{ p === 'selfhosted' ? 'Couper envoie tout le trafic et les agents automatiques chez Voxnode.' : 'Couper envoie chez nous tout ce qui peut y aller.' }}
+                                    </div>
+                                </div>
+                                <Button
+                                    v-if="telSettings[`${p}_manual_off`]"
+                                    size="sm"
+                                    variant="outline"
+                                    :disabled="busy"
+                                    @click="setManualOff(p, false)"
+                                >
+                                    Rétablir
+                                </Button>
+                                <Button
+                                    v-else
+                                    size="sm"
+                                    variant="outline"
+                                    class="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                                    :disabled="busy || telSettings[`${p === 'selfhosted' ? 'voxnode' : 'selfhosted'}_manual_off`]"
+                                    :title="telSettings[`${p === 'selfhosted' ? 'voxnode' : 'selfhosted'}_manual_off`] ? 'Impossible : l\'autre plateforme est déjà coupée' : ''"
+                                    @click="setManualOff(p, true)"
+                                >
+                                    Couper
+                                </Button>
+                            </div>
+                        </div>
+
+                        <!-- Mode des agents -->
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">Mode des agents</h3>
+                            <p class="mb-3 mt-0.5 text-sm text-gray-500">
+                                Automatique : l'agent suit la répartition et les bascules. Sinon il reste toujours sur la même plateforme, même en cas de panne.
+                            </p>
+                            <div class="rounded-lg border border-gray-100 bg-white">
+                                <DataTable :columns="agentColumns" :rows="telAgents" :loading="loading" empty-message="Aucun agent">
+                                    <template #name="{ row }">
+                                        <span class="font-medium text-gray-900">{{ row.name || row.username }}</span>
+                                        <span v-if="row.name && row.username" class="ml-2 font-mono text-xs text-gray-400">{{ row.username }}</span>
+                                    </template>
+                                    <template #callcenter="{ value }"><span class="text-sm text-gray-600">{{ value || '—' }}</span></template>
+                                    <template #platform="{ row }"><span class="text-sm text-gray-600">{{ PLATFORMS[row.current_platform] ?? '—' }}</span></template>
+                                    <template #pin="{ row }">
+                                        <select
+                                            :value="row.pin ?? ''"
+                                            class="h-8 rounded-md border border-gray-200 bg-white px-2 text-sm"
+                                            :disabled="busy"
+                                            @change="setPin(row, $event.target.value)"
+                                        >
+                                            <option v-for="o in PIN_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                        </select>
+                                    </template>
+                                </DataTable>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ─── Accueil des appels entrants ───────────────────────── -->
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">Accueil des appels</h2>
+                    <p class="mb-4 mt-0.5 text-sm text-gray-500">
+                        Chaque appel entrant entend l'introduction une fois, puis patiente (attente forcée) avec l'audio d'attente en boucle,
+                        jusqu'à ce qu'un agent décroche. Les appelants prioritaires sautent l'attente forcée.
+                    </p>
+                    <div class="space-y-6">
+                        <SipSoundSequence
+                            title="1. Introduction"
+                            description="Jouée une fois au début de chaque appel, dans cet ordre."
+                            :names="sequences.intro"
+                            :library="sounds"
+                            empty-text="Pas d'introduction : l'appel passe directement à l'attente."
+                            :playing="playing"
+                            :busy="busy"
+                            :loading="loading"
+                            @change="(list, message) => saveSequence('intro', list, message)"
+                            @add="openSoundDialog('intro')"
+                            @toggle-play="toggleSound"
+                        />
+
+                        <!-- Attente forcée -->
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-900">2. Attente forcée</h3>
+                            <p class="mt-0.5 text-sm text-gray-500">
+                                Durée tirée au hasard entre ces deux valeurs à chaque appel. Les appelants prioritaires (blacklist, ou appel d'au moins
+                                45 s dans les 72 dernières heures) ne la subissent pas et passent en tête de file.
+                            </p>
+                            <form class="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-gray-100 bg-white p-4" @submit.prevent="saveWait">
+                                <div class="space-y-1.5">
+                                    <Label for="wait-min">Minimum (secondes)</Label>
+                                    <Input id="wait-min" v-model.number="waitMin" type="number" min="0" max="1800" class="h-9 w-32 tabular-nums" />
+                                </div>
+                                <div class="space-y-1.5">
+                                    <Label for="wait-max">Maximum (secondes)</Label>
+                                    <Input id="wait-max" v-model.number="waitMax" type="number" min="0" max="1800" class="h-9 w-32 tabular-nums" />
+                                </div>
+                                <p class="pb-2 text-sm text-gray-500">
+                                    <template v-if="!waitError">soit entre {{ minutes(waitMin) }} et {{ minutes(waitMax) }}</template>
+                                    <span v-else class="text-red-600">{{ waitError }}</span>
+                                </p>
+                                <div v-if="waitDirty" class="ml-auto flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetWait">Annuler</Button>
+                                    <Button type="submit" size="sm" :disabled="busy || !!waitError">Enregistrer</Button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <SipSoundSequence
+                            title="3. Audio d'attente"
+                            description="Joué en boucle pendant l'attente forcée, puis dans la file jusqu'à ce qu'un agent décroche."
+                            :names="sequences.hold"
+                            :library="sounds"
+                            empty-text="Aucun son : musique d'attente par défaut du serveur."
+                            :playing="playing"
+                            :busy="busy"
+                            :loading="loading"
+                            @change="(list, message) => saveSequence('hold', list, message)"
+                            @add="openSoundDialog('hold')"
+                            @toggle-play="toggleSound"
+                        />
+                    </div>
+                </div>
+
                 <!-- ─── Service interne ───────────────────────────────────── -->
                 <div>
-                    <div class="mb-3 flex items-end justify-between gap-4">
-                        <div>
-                            <h2 class="text-base font-semibold text-gray-900">Service interne</h2>
-                            <p class="mt-0.5 text-sm text-gray-500">
-                                Quand un appel est transféré vers le service interne ({{ INTERNAL_SERVICE_NUMBER }}), l'appelant entend ces sons l'un après l'autre, en boucle.
-                            </p>
-                        </div>
-                        <Button size="sm" variant="secondary" class="shrink-0" :disabled="busy || loading" @click="openSoundDialog">
-                            <Plus class="mr-1.5 h-4 w-4" />
-                            Ajouter un son
-                        </Button>
-                    </div>
-                    <div class="rounded-lg border border-gray-100 bg-white">
-                        <div v-if="loading" class="h-14 animate-pulse" />
-                        <div v-else-if="!playlist.length" class="px-4 py-8 text-center text-sm text-gray-500">
-                            Aucun son : l'appelant entend la musique d'attente par défaut.
-                        </div>
-                        <ol v-else>
-                            <li
-                                v-for="(name, i) in playlist"
-                                :key="`${name}-${i}`"
-                                class="flex items-center gap-3 border-b border-gray-50 px-4 py-2.5 text-sm last:border-b-0"
-                            >
-                                <span class="w-5 tabular-nums text-gray-400">{{ i + 1 }}.</span>
-                                <Button variant="ghost" size="sm" class="h-7 w-7 p-0" :title="playing === name ? 'Arrêter' : 'Écouter'" @click="toggleSound(name)">
-                                    <Pause v-if="playing === name" class="size-3.5" />
-                                    <Play v-else class="size-3.5" />
-                                </Button>
-                                <span class="flex-1 font-medium text-gray-900">{{ name }}</span>
-                                <span class="tabular-nums text-gray-500">{{ seconds(soundInfo(name)?.duration) }}</span>
-                                <div class="flex items-center gap-0.5">
-                                    <Button variant="ghost" size="sm" class="h-7 w-7 p-0 text-gray-400" :disabled="busy || i === 0" title="Jouer plus tôt" @click="move(i, i - 1)"><ArrowUp class="size-3.5" /></Button>
-                                    <Button variant="ghost" size="sm" class="h-7 w-7 p-0 text-gray-400" :disabled="busy || i === playlist.length - 1" title="Jouer plus tard" @click="move(i, i + 1)"><ArrowDown class="size-3.5" /></Button>
-                                    <Button variant="secondary" size="sm" class="ml-1 h-7 px-2 text-xs" :disabled="busy" @click="removeFromPlaylist(i)">Retirer</Button>
-                                </div>
-                            </li>
-                        </ol>
-                    </div>
+                    <h2 class="text-base font-semibold text-gray-900">Service interne</h2>
+                    <p class="mb-4 mt-0.5 text-sm text-gray-500">Appels transférés vers le service interne ({{ INTERNAL_SERVICE_NUMBER }}).</p>
+                    <SipSoundSequence
+                        title="Sons joués"
+                        description="L'appelant entend ces sons l'un après l'autre, en boucle."
+                        :names="sequences.internal"
+                        :library="sounds"
+                        empty-text="Aucun son : musique d'attente par défaut du serveur."
+                        :playing="playing"
+                        :busy="busy"
+                        :loading="loading"
+                        @change="(list, message) => saveSequence('internal', list, message)"
+                        @add="openSoundDialog('internal')"
+                        @toggle-play="toggleSound"
+                    />
 
-                    <!-- Fichiers envoyés mais plus joués -->
-                    <details v-if="unusedSounds.length" class="mt-3 text-sm">
+                    <!-- Fichiers envoyés mais joués nulle part -->
+                    <details v-if="unusedSounds.length" class="mt-4 text-sm">
                         <summary class="cursor-pointer text-gray-500 hover:text-gray-700">
-                            {{ unusedSounds.length }} fichier{{ unusedSounds.length > 1 ? 's' : '' }} envoyé{{ unusedSounds.length > 1 ? 's' : '' }} mais non joué{{ unusedSounds.length > 1 ? 's' : '' }}
+                            {{ unusedSounds.length }} fichier{{ unusedSounds.length > 1 ? 's' : '' }} envoyé{{ unusedSounds.length > 1 ? 's' : '' }} mais joué{{ unusedSounds.length > 1 ? 's' : '' }} nulle part
                         </summary>
                         <div class="mt-2 rounded-lg border border-gray-100 bg-white">
                             <div v-for="s in unusedSounds" :key="s.name" class="flex items-center gap-3 border-b border-gray-50 px-4 py-2 last:border-b-0">
@@ -377,7 +669,7 @@ function removeIp(ip) {
         <Dialog v-model:open="showSoundDialog">
             <DialogContent class="max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Ajouter un son au service interne</DialogTitle>
+                    <DialogTitle>Ajouter un son {{ SEQUENCE_LABELS[soundTarget] }}</DialogTitle>
                     <DialogDescription>Il sera joué en dernier. L'ordre se change ensuite avec les flèches.</DialogDescription>
                 </DialogHeader>
                 <form id="sound-form" class="space-y-4" @submit.prevent="addSound">
@@ -386,8 +678,8 @@ function removeIp(ip) {
                             <input v-model="soundSource" type="radio" value="upload" />
                             Nouveau fichier
                         </label>
-                        <label class="flex items-center gap-2" :class="unusedSounds.length ? 'cursor-pointer' : 'cursor-not-allowed text-gray-400'">
-                            <input v-model="soundSource" type="radio" value="existing" :disabled="!unusedSounds.length" />
+                        <label class="flex items-center gap-2" :class="addableSounds.length ? 'cursor-pointer' : 'cursor-not-allowed text-gray-400'">
+                            <input v-model="soundSource" type="radio" value="existing" :disabled="!addableSounds.length" />
                             Fichier déjà envoyé
                         </label>
                     </div>
@@ -407,7 +699,7 @@ function removeIp(ip) {
                     <div v-else class="space-y-2">
                         <Label for="existing-sound">Fichier</Label>
                         <select id="existing-sound" v-model="existingName" class="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm">
-                            <option v-for="s in unusedSounds" :key="s.name" :value="s.name">{{ s.name }} ({{ seconds(s.duration) }})</option>
+                            <option v-for="s in addableSounds" :key="s.name" :value="s.name">{{ s.name }} ({{ seconds(s.duration) }})</option>
                         </select>
                     </div>
                 </form>

@@ -52,4 +52,11 @@ return [
         'token' => env('SIP_API_TOKEN'),
     ],
 
+    // API téléphonie de voxnode118 : répartition du trafic entre notre serveur et Voxnode,
+    // santé de notre serveur, mode des agents. Appels côté serveur uniquement.
+    'telephony_api' => [
+        'url' => rtrim((string) env('TELEPHONY_API_URL'), '/'),
+        'token' => env('TELEPHONY_API_TOKEN'),
+    ],
+
 ];

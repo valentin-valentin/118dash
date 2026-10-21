@@ -51,7 +51,7 @@ class SipServerController extends Controller
         }
 
         $live = Cache::remember('sip-api:live', self::LIVE_TTL, fn () => $this->fetch(['health', 'agents', 'calls']));
-        $slow = Cache::remember('sip-api:slow', self::SLOW_TTL, fn () => $this->fetch(['trusted-ips', 'sounds']));
+        $slow = Cache::remember('sip-api:slow', self::SLOW_TTL, fn () => $this->fetch(['trusted-ips', 'sounds', 'welcome']));
 
         return response()->json([
             'configured' => true,
@@ -127,6 +127,33 @@ class SipServerController extends Controller
         $validated = $request->validate(['sounds' => 'present|array', 'sounds.*' => 'string']);
 
         return $this->write('put', '/internal-playlist', ['sounds' => array_values($validated['sounds'])], 'Playlist du service interne : '.(implode(', ', $validated['sounds']) ?: '(vide)'));
+    }
+
+    /**
+     * Accueil des appels entrants : introduction, audio d'attente, attente forcée (min / max).
+     * Seuls les champs envoyés sont modifiés.
+     */
+    public function updateWelcome(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'intro' => 'sometimes|array',
+            'intro.*' => 'string',
+            'hold' => 'sometimes|array',
+            'hold.*' => 'string',
+            'wait_min' => 'sometimes|integer|between:0,1800',
+            'wait_max' => 'sometimes|integer|between:0,1800|gte:wait_min',
+        ], [
+            'wait_max.gte' => 'La durée maximale doit être supérieure ou égale à la durée minimale.',
+            'wait_min.between' => 'Durée minimale : entre 0 et 1800 secondes.',
+            'wait_max.between' => 'Durée maximale : entre 0 et 1800 secondes.',
+        ]);
+        abort_if(empty($validated), 422, 'Aucun réglage à modifier.');
+
+        $summary = collect($validated)
+            ->map(fn ($value, $key) => $key.' = '.(is_array($value) ? '['.implode(', ', $value).']' : $value))
+            ->implode(', ');
+
+        return $this->write('put', '/welcome', $validated, "Accueil des appels : {$summary}");
     }
 
     /**
