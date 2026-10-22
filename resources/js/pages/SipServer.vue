@@ -6,7 +6,8 @@ import DataTable from '@/components/DataTable.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import { Button } from '@/components/ui/button'
-import { Settings } from 'lucide-vue-next'
+import { AlertTriangle, Settings } from 'lucide-vue-next'
+import { formatDay, isOpenNow, openingHoursProblem, todayKey } from '@/lib/openingHours'
 
 /**
  * Serveur SIP (Asterisk sip.118.ae) : supervision au quotidien.
@@ -170,7 +171,7 @@ const voxnodeState = computed(() => {
 })
 
 // ─── Régulateur (déplacements automatiques d'agents, toutes les 30 s) ─────────
-// Absent de l'API avant le déploiement de voxnode118 du 23/10 : la section reste masquée.
+// Absent de l'API avant le déploiement de voxnode118 (22/10 au soir) : la section reste masquée.
 const regulator = computed(() => tel.value?.regulator ?? null)
 const lastRun = computed(() => regulator.value?.last_run ?? null)
 // Pas de décision depuis 2 min : le régulateur ne tourne plus
@@ -180,6 +181,14 @@ const regulatorStale = computed(() => {
 })
 const regulatorEvents = computed(() => (regulator.value?.events ?? []).slice(0, 10))
 const simulateMode = computed(() => telSettings.value.pbx_failover_mode === 'simulate')
+
+// ─── Horaires d'ouverture : réglés dans l'API téléphonie, recopiés par le serveur SIP ─
+// Absents avant le déploiement de voxnode118 : rien n'est affiché.
+const hoursWanted = computed(() => telSettings.value?.opening_hours ?? null)
+const hoursApplied = computed(() => data.value?.['opening-hours']?.data ?? null)
+const hoursProblem = computed(() => openingHoursProblem(hoursWanted.value, hoursApplied.value))
+const todayHours = computed(() => (hoursWanted.value ? formatDay(hoursWanted.value[todayKey()]) : null))
+const openNow = computed(() => (hoursWanted.value && data.value ? isOpenNow(hoursWanted.value) : false))
 
 const formatTime = (v) => (v ? new Date(v).toLocaleTimeString('fr-FR') : '—')
 
@@ -233,6 +242,19 @@ const agentColumns = [
             </div>
 
             <template v-else>
+                <!-- Horaires d'ouverture -->
+                <div v-if="hoursWanted" class="space-y-2">
+                    <p v-if="hoursProblem" class="flex items-start gap-2 rounded-lg border p-3 text-sm" :class="hoursProblem.level === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-gray-100 bg-gray-50 text-gray-600'">
+                        <AlertTriangle v-if="hoursProblem.level === 'error'" class="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{{ hoursProblem.text }}</span>
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        Horaires aujourd'hui : <span class="font-medium text-gray-900">{{ todayHours }}</span>
+                        · {{ openNow ? 'ouvert en ce moment' : 'fermé en ce moment : les nouveaux appels sont refusés' }}
+                        · <Link href="/sip-server/settings" class="underline hover:text-gray-800">modifier</Link>
+                    </p>
+                </div>
+
                 <!-- KPI -->
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                     <StatCard

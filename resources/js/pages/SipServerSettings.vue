@@ -11,7 +11,9 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertTriangle, ArrowLeft, Pause, Play, Plus, Trash2 } from 'lucide-vue-next'
+import { Checkbox } from '@/components/ui/checkbox'
 import { xsrfToken } from '@/lib/csrf'
+import { DAYS, formatDay, markOpeningHoursSaved, openingHoursProblem, sameWeek, todayKey } from '@/lib/openingHours'
 
 /**
  * Configuration du serveur SIP (rarement modifiée) : service interne, IP des providers, infos du serveur.
@@ -43,7 +45,10 @@ async function load() {
     }
 }
 onMounted(load)
-onUnmounted(() => stopSound())
+onUnmounted(() => {
+    stopSound()
+    clearInterval(hoursTimer)
+})
 
 const configured = computed(() => data.value?.configured !== false)
 const version = computed(() => data.value?.health?.data?.version?.match(/Asterisk ([\d.]+)/)?.[1] ?? '—')
@@ -247,48 +252,132 @@ function toggleSelfhosted(enabled) {
     saveTelephony({ selfhosted_enabled: enabled }, enabled ? 'Notre serveur est activé' : 'Notre serveur est désactivé')
 }
 
-// Champs numériques : modifiés ici, enregistrés au clic
-// Réglages numériques (bornes = celles de l'API). Les réglages du régulateur n'apparaissent
-// qu'une fois présents dans l'API (déploiement de voxnode118 du 23/10).
-const NUMBER_FIELDS = {
+// Réglages numériques de l'API téléphonie (bornes = celles de l'API), modifiés ici et enregistrés au clic.
+// Un champ n'apparaît que si l'API le renvoie : régulateur et appelants prioritaires arrivent avec le déploiement de voxnode118.
+function numberForm(fields) {
+    const values = reactive({})
+    const edited = ref(false)
+    const available = computed(() => Object.keys(fields).filter((k) => telSettings.value && k in telSettings.value))
+    const differ = () => available.value.some((k) => Number(values[k]) !== telSettings.value[k])
+
+    // Tant qu'on ne les a pas modifiées ici, les valeurs suivent l'API
+    watch(telSettings, (st) => {
+        if (st && !edited.value) for (const k of available.value) values[k] = st[k]
+    }, { immediate: true })
+    watch(values, () => {
+        if (telSettings.value && differ()) edited.value = true
+    }, { deep: true })
+
+    const dirty = computed(() => edited.value && !!telSettings.value && differ())
+    const error = computed(() => {
+        for (const k of available.value) {
+            const v = Number(values[k])
+            if (!Number.isInteger(v) || v < fields[k].min || v > fields[k].max) return fields[k].error
+        }
+        return null
+    })
+    async function save() {
+        if (error.value) return
+        // Seulement les valeurs modifiées
+        const payload = Object.fromEntries(available.value.filter((k) => Number(values[k]) !== telSettings.value[k]).map((k) => [k, Number(values[k])]))
+        if (await saveTelephony(payload, 'Réglages enregistrés')) edited.value = false
+    }
+    function reset() {
+        for (const k of available.value) values[k] = telSettings.value[k]
+        edited.value = false
+    }
+    return reactive({ values, available, dirty, error, save, reset })
+}
+
+const traffic = numberForm({
     selfhosted_percent: { min: 0, max: 100, error: 'Part du trafic : un nombre entier entre 0 et 100.' },
     pbx_recovery_minutes: { min: 1, max: 120, error: 'Délai de retour : entre 1 et 120 minutes.' },
     regulator_max_moves: { min: 1, max: 10, error: 'Agents déplacés par cycle : entre 1 et 10.' },
     regulator_cooldown_minutes: { min: 0, max: 60, error: 'Délai entre deux déplacements : entre 0 et 60 minutes.' },
     regulator_wait_seconds: { min: 0, max: 600, error: "Seuil d'attente : entre 0 et 600 secondes." },
+})
+const hasRegulator = computed(() => traffic.available.includes('regulator_max_moves'))
+
+// Appelants prioritaires : blacklist, ou appel récent assez long (attente comprise) → pas d'attente forcée
+const priority = numberForm({
+    priority_min_duration: { min: 1, max: 3600, error: "Durée minimale d'appel : entre 1 et 3600 secondes." },
+    priority_window_hours: { min: 1, max: 720, error: 'Période : entre 1 et 720 heures.' },
+})
+const priorityText = computed(() => {
+    const st = telSettings.value
+    return st && 'priority_min_duration' in st
+        ? `appel d'au moins ${minutes(st.priority_min_duration)} dans les ${st.priority_window_hours} dernières heures`
+        : "appel d'au moins 45 s dans les 72 dernières heures"
+})
+
+// ─── Horaires d'ouverture ─────────────────────────────────────────────────────
+// La semaine entière est envoyée à chaque fois ; un jour fermé vaut null.
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+const hoursWanted = computed(() => telSettings.value?.opening_hours ?? null)
+const hoursApplied = computed(() => data.value?.['opening-hours']?.data ?? null)
+const hoursForm = reactive({}) // jour → { closed, open, close }
+const hoursEdited = ref(false)
+const today = todayKey()
+
+function fillHours(week) {
+    for (const [day] of DAYS) {
+        const h = week[day]
+        // Un jour fermé garde les dernières heures saisies, pour pouvoir le rouvrir d'un clic
+        hoursForm[day] = { closed: !h, open: h?.open ?? hoursForm[day]?.open ?? '08:00', close: h?.close ?? hoursForm[day]?.close ?? '20:00' }
+    }
 }
-const numbers = reactive({})
-const numbersEdited = ref(false)
-const availableNumbers = computed(() => Object.keys(NUMBER_FIELDS).filter((k) => telSettings.value && k in telSettings.value))
-const hasRegulator = computed(() => availableNumbers.value.includes('regulator_max_moves'))
-const numbersDiffer = () => availableNumbers.value.some((k) => Number(numbers[k]) !== telSettings.value[k])
-
-watch(telSettings, (st) => {
-    if (st && !numbersEdited.value) for (const k of availableNumbers.value) numbers[k] = st[k]
+watch(hoursWanted, (w) => {
+    if (w && !hoursEdited.value) fillHours(w)
 }, { immediate: true })
-watch(numbers, () => {
-    if (telSettings.value && numbersDiffer()) numbersEdited.value = true
-}, { deep: true })
 
-const numbersDirty = computed(() => numbersEdited.value && !!telSettings.value && numbersDiffer())
-const numbersError = computed(() => {
-    for (const k of availableNumbers.value) {
-        const v = Number(numbers[k])
-        const { min, max, error } = NUMBER_FIELDS[k]
-        if (!Number.isInteger(v) || v < min || v > max) return error
+const hoursPayload = computed(() => Object.fromEntries(DAYS.map(([day]) => [day, hoursForm[day]?.closed ? null : { open: hoursForm[day]?.open, close: hoursForm[day]?.close }])))
+watch(hoursForm, () => {
+    if (hoursWanted.value && !sameWeek(hoursPayload.value, hoursWanted.value)) hoursEdited.value = true
+}, { deep: true })
+const hoursDirty = computed(() => hoursEdited.value && !!hoursWanted.value && !sameWeek(hoursPayload.value, hoursWanted.value))
+const dayChanged = (day) => !!hoursWanted.value && formatDay(hoursPayload.value[day]) !== formatDay(hoursWanted.value[day])
+const hoursError = computed(() => {
+    for (const [day, label] of DAYS) {
+        const h = hoursPayload.value[day]
+        if (!h) continue
+        if (!TIME.test(h.open ?? '') || !TIME.test(h.close ?? '')) return `${label} : heures au format HH:MM (23:59 au plus tard).`
+        if (h.open >= h.close) return `${label} : l'ouverture doit précéder la fermeture.`
     }
     return null
 })
-async function saveNumbers() {
-    if (numbersError.value) return
-    // Seulement les valeurs modifiées
-    const payload = Object.fromEntries(availableNumbers.value.filter((k) => Number(numbers[k]) !== telSettings.value[k]).map((k) => [k, Number(numbers[k])]))
-    if (await saveTelephony(payload, 'Réglages enregistrés')) numbersEdited.value = false
+
+async function saveHours() {
+    if (hoursError.value) return
+    const changed = DAYS.filter(([day]) => dayChanged(day))
+    const message = changed.length === 1 ? `${changed[0][1]} : ${formatDay(hoursPayload.value[changed[0][0]])}` : 'Horaires enregistrés'
+    const ok = await run(async () => {
+        await send('PUT', '/data/telephony/settings', { opening_hours: hoursPayload.value })
+        markOpeningHoursSaved()
+    }, `${message}, appliqué par le serveur SIP sous 2 minutes`)
+    if (ok) {
+        hoursEdited.value = false
+        watchHoursCopy()
+    }
 }
-function resetNumbers() {
-    for (const k of availableNumbers.value) numbers[k] = telSettings.value[k]
-    numbersEdited.value = false
+function resetHours() {
+    fillHours(hoursWanted.value)
+    hoursEdited.value = false
 }
+
+// Copie sur le serveur SIP : relue toutes les 15 s tant qu'elle n'a pas suivi l'enregistrement
+const now = ref(Date.now())
+const hoursProblem = computed(() => openingHoursProblem(hoursWanted.value, hoursApplied.value, now.value))
+let hoursTimer = null
+function watchHoursCopy() {
+    clearInterval(hoursTimer)
+    hoursTimer = setInterval(async () => {
+        now.value = Date.now()
+        await load()
+        if (hoursProblem.value?.level !== 'pending') clearInterval(hoursTimer)
+    }, 15000)
+}
+const appliedDay = (day) => (hoursApplied.value?.days ? formatDay(hoursApplied.value.days[day]) : '—')
+const appliedDiffers = (day) => !!hoursWanted.value && appliedDay(day) !== formatDay(hoursWanted.value[day])
 
 // Coupures d'urgence. L'API refuse de couper les deux plateformes, ou Voxnode quand notre serveur est désactivé.
 function cutBlockedReason(platform) {
@@ -396,6 +485,67 @@ function removeIp(ip) {
             </div>
 
             <template v-else>
+                <!-- ─── Horaires d'ouverture (voxnode118, recopiés par le serveur SIP) ─ -->
+                <div v-if="hoursWanted">
+                    <h2 class="text-base font-semibold text-gray-900">Horaires d'ouverture</h2>
+                    <p class="mb-4 mt-0.5 text-sm text-gray-500">
+                        Heure de Paris, de l'ouverture incluse à la fermeture exclue. En dehors, les nouveaux appels sont refusés sans décrocher
+                        (l'appelant ne paie rien) ; un appel en cours n'est jamais coupé. Appliqué par le serveur SIP sous 2 minutes.
+                    </p>
+
+                    <div
+                        v-if="hoursProblem"
+                        class="mb-4 flex items-start gap-3 rounded-lg border p-4 text-sm"
+                        :class="hoursProblem.level === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-gray-100 bg-gray-50 text-gray-600'"
+                    >
+                        <AlertTriangle v-if="hoursProblem.level === 'error'" class="mt-0.5 h-4 w-4 shrink-0" />
+                        <p>{{ hoursProblem.text }}</p>
+                    </div>
+
+                    <form class="rounded-lg border border-gray-100 bg-white" @submit.prevent="saveHours">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-gray-100 text-left text-xs uppercase tracking-wide text-gray-500">
+                                        <th class="px-4 py-2 font-medium">Jour</th>
+                                        <th class="px-4 py-2 font-medium">Fermé</th>
+                                        <th class="px-4 py-2 font-medium">Ouverture</th>
+                                        <th class="px-4 py-2 font-medium">Fermeture</th>
+                                        <th class="px-4 py-2 text-right font-medium">Appliqué par le serveur SIP</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="[day, label] in DAYS" :key="day" class="border-b border-gray-50 last:border-b-0" :class="dayChanged(day) ? 'bg-amber-50/60' : ''">
+                                        <td class="whitespace-nowrap px-4 py-2">
+                                            <span class="font-medium text-gray-900">{{ label }}</span>
+                                            <span v-if="day === today" class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">aujourd'hui</span>
+                                        </td>
+                                        <td class="px-4 py-2">
+                                            <Checkbox :model-value="hoursForm[day].closed" :aria-label="`${label} fermé`" @update:model-value="hoursForm[day].closed = !!$event" />
+                                        </td>
+                                        <td class="px-4 py-2">
+                                            <Input v-model="hoursForm[day].open" type="time" class="h-9 w-28 tabular-nums" :disabled="hoursForm[day].closed" :aria-label="`${label}, ouverture`" />
+                                        </td>
+                                        <td class="px-4 py-2">
+                                            <Input v-model="hoursForm[day].close" type="time" max="23:59" class="h-9 w-28 tabular-nums" :disabled="hoursForm[day].closed" :aria-label="`${label}, fermeture`" />
+                                        </td>
+                                        <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums" :class="appliedDiffers(day) ? 'font-medium text-red-600' : 'text-gray-500'">
+                                            {{ appliedDay(day) }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-if="hoursError || hoursDirty" class="flex items-center justify-end gap-3 border-t border-gray-100 px-4 py-3">
+                            <span v-if="hoursError" class="mr-auto text-xs text-red-600">{{ hoursError }}</span>
+                            <template v-if="hoursDirty">
+                                <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetHours">Annuler</Button>
+                                <Button type="submit" size="sm" :disabled="busy || !!hoursError">Enregistrer</Button>
+                            </template>
+                        </div>
+                    </form>
+                </div>
+
                 <!-- ─── Répartition du trafic (voxnode118) ────────────────── -->
                 <div v-if="telephony?.configured">
                     <h2 class="text-base font-semibold text-gray-900">Répartition du trafic</h2>
@@ -415,19 +565,19 @@ function removeIp(ip) {
                                 <Switch :checked="telSettings.selfhosted_enabled" :disabled="busy" @update:checked="toggleSelfhosted" />
                             </div>
                             <!-- Part du trafic et délai de retour -->
-                            <form class="space-y-4 px-4 py-3" @submit.prevent="saveNumbers">
+                            <form class="space-y-4 px-4 py-3" @submit.prevent="traffic.save()">
                                 <div class="flex flex-wrap items-end gap-4">
                                     <div class="space-y-1.5">
                                         <Label for="tel-percent">Part du trafic chez nous (%)</Label>
-                                        <Input id="tel-percent" v-model.number="numbers.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-32 tabular-nums" />
+                                        <Input id="tel-percent" v-model.number="traffic.values.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-32 tabular-nums" />
                                     </div>
                                     <div class="space-y-1.5">
                                         <Label for="tel-recovery">Retour après une panne (min)</Label>
-                                        <Input id="tel-recovery" v-model.number="numbers.pbx_recovery_minutes" type="number" min="1" max="120" class="h-9 w-32 tabular-nums" />
+                                        <Input id="tel-recovery" v-model.number="traffic.values.pbx_recovery_minutes" type="number" min="1" max="120" class="h-9 w-32 tabular-nums" />
                                     </div>
                                     <p class="pb-2 text-xs text-gray-500">
                                         Baisser la part : on ne garde que la part demandée, les agents partent progressivement.
-                                        Après une panne, retour après {{ numbers.pbx_recovery_minutes }} min de bonne santé.
+                                        Après une panne, retour après {{ traffic.values.pbx_recovery_minutes }} min de bonne santé.
                                     </p>
                                 </div>
 
@@ -438,27 +588,27 @@ function removeIp(ip) {
                                     <div class="flex flex-wrap items-end gap-4">
                                         <div class="space-y-1.5">
                                             <Label for="reg-moves">Agents déplacés par cycle</Label>
-                                            <Input id="reg-moves" v-model.number="numbers.regulator_max_moves" type="number" min="1" max="10" class="h-9 w-32 tabular-nums" />
+                                            <Input id="reg-moves" v-model.number="traffic.values.regulator_max_moves" type="number" min="1" max="10" class="h-9 w-32 tabular-nums" />
                                         </div>
                                         <div class="space-y-1.5">
                                             <Label for="reg-cooldown">Repos entre deux déplacements (min)</Label>
-                                            <Input id="reg-cooldown" v-model.number="numbers.regulator_cooldown_minutes" type="number" min="0" max="60" class="h-9 w-32 tabular-nums" />
+                                            <Input id="reg-cooldown" v-model.number="traffic.values.regulator_cooldown_minutes" type="number" min="0" max="60" class="h-9 w-32 tabular-nums" />
                                         </div>
                                         <div class="space-y-1.5">
                                             <Label for="reg-wait">Attente qui déclenche un renfort (s)</Label>
-                                            <Input id="reg-wait" v-model.number="numbers.regulator_wait_seconds" type="number" min="0" max="600" class="h-9 w-32 tabular-nums" />
+                                            <Input id="reg-wait" v-model.number="traffic.values.regulator_wait_seconds" type="number" min="0" max="600" class="h-9 w-32 tabular-nums" />
                                         </div>
                                         <p class="pb-2 text-xs text-gray-500">
-                                            Un client qui attend plus de {{ numbers.regulator_wait_seconds }} s dans notre file compte comme un besoin d'agents.
+                                            Un client qui attend plus de {{ traffic.values.regulator_wait_seconds }} s dans notre file compte comme un besoin d'agents.
                                         </p>
                                     </div>
                                 </div>
 
-                                <div v-if="numbersError || numbersDirty" class="flex items-center justify-end gap-3">
-                                    <span v-if="numbersError" class="mr-auto text-xs text-red-600">{{ numbersError }}</span>
-                                    <template v-if="numbersDirty">
-                                        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetNumbers">Annuler</Button>
-                                        <Button type="submit" size="sm" :disabled="busy || !!numbersError">Enregistrer</Button>
+                                <div v-if="traffic.error || traffic.dirty" class="flex items-center justify-end gap-3">
+                                    <span v-if="traffic.error" class="mr-auto text-xs text-red-600">{{ traffic.error }}</span>
+                                    <template v-if="traffic.dirty">
+                                        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="traffic.reset()">Annuler</Button>
+                                        <Button type="submit" size="sm" :disabled="busy || !!traffic.error">Enregistrer</Button>
                                     </template>
                                 </div>
                             </form>
@@ -562,8 +712,8 @@ function removeIp(ip) {
                         <div>
                             <h3 class="text-sm font-semibold text-gray-900">2. Attente forcée</h3>
                             <p class="mt-0.5 text-sm text-gray-500">
-                                Durée tirée au hasard entre ces deux valeurs à chaque appel. Les appelants prioritaires (blacklist, ou appel d'au moins
-                                45 s dans les 72 dernières heures) ne la subissent pas et passent en tête de file.
+                                Durée tirée au hasard entre ces deux valeurs à chaque appel. Les appelants prioritaires (blacklist, ou
+                                {{ priorityText }}) ne la subissent pas et passent en tête de file.
                             </p>
                             <form class="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-gray-100 bg-white p-4" @submit.prevent="saveWait">
                                 <div class="space-y-1.5">
@@ -581,6 +731,26 @@ function removeIp(ip) {
                                 <div v-if="waitDirty" class="ml-auto flex gap-2">
                                     <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetWait">Annuler</Button>
                                     <Button type="submit" size="sm" :disabled="busy || !!waitError">Enregistrer</Button>
+                                </div>
+                            </form>
+
+                            <!-- Appelants prioritaires (API téléphonie) -->
+                            <form v-if="priority.available.length" class="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-gray-100 bg-white p-4" @submit.prevent="priority.save()">
+                                <div class="space-y-1.5">
+                                    <Label for="priority-duration">Appel prioritaire dès (secondes)</Label>
+                                    <Input id="priority-duration" v-model.number="priority.values.priority_min_duration" type="number" min="1" max="3600" class="h-9 w-32 tabular-nums" />
+                                </div>
+                                <div class="space-y-1.5">
+                                    <Label for="priority-window">Sur les dernières (heures)</Label>
+                                    <Input id="priority-window" v-model.number="priority.values.priority_window_hours" type="number" min="1" max="720" class="h-9 w-32 tabular-nums" />
+                                </div>
+                                <p class="pb-2 text-sm text-gray-500">
+                                    <span v-if="priority.error" class="text-red-600">{{ priority.error }}</span>
+                                    <template v-else>Durée totale de l'appel, attente comprise.</template>
+                                </p>
+                                <div v-if="priority.dirty" class="ml-auto flex gap-2">
+                                    <Button type="button" variant="outline" size="sm" :disabled="busy" @click="priority.reset()">Annuler</Button>
+                                    <Button type="submit" size="sm" :disabled="busy || !!priority.error">Enregistrer</Button>
                                 </div>
                             </form>
                         </div>

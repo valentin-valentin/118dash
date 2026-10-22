@@ -50,7 +50,7 @@ class SipServerController extends Controller
             return response()->json(['configured' => false]);
         }
 
-        $live = Cache::remember('sip-api:live', self::LIVE_TTL, fn () => $this->fetch(['health', 'agents', 'calls']));
+        $live = Cache::remember('sip-api:live', self::LIVE_TTL, fn () => $this->fetch(['health', 'agents', 'calls', 'opening-hours']));
         $slow = Cache::remember('sip-api:slow', self::SLOW_TTL, fn () => $this->fetch(['trusted-ips', 'sounds', 'welcome']));
 
         return response()->json([
