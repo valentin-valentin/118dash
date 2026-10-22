@@ -329,14 +329,19 @@ const sequences = computed(() => ({
     internal: data.value?.sounds?.data?.playlist ?? [],
     intro: welcome.value?.intro ?? [],
     hold: welcome.value?.hold ?? [],
+    transfer: welcome.value?.transfer_announcement ?? [],
 }))
+// Message avant transfert : affiché seulement si le serveur SIP le connaît
+const hasTransferAnnouncement = computed(() => !!welcome.value && 'transfer_announcement' in welcome.value)
 // Un fichier ne peut être supprimé que s'il n'est joué nulle part
 const usedNames = computed(() => new Set(Object.values(sequences.value).flat()))
 const unusedSounds = computed(() => sounds.value.filter((s) => !usedNames.value.has(s.name)))
-const SEQUENCE_LABELS = { internal: 'au service interne', intro: "à l'introduction", hold: "à l'audio d'attente" }
+const SEQUENCE_LABELS = { internal: 'au service interne', intro: "à l'introduction", hold: "à l'audio d'attente", transfer: 'au message avant transfert' }
+// Nom de chaque liste dans l'API /welcome
+const WELCOME_KEYS = { intro: 'intro', hold: 'hold', transfer: 'transfer_announcement' }
 
 function sequenceRequest(target, list) {
-    return target === 'internal' ? send('PUT', '/data/sip/playlist', { sounds: list }) : send('PUT', '/data/sip/welcome', { [target]: list })
+    return target === 'internal' ? send('PUT', '/data/sip/playlist', { sounds: list }) : send('PUT', '/data/sip/welcome', { [WELCOME_KEYS[target]]: list })
 }
 const saveSequence = (target, list, success) => run(() => sequenceRequest(target, list), success)
 
@@ -741,7 +746,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <section class="rounded-lg border border-gray-100 bg-white">
                             <header class="border-b border-gray-100 px-5 py-3">
                                 <h2 class="font-semibold text-gray-900">Parcours de l'appelant</h2>
-                                <p class="text-sm text-gray-500">Ce qu'entend chaque appel entrant, dans l'ordre, jusqu'à ce qu'un agent décroche.</p>
+                                <p class="text-sm text-gray-500">Ce qu'entend chaque appel entrant, dans l'ordre : jusqu'à ce qu'un agent décroche, puis s'il est transféré.</p>
                             </header>
                             <ol class="px-5 py-2">
                                 <li class="relative border-l border-gray-200 pb-6 pl-6 pt-3">
@@ -776,7 +781,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                         </span>
                                     </form>
                                 </li>
-                                <li class="relative pb-3 pl-6 pt-1">
+                                <li class="relative pb-6 pl-6 pt-1" :class="hasTransferAnnouncement && 'border-l border-gray-200'">
                                     <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">3</span>
                                     <SipSoundSequence
                                         title="Audio d'attente"
@@ -788,6 +793,21 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                         :busy="busy"
                                         @change="(list, message) => saveSequence('hold', list, message)"
                                         @add="openSoundDialog('hold')"
+                                        @toggle-play="toggleSound"
+                                    />
+                                </li>
+                                <li v-if="hasTransferAnnouncement" class="relative pb-3 pl-6 pt-1">
+                                    <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">4</span>
+                                    <SipSoundSequence
+                                        title="Message avant transfert"
+                                        description="Joué en entier au client quand l'agent transfère vers une marque (l'agent est libéré tout de suite), puis transfert. Activé par marque (colonne transfer_announcement), désactivé pour le service interne."
+                                        :names="sequences.transfer"
+                                        :library="sounds"
+                                        empty-text="Aucun message : le transfert est immédiat."
+                                        :playing="playing"
+                                        :busy="busy"
+                                        @change="(list, message) => saveSequence('transfer', list, message)"
+                                        @add="openSoundDialog('transfer')"
                                         @toggle-play="toggleSound"
                                     />
                                 </li>

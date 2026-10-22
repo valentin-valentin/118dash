@@ -130,7 +130,7 @@ class SipServerController extends Controller
     }
 
     /**
-     * Accueil des appels entrants : introduction, audio d'attente, attente forcée (min / max).
+     * Accueil des appels entrants : introduction, audio d'attente, attente forcée (min / max), message avant transfert.
      * Seuls les champs envoyés sont modifiés.
      */
     public function updateWelcome(Request $request): JsonResponse
@@ -140,6 +140,9 @@ class SipServerController extends Controller
             'intro.*' => 'string',
             'hold' => 'sometimes|array',
             'hold.*' => 'string',
+            // Message joué au client avant un transfert vers une marque
+            'transfer_announcement' => 'sometimes|array',
+            'transfer_announcement.*' => 'string',
             'wait_min' => 'sometimes|integer|between:0,1800',
             'wait_max' => 'sometimes|integer|between:0,1800|gte:wait_min',
         ], [
