@@ -7,6 +7,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, ArrowRightLeft, Settings } from 'lucide-vue-next'
 import { hoursHeadline, openingHoursProblem } from '@/lib/openingHours'
+import { xsrfToken } from '@/lib/csrf'
 
 /**
  * Serveur SIP : ce qui se passe en ce moment, lisible d'un coup d'œil.
@@ -14,7 +15,7 @@ import { hoursHeadline, openingHoursProblem } from '@/lib/openingHours'
  *   2. Alertes : uniquement quand quelque chose ne va pas
  *   3. En ce moment : appels (conversation, attente, transferts) et agents (en ligne, libres, répartition)
  *   4. Appels en cours (notre serveur) et agents en ligne, côte à côte
- *   5. Régulateur, replié
+ *   5. Replié en bas : régulateur, mode des agents (forcer une plateforme), dernières pannes
  * Le technique et le rare (version, stockage, pannes passées, mode des agents) est dans Configuration.
  *
  * « Notre serveur » = sip.118.ae ; « Voxnode » = l'autre plateforme. Agents, répartition et régulateur
@@ -269,6 +270,56 @@ const agentFigures = computed(() => [
     { label: 'Trafic chez nous', ...shareFigure.value },
 ])
 
+// ─── 6. Mode des agents : forcer une plateforme (tous les agents, y compris hors ligne) ─
+const PIN_OPTIONS = [
+    { value: '', label: 'Automatique' },
+    { value: 'selfhosted', label: 'Toujours notre serveur' },
+    { value: 'voxnode', label: 'Toujours Voxnode' },
+]
+const modesOpen = ref(false)
+const pinBusy = ref(false)
+const pinMessage = ref(null) // { ok, text }
+const modeSearch = ref('')
+const allAgents = computed(() => {
+    const q = modeSearch.value.trim().toLowerCase()
+    return [...(telAgents.value ?? [])]
+        .filter((a) => !q || [a.username, a.name, a.callcenter].some((v) => v?.toLowerCase().includes(q)))
+        .sort(byName)
+})
+const pinnedCount = computed(() => (telAgents.value ?? []).filter((a) => a.pin).length)
+const modeColumns = [
+    { key: 'name', label: 'Agent' },
+    { key: 'callcenter', label: 'Centre' },
+    { key: 'online', label: 'En ligne' },
+    { key: 'platform', label: 'Plateforme actuelle' },
+    { key: 'pin', label: 'Mode' },
+]
+async function setPin(agent, value) {
+    pinBusy.value = true
+    try {
+        const res = await fetch(`/data/telephony/agents/${agent.id}`, {
+            method: 'PUT',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrfToken() },
+            body: JSON.stringify({ pin: value || null }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.message || `Erreur HTTP ${res.status}`)
+        pinMessage.value = { ok: true, text: `${agent.username} : ${PIN_OPTIONS.find((o) => o.value === value)?.label}` }
+        await load()
+    } catch (e) {
+        pinMessage.value = { ok: false, text: e.message }
+    } finally {
+        pinBusy.value = false
+    }
+}
+// Lien « Mode des agents » depuis la Configuration : ouvre la section
+onMounted(() => {
+    if (window.location.hash === '#modes') modesOpen.value = true
+})
+
+// ─── 7. Dernières pannes de notre serveur (détectées par voxnode118) ─────────
+const healthEvents = computed(() => [...(tel.value?.health?.events ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 10))
+
 // ─── 5. Régulateur ────────────────────────────────────────────────────────────
 const regulatorEvents = computed(() => (regulator.value?.events ?? []).slice(0, 10))
 const sinceLastRun = computed(() => {
@@ -449,6 +500,55 @@ const sinceLastRun = computed(() => {
                         </ul>
                         <p v-else class="text-gray-400">Aucun déplacement récent</p>
                     </div>
+                </details>
+
+                <!-- Mode des agents : forcer une plateforme (tous les agents) -->
+                <details v-if="telAgents" id="modes" :open="modesOpen" class="scroll-mt-6 rounded-lg border border-gray-100 bg-white text-sm" @toggle="modesOpen = $event.target.open">
+                    <summary class="flex cursor-pointer items-center gap-3 px-4 py-2.5">
+                        <span class="font-semibold text-gray-900">Mode des agents</span>
+                        <span class="text-gray-600">{{ pinnedCount ? `${pinnedCount} forcé${pinnedCount > 1 ? 's' : ''} sur une plateforme` : 'tous automatiques' }}</span>
+                    </summary>
+                    <div class="border-t border-gray-100">
+                        <p class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 text-xs text-gray-500">
+                            <input v-model="modeSearch" type="search" placeholder="Agent, nom ou centre…" class="h-8 w-56 rounded-md border border-gray-200 px-2 text-sm text-gray-900" />
+                            Automatique : l'agent suit la répartition et les bascules. Forcé : il reste sur la même plateforme, même en cas de panne.
+                            <span v-if="pinMessage" :class="pinMessage.ok ? 'text-gray-900' : 'text-red-600'">{{ pinMessage.text }}</span>
+                        </p>
+                        <DataTable :columns="modeColumns" :rows="allAgents" :loading="loading" empty-message="Aucun agent">
+                            <template #name="{ row }">
+                                <span class="font-medium text-gray-900">{{ row.username }}</span>
+                                <span v-if="row.name" class="ml-2 text-xs text-gray-400">{{ row.name }}</span>
+                            </template>
+                            <template #callcenter="{ value }"><span class="text-gray-600">{{ value || '—' }}</span></template>
+                            <template #online="{ value }"><span :class="value ? 'text-gray-900' : 'text-gray-400'">{{ value ? 'En ligne' : 'Hors ligne' }}</span></template>
+                            <template #platform="{ row }">
+                                <span class="text-gray-600">{{ PLATFORMS[row.current_platform] ?? '—' }}</span>
+                                <span v-if="moving(row)" class="ml-1 text-amber-700">→ {{ PLATFORMS[row.wanted_platform] }}</span>
+                                <span v-if="row.switch_failed" class="ml-2 text-xs text-red-600">bascule ratée le {{ formatDateTime(row.switch_failed_at) }}</span>
+                            </template>
+                            <template #pin="{ row }">
+                                <select :value="row.pin ?? ''" class="h-8 rounded-md border border-gray-200 bg-white px-2 text-sm" :disabled="pinBusy" @change="setPin(row, $event.target.value)">
+                                    <option v-for="o in PIN_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                </select>
+                            </template>
+                        </DataTable>
+                    </div>
+                </details>
+
+                <!-- Dernières pannes : historique, replié -->
+                <details v-if="healthEvents.length" class="rounded-lg border border-gray-100 bg-white text-sm">
+                    <summary class="flex cursor-pointer items-center gap-3 px-4 py-2.5">
+                        <span class="font-semibold text-gray-900">Dernières pannes de notre serveur</span>
+                        <span class="text-gray-600">{{ healthEvents.length }} événement{{ healthEvents.length > 1 ? 's' : '' }} · dernier le {{ formatDateTime(healthEvents[0].at) }}</span>
+                    </summary>
+                    <ul class="space-y-1 border-t border-gray-100 px-4 py-3">
+                        <li v-for="(e, i) in healthEvents" :key="i" class="flex gap-3">
+                            <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
+                            <span :class="e.state === 'down' ? 'text-red-600' : 'text-gray-700'">{{ e.state === 'down' ? 'Panne' : 'Rétabli' }}</span>
+                            <span class="min-w-0 truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
+                            <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
+                        </li>
+                    </ul>
                 </details>
             </template>
         </div>

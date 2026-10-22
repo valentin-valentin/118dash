@@ -131,4 +131,30 @@
     body {
         @apply bg-background text-foreground;
     }
+
+    /* Tailwind v4 ne met plus de curseur main sur les boutons : tout ce qui est cliquable l'a,
+       sauf quand c'est désactivé. En couche base, un cursor-* explicite sur un élément l'emporte. */
+    button,
+    [role='button'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='tab'],
+    [role='option'],
+    [role='menuitem'],
+    a[href],
+    summary,
+    select,
+    label[for],
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='file'],
+    input[type='range'],
+    ::file-selector-button {
+        cursor: pointer;
+    }
+    :disabled,
+    [aria-disabled='true'],
+    [data-disabled] {
+        cursor: not-allowed;
+    }
 }
