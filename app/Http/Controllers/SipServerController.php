@@ -100,9 +100,9 @@ class SipServerController extends Controller
     {
         $request->validate([
             'file' => 'required|file|max:51200',
-            'name' => ['nullable', 'string', 'regex:/^[a-z0-9_-]+$/'],
+            // Facultatif : le serveur SIP le nettoie et ajoute un suffixe unique (le nom final est dans sa réponse)
+            'name' => 'nullable|string|max:100',
         ], [
-            'name.regex' => 'Nom : lettres minuscules, chiffres, - et _ uniquement.',
             'file.max' => 'Fichier trop gros (50 Mo maximum).',
         ]);
         abort_unless($this->configured(), 404);

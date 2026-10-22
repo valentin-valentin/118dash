@@ -137,7 +137,11 @@ function closeConfirm(answer) {
 // Un champ absent de l'API (avant un déploiement de voxnode118) n'est pas affiché.
 const saveTelephony = (payload, success) => run(() => send('PUT', '/data/telephony/settings', payload), success)
 
-function numberForm(fields) {
+// Un champ vidé n'est pas un zéro : Number('') vaut 0, ce qui renverrait par exemple tous nos numéros chez Voxnode
+const isEmpty = (v) => v === '' || v === null || v === undefined
+
+// confirmBefore(payload) : confirmation éventuelle avant l'envoi (Promise<boolean>)
+function numberForm(fields, confirmBefore = null) {
     const values = reactive({})
     const edited = ref(false)
     const available = computed(() => Object.keys(fields).filter((k) => telSettings.value && k in telSettings.value))
@@ -154,13 +158,14 @@ function numberForm(fields) {
     const error = computed(() => {
         for (const k of available.value) {
             const v = Number(values[k])
-            if (!Number.isInteger(v) || v < fields[k].min || v > fields[k].max) return fields[k].error
+            if (isEmpty(values[k]) || !Number.isInteger(v) || v < fields[k].min || v > fields[k].max) return fields[k].error
         }
         return null
     })
     async function save() {
         if (error.value) return
         const payload = Object.fromEntries(available.value.filter((k) => Number(values[k]) !== telSettings.value[k]).map((k) => [k, Number(values[k])]))
+        if (confirmBefore && !(await confirmBefore(payload))) return
         if (await saveTelephony(payload, 'Réglages enregistrés')) edited.value = false
     }
     function reset() {
@@ -170,10 +175,22 @@ function numberForm(fields) {
     return reactive({ values, available, dirty, error, save, reset })
 }
 
-const trafficForm = numberForm({
-    selfhosted_percent: { min: 0, max: 100, error: 'Part des nouveaux numéros : un nombre entier entre 0 et 100.' },
-    pbx_recovery_minutes: { min: 1, max: 120, error: 'Retour après une panne : entre 1 et 120 minutes.' },
-})
+const trafficForm = numberForm(
+    {
+        selfhosted_percent: { min: 0, max: 100, error: 'Part des nouveaux numéros : un nombre entier entre 0 et 100.' },
+        pbx_recovery_minutes: { min: 1, max: 120, error: 'Retour après une panne : entre 1 et 120 minutes.' },
+    },
+    // Baisser la part renvoie immédiatement des numéros chez Voxnode : on confirme
+    (payload) =>
+        'selfhosted_percent' in payload && payload.selfhosted_percent < telSettings.value.selfhosted_percent
+            ? ask({
+                  title: `Passer de ${telSettings.value.selfhosted_percent} % à ${payload.selfhosted_percent} % ?`,
+                  body: 'Les numéros chez nous au-delà du nouveau pourcentage repartent immédiatement chez Voxnode ; les agents suivent progressivement.',
+                  confirm: 'Baisser la part',
+                  danger: true,
+              })
+            : Promise.resolve(true),
+)
 const priorityForm = numberForm({
     priority_min_duration: { min: 1, max: 3600, error: "Durée d'appel : entre 1 et 3600 secondes." },
     priority_window_hours: { min: 1, max: 720, error: 'Période : entre 1 et 720 heures.' },
@@ -235,7 +252,7 @@ async function setVoxnodeCut(cut) {
                   confirm: 'Couper Voxnode',
                   danger: true,
               }
-            : { title: 'Rétablir Voxnode ?', body: 'Notre serveur ne garde que sa part réglée : les autres numéros et agents repartent progressivement chez Voxnode.', confirm: 'Rétablir' },
+            : { title: 'Rétablir Voxnode ?', body: 'Notre serveur ne garde que sa part réglée : les autres numéros repartent immédiatement chez Voxnode, les agents progressivement.', confirm: 'Rétablir' },
     )
     if (ok) saveTelephony({ voxnode_manual_off: cut }, cut ? 'Voxnode est coupé' : 'Voxnode est rétabli')
 }
@@ -368,10 +385,6 @@ function openSoundDialog(target) {
 }
 function onFile(e) {
     soundFile.value = e.target.files[0] ?? null
-    // Nom proposé à partir du fichier (le serveur fait pareil s'il est vide)
-    if (soundFile.value && !soundName.value) {
-        soundName.value = soundFile.value.name.replace(/\.[^.]+$/, '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')
-    }
 }
 const canAddSound = computed(() => (soundSource.value === 'upload' ? !!soundFile.value : !!existingName.value))
 async function addSound() {
@@ -382,6 +395,7 @@ async function addSound() {
             const form = new FormData()
             form.append('file', soundFile.value)
             if (soundName.value) form.append('name', soundName.value)
+            // Le serveur SIP choisit le nom final (nettoyé + suffixe unique) : on reprend celui de sa réponse
             name = (await send('POST', '/data/sip/sounds', form)).sound.name
         }
         await sequenceRequest(target, [...sequences.value[target], name])
@@ -407,7 +421,7 @@ watch([waitMin, waitMax], () => {
 const waitError = computed(() => {
     const min = Number(waitMin.value)
     const max = Number(waitMax.value)
-    if (!Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 1800) return 'Durées en secondes, entre 0 et 1800.'
+    if (isEmpty(waitMin.value) || isEmpty(waitMax.value) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 1800) return 'Durées en secondes, entre 0 et 1800.'
     if (min > max) return 'Le minimum doit être inférieur ou égal au maximum.'
     return null
 })
@@ -472,13 +486,13 @@ const disks = computed(() =>
         return { prefix, label, total, used, free, pct, low: (pct !== null && pct > 0.9) || (free != null && free < minFree) }
     }),
 )
-// Bucket 118records : recalculé toutes les heures, alerte au-delà de 3 h
+// Bucket 118records : recalculé une fois par jour (05:17), alerte au-delà de 26 h
 const cloud = computed(() => {
     const u = health.value.s3_usage
     if (!u) return null
     const ageMin = u.computed_at ? Math.round((now.value - u.computed_at * 1000) / 60000) : null
     const ago = ageMin == null ? 'jamais calculé' : ageMin < 60 ? `calculé il y a ${ageMin} min` : `calculé il y a ${Math.floor(ageMin / 60)} h ${String(ageMin % 60).padStart(2, '0')}`
-    return { bytes: u.bytes, objects: u.objects, ago, stale: ageMin == null || ageMin > 180 }
+    return { bytes: u.bytes, objects: u.objects, ago, stale: ageMin == null || ageMin > 26 * 60 }
 })
 
 // ─── Onglets : le menu résume l'état de chaque sujet, point rouge en cas de problème ─
@@ -650,7 +664,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="percent" class="text-gray-900">Part des nouveaux numéros envoyée chez nous</Label>
-                                            <p class="text-sm text-gray-500">La baisser : les numéros et agents en trop repartent progressivement chez Voxnode.</p>
+                                            <p class="text-sm text-gray-500">La baisser : les numéros en trop repartent immédiatement chez Voxnode, les agents progressivement.</p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="percent" v-model.number="trafficForm.values.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-24 text-right tabular-nums" />
@@ -973,7 +987,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             <span :class="cloud.stale ? 'font-medium text-red-600' : ''">{{ cloud.ago }}</span>
                                         </span>
                                     </div>
-                                    <p v-if="cloud.stale" class="mt-2 text-sm text-red-600">La taille n'est plus recalculée (normalement toutes les heures) : le chiffre peut être faux.</p>
+                                    <p v-if="cloud.stale" class="mt-2 text-sm text-red-600">La taille n'est plus recalculée (normalement chaque jour à 05:17) : le chiffre peut être faux.</p>
                                 </div>
                             </div>
                             <p class="border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
@@ -1038,9 +1052,9 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                             <p class="text-xs text-gray-500">mp3, wav, ogg… (50 Mo maximum), converti automatiquement au format téléphone.</p>
                         </div>
                         <div class="space-y-2">
-                            <Label for="sound-name">Nom</Label>
-                            <Input id="sound-name" v-model="soundName" type="text" placeholder="accueil" class="font-mono" />
-                            <p class="text-xs text-gray-500">Lettres minuscules, chiffres, - et _. Proposé à partir du nom du fichier.</p>
+                            <Label for="sound-name">Nom (facultatif, nettoyé automatiquement)</Label>
+                            <Input id="sound-name" v-model="soundName" type="text" placeholder="accueil été" />
+                            <p class="text-xs text-gray-500">Sans nom, celui du fichier est utilisé. Un suffixe unique est ajouté : un envoi n'écrase jamais un son existant.</p>
                         </div>
                     </template>
                     <div v-else class="space-y-2">
