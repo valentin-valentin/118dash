@@ -73,3 +73,20 @@ export function openingHoursProblem(wanted, applied, now = Date.now()) {
     }
     return null
 }
+
+/**
+ * Résumé court pour l'en-tête : « Ouvert jusqu'à 20:00 », « Fermé · ouvre à 07:59 », « Fermé · rouvre lundi à 07:59 ».
+ */
+export function hoursHeadline(week) {
+    if (!week) return null
+    const { day, time } = parisNow()
+    const today = week[day]
+    if (today && time >= today.open && time < today.close) return { open: true, text: `Ouvert jusqu'à ${today.close}` }
+    if (today && time < today.open) return { open: false, text: `Fermé · ouvre à ${today.open}` }
+    const index = DAYS.findIndex(([key]) => key === day)
+    for (let i = 1; i <= 7; i++) {
+        const [key, label] = DAYS[(index + i) % 7]
+        if (week[key]) return { open: false, text: `Fermé · rouvre ${i === 1 ? 'demain' : label.toLowerCase()} à ${week[key].open}` }
+    }
+    return { open: false, text: 'Fermé toute la semaine' }
+}
