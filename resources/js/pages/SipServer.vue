@@ -4,7 +4,6 @@ import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import StatCard from '@/components/StatCard.vue'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, Settings } from 'lucide-vue-next'
 import { formatDay, isOpenNow, openingHoursProblem, todayKey } from '@/lib/openingHours'
@@ -158,16 +157,16 @@ const healthEvents = computed(() => [...(telHealth.value?.events ?? [])].sort((a
 const selfhostedState = computed(() => {
     const st = telSettings.value
     if (!tel.value) return null
-    if (!st.selfhosted_enabled) return { label: 'Désactivé', sub: "Ne reçoit pas de trafic (interrupteur général)", variant: 'default' }
-    if (st.selfhosted_manual_off) return { label: 'Coupé', sub: 'Coupé manuellement : tout part chez Voxnode', variant: 'danger' }
-    if (!tel.value.available?.selfhosted) return { label: 'En panne', sub: `Bascule automatique vers Voxnode · retour après ${st.pbx_recovery_minutes} min de bonne santé`, variant: 'danger' }
-    return { label: `${st.selfhosted_percent} % du trafic`, sub: 'des nouvelles assignations', variant: 'default' }
+    if (!st.selfhosted_enabled) return { label: 'Désactivé', note: 'Ne reçoit aucun trafic (interrupteur général).', variant: 'default' }
+    if (st.selfhosted_manual_off) return { label: 'Coupé', note: 'Coupé manuellement : tout part chez Voxnode.', variant: 'danger' }
+    if (!tel.value.available?.selfhosted) return { label: 'En panne', note: `Bascule automatique vers Voxnode, retour après ${st.pbx_recovery_minutes} min de bonne santé.`, variant: 'danger' }
+    return { label: 'Actif', note: '', variant: 'default' }
 })
 const voxnodeState = computed(() => {
     if (!tel.value) return null
-    if (telSettings.value.voxnode_manual_off) return { label: 'Coupé', sub: 'Coupé manuellement : tout ce qui peut part chez nous', variant: 'danger' }
-    if (!tel.value.available?.voxnode) return { label: 'Indisponible', sub: '', variant: 'danger' }
-    return { label: 'Disponible', sub: '', variant: 'default' }
+    if (telSettings.value.voxnode_manual_off) return { label: 'Coupé', note: 'Coupé manuellement : tout ce qui peut vient chez nous.', variant: 'danger' }
+    if (!tel.value.available?.voxnode) return { label: 'Indisponible', note: '', variant: 'danger' }
+    return { label: 'Disponible', note: '', variant: 'default' }
 })
 
 // ─── Régulateur (déplacements automatiques d'agents, toutes les 30 s) ─────────
@@ -189,6 +188,103 @@ const hoursApplied = computed(() => data.value?.['opening-hours']?.data ?? null)
 const hoursProblem = computed(() => openingHoursProblem(hoursWanted.value, hoursApplied.value))
 const todayHours = computed(() => (hoursWanted.value ? formatDay(hoursWanted.value[todayKey()]) : null))
 const openNow = computed(() => (hoursWanted.value && data.value ? isOpenNow(hoursWanted.value) : false))
+
+// ─── Ligne d'état du serveur ──────────────────────────────────────────────────
+const statusItems = computed(() => {
+    const items = [
+        {
+            label: 'Asterisk',
+            value: asteriskUp.value ? 'En service' : health.value?.status === 503 ? 'Injoignable' : 'Erreur',
+            sub: asteriskUp.value ? `${version.value} · depuis ${uptime(health.value.data.uptime_seconds)}` : health.value?.error,
+            problem: !asteriskUp.value,
+        },
+        {
+            label: 'Ligne OVH',
+            value: allRegistered.value ? 'Enregistrée' : registrations.value.length ? 'Non enregistrée' : '—',
+            title: registrations.value.map(([line, state]) => `${line} : ${state}`).join(' · '),
+            problem: registrations.value.length > 0 && !allRegistered.value,
+        },
+    ]
+    if (hoursWanted.value) {
+        items.push({ label: "Horaires aujourd'hui", value: todayHours.value, sub: openNow.value ? 'ouvert' : 'fermé', problem: hoursProblem.value?.level === 'error' })
+    }
+    items.push({ label: 'Stockage', value: storageValue.value, sub: storageLow.value ? storageSub.value : '', title: storageSub.value, problem: storageLow.value })
+    return items
+})
+
+// ─── Répartition : agents réellement en ligne par plateforme, et part du trafic visée ─
+const onlineAgents = computed(() => (telAgents.value ?? []).filter((a) => a.online))
+const onPlatform = (key) => onlineAgents.value.filter((a) => a.current_platform === key)
+const moving = computed(() => onlineAgents.value.filter((a) => a.current_platform && a.current_platform !== a.wanted_platform))
+const plural = (n, word) => `${word}${n > 1 ? 's' : ''}`
+
+const keyFigures = computed(() => {
+    const inCall = onlineAgents.value.filter((a) => a.in_call).length
+    const figures = [
+        { value: onlineAgents.value.length, label: `${plural(onlineAgents.value.length, 'agent')} en ligne` },
+        { value: inCall, label: 'en appel' },
+        { value: calls.value.length, label: 'appels en cours sur notre serveur' },
+    ]
+    if (moving.value.length) figures.push({ value: moving.value.length, label: 'en cours de bascule', alert: true })
+    return figures
+})
+
+const splitBars = computed(() => {
+    const ours = onPlatform('selfhosted').length
+    const theirs = onPlatform('voxnode').length
+    const percent = telSettings.value.selfhosted_enabled ? (telSettings.value.selfhosted_percent ?? 0) : 0
+    return [
+        {
+            label: 'Agents en ligne',
+            ours,
+            theirs,
+            oursPct: ours + theirs ? (ours / (ours + theirs)) * 100 : 0,
+            oursText: `${ours} chez nous`,
+            theirsText: `${theirs} chez Voxnode`,
+            empty: 'Aucun agent en ligne',
+            // En ligne sans plateforme remontée par le softphone
+            note: onlineAgents.value.length - ours - theirs > 0 ? `+ ${onlineAgents.value.length - ours - theirs} sans plateforme connue` : '',
+        },
+        {
+            label: 'Trafic visé',
+            ours: percent,
+            theirs: 100 - percent,
+            oursPct: percent,
+            oursText: `${percent} %`,
+            theirsText: `${100 - percent} %`,
+            empty: '',
+        },
+    ]
+})
+
+const platforms = computed(() => {
+    const ours = onPlatform('selfhosted')
+    const theirs = onPlatform('voxnode')
+    const h = telHealth.value
+    return [
+        {
+            key: 'selfhosted',
+            name: 'Notre serveur',
+            state: selfhostedState.value?.label,
+            note: selfhostedState.value?.note,
+            problem: selfhostedState.value?.variant === 'danger',
+            rows: [
+                ['Agents en ligne', `${ours.length} (dont ${ours.filter((a) => a.in_call).length} en appel)`],
+                ['Appels en cours', calls.value.length],
+                ['Santé', h ? `${h.state === 'down' ? 'En panne' : 'OK'} · vérifiée à ${formatTime(h.last_check_at)}` : '—'],
+            ],
+        },
+        {
+            key: 'voxnode',
+            name: 'Voxnode',
+            state: voxnodeState.value?.label,
+            note: voxnodeState.value?.note,
+            problem: voxnodeState.value?.variant === 'danger',
+            rows: [['Agents en ligne', `${theirs.length} (dont ${theirs.filter((a) => a.in_call).length} en appel)`]],
+        },
+    ]
+})
+const platformProblem = computed(() => platforms.value.some((p) => p.problem))
 
 const formatTime = (v) => (v ? new Date(v).toLocaleTimeString('fr-FR') : '—')
 
@@ -242,76 +338,95 @@ const agentColumns = [
             </div>
 
             <template v-else>
-                <!-- Horaires d'ouverture -->
-                <div v-if="hoursWanted" class="space-y-2">
+                <!-- ─── État du serveur, en une ligne : rouge seulement en cas de problème ─ -->
+                <div class="space-y-2">
                     <p v-if="hoursProblem" class="flex items-start gap-2 rounded-lg border p-3 text-sm" :class="hoursProblem.level === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-gray-100 bg-gray-50 text-gray-600'">
                         <AlertTriangle v-if="hoursProblem.level === 'error'" class="mt-0.5 h-4 w-4 shrink-0" />
                         <span>{{ hoursProblem.text }}</span>
                     </p>
-                    <p class="text-sm text-gray-500">
-                        Horaires aujourd'hui : <span class="font-medium text-gray-900">{{ todayHours }}</span>
-                        · {{ openNow ? 'ouvert en ce moment' : 'fermé en ce moment : les nouveaux appels sont refusés' }}
-                        · <Link href="/sip-server/settings" class="underline hover:text-gray-800">modifier</Link>
-                    </p>
+                    <div class="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border bg-white px-4 py-3 text-sm" :class="statusItems.some((i) => i.problem) ? 'border-red-100' : 'border-gray-100'">
+                        <div v-for="item in statusItems" :key="item.label" class="flex items-baseline gap-2">
+                            <span class="text-gray-500">{{ item.label }}</span>
+                            <span v-if="loading" class="inline-block h-4 w-20 animate-pulse rounded bg-gray-100" />
+                            <span v-else class="font-medium" :class="item.problem ? 'text-red-600' : 'text-gray-900'" :title="item.title">{{ item.value }}</span>
+                            <span v-if="item.sub && !loading" class="text-xs text-gray-400">{{ item.sub }}</span>
+                        </div>
+                        <span v-if="updatedAt" class="ml-auto text-xs text-gray-400">Mis à jour à {{ updatedAt }}</span>
+                    </div>
                 </div>
 
-                <!-- KPI -->
-                <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-                    <StatCard
-                        label="Asterisk"
-                        :value="asteriskUp ? 'En service' : health?.status === 503 ? 'Injoignable' : 'Erreur'"
-                        :sub="asteriskUp ? `${version} · depuis ${uptime(health.data.uptime_seconds)}` : health?.error"
-                        :loading="loading"
-                        :variant="asteriskUp ? 'default' : 'danger'"
-                    />
-                    <StatCard
-                        label="Ligne OVH"
-                        :value="allRegistered ? 'Enregistrée' : registrations.length ? 'Non enregistrée' : '—'"
-                        :sub="registrations.map(([line, state]) => (state === 'Registered' ? line : `${line} : ${state}`)).join(' · ')"
-                        :loading="loading"
-                        :variant="allRegistered || !registrations.length ? 'default' : 'danger'"
-                    />
-                    <StatCard
-                        label="Appels en cours"
-                        :value="calls.length"
-                        :sub="`${health?.data?.active_channels ?? 0} canal(aux) actif(s)`"
-                        :loading="loading"
-                    />
-                    <StatCard label="Agents connectés" :value="`${registeredAgents} / ${agents.length}`" :loading="loading" />
-                    <StatCard
-                        label="Stockage"
-                        :value="storageValue"
-                        :sub="storageSub"
-                        :loading="loading"
-                        :variant="storageLow ? 'danger' : 'default'"
-                    />
-                </div>
+                <!-- ─── Répartition entre notre serveur et Voxnode (voxnode118) ─ -->
+                <div>
+                    <div class="mb-3 flex items-baseline justify-between">
+                        <h2 class="text-base font-semibold text-gray-900">Répartition</h2>
+                        <Link v-if="tel" href="/sip-server/settings" class="text-xs text-gray-500 underline hover:text-gray-800">Régler</Link>
+                    </div>
 
-                <!-- ─── Plateformes : notre serveur / Voxnode (voxnode118) ─── -->
-                <div v-if="telephony?.configured">
-                    <h2 class="mb-3 text-base font-semibold text-gray-900">Plateformes</h2>
-                    <p v-if="telephony.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                        État des plateformes indisponible : {{ telephony.error }}
-                    </p>
-                    <div v-else class="grid gap-4 lg:grid-cols-3">
-                        <StatCard label="Notre serveur" :value="selfhostedState?.label" :sub="selfhostedState?.sub" :variant="selfhostedState?.variant" :loading="loading" />
-                        <StatCard label="Voxnode" :value="voxnodeState?.label" :sub="voxnodeState?.sub" :variant="voxnodeState?.variant" :loading="loading" />
-                        <div class="rounded-lg border bg-white p-4" :class="telHealth?.state === 'down' ? 'border-red-100' : 'border-gray-100'">
-                            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Santé de notre serveur</p>
-                            <p class="mt-1.5 text-2xl font-semibold" :class="telHealth?.state === 'down' ? 'text-red-600' : 'text-gray-900'">
-                                {{ telHealth?.state === 'down' ? 'En panne' : telHealth?.state === 'up' ? 'OK' : '—' }}
-                            </p>
-                            <p class="mt-1 text-xs text-gray-400">
-                                Vérifiée à {{ formatTime(telHealth?.last_check_at) }}<template v-if="telHealth?.failures"> · {{ telHealth.failures }} échec(s) d'affilée</template>
-                            </p>
-                            <ul v-if="healthEvents.length" class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-xs">
-                                <li v-for="(e, i) in healthEvents" :key="i" class="flex gap-2">
-                                    <span class="tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
-                                    <span :class="e.state === 'down' ? 'text-red-600' : 'text-gray-700'">{{ e.state === 'down' ? 'Panne' : 'Rétabli' }}</span>
-                                    <span class="truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
-                                    <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
-                                </li>
-                            </ul>
+                    <div v-if="!tel" class="rounded-lg border border-gray-100 bg-white p-4 text-sm text-gray-500">
+                        <p v-if="telephony?.configured && telephony.ok === false" class="text-red-600">API téléphonie indisponible : {{ telephony.error }}</p>
+                        <p v-else-if="!loading">
+                            Répartition indisponible : l'API téléphonie de voxnode118 n'est pas encore branchée (TELEPHONY_API_TOKEN).
+                        </p>
+                        <p class="mt-1">
+                            <span class="text-2xl font-semibold tabular-nums text-gray-900">{{ registeredAgents }}</span>
+                            agent{{ registeredAgents > 1 ? 's' : '' }} connecté{{ registeredAgents > 1 ? 's' : '' }} à notre serveur
+                        </p>
+                    </div>
+
+                    <div v-else class="rounded-lg border bg-white" :class="platformProblem ? 'border-red-100' : 'border-gray-100'">
+                        <!-- Chiffres clés -->
+                        <div class="flex flex-wrap items-baseline gap-x-10 gap-y-2 border-b border-gray-50 px-5 py-4">
+                            <div v-for="f in keyFigures" :key="f.label" class="flex items-baseline gap-2">
+                                <span class="text-3xl font-semibold tabular-nums" :class="f.alert ? 'text-amber-700' : 'text-gray-900'">{{ f.value }}</span>
+                                <span class="text-sm text-gray-500">{{ f.label }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Barres : agents réellement en ligne, et part du trafic visée -->
+                        <div class="space-y-3 px-5 py-4">
+                            <div v-for="bar in splitBars" :key="bar.label" class="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[9rem_1fr]">
+                                <span class="text-sm text-gray-500">{{ bar.label }}</span>
+                                <div>
+                                    <div class="flex h-7 gap-0.5 overflow-hidden rounded text-xs font-medium">
+                                        <div v-if="bar.ours" class="flex min-w-fit items-center rounded-l bg-gray-900 px-2 text-white" :class="!bar.theirs && 'rounded-r'" :style="{ width: `${bar.oursPct}%` }">{{ bar.oursText }}</div>
+                                        <div v-if="bar.theirs" class="flex min-w-fit items-center justify-end rounded-r bg-gray-200 px-2 text-gray-700" :class="!bar.ours && 'rounded-l'" :style="{ width: `${100 - bar.oursPct}%` }">{{ bar.theirsText }}</div>
+                                        <div v-if="!bar.ours && !bar.theirs" class="flex w-full items-center rounded bg-gray-50 px-2 text-gray-400">{{ bar.empty }}</div>
+                                    </div>
+                                    <p v-if="bar.note" class="mt-1 text-xs text-gray-500">{{ bar.note }}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-5 pl-0 text-xs text-gray-500 sm:pl-[10rem]">
+                                <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-900" />Notre serveur</span>
+                                <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-200" />Voxnode</span>
+                            </div>
+                        </div>
+
+                        <!-- Détail par plateforme -->
+                        <div class="grid border-t border-gray-50 sm:grid-cols-2">
+                            <div v-for="p in platforms" :key="p.key" class="px-5 py-4 sm:[&:nth-child(2)]:border-l sm:[&:nth-child(2)]:border-gray-50">
+                                <div class="flex items-baseline justify-between gap-3">
+                                    <span class="text-sm font-semibold text-gray-900">{{ p.name }}</span>
+                                    <span class="text-sm font-medium" :class="p.problem ? 'text-red-600' : 'text-gray-700'">{{ p.state }}</span>
+                                </div>
+                                <p v-if="p.note" class="mt-0.5 text-xs" :class="p.problem ? 'text-red-600' : 'text-gray-500'">{{ p.note }}</p>
+                                <dl class="mt-3 space-y-1 text-sm">
+                                    <div v-for="row in p.rows" :key="row[0]" class="flex justify-between">
+                                        <dt class="text-gray-500">{{ row[0] }}</dt>
+                                        <dd class="tabular-nums text-gray-900">{{ row[1] }}</dd>
+                                    </div>
+                                </dl>
+                                <details v-if="p.key === 'selfhosted' && healthEvents.length" class="mt-3 text-xs">
+                                    <summary class="cursor-pointer text-gray-500 hover:text-gray-700">Dernières pannes ({{ healthEvents.length }})</summary>
+                                    <ul class="mt-2 space-y-1">
+                                        <li v-for="(e, i) in healthEvents" :key="i" class="flex gap-2">
+                                            <span class="tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
+                                            <span :class="e.state === 'down' ? 'text-red-600' : 'text-gray-700'">{{ e.state === 'down' ? 'Panne' : 'Rétabli' }}</span>
+                                            <span class="truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
+                                            <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
+                                        </li>
+                                    </ul>
+                                </details>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -358,10 +473,7 @@ const agentColumns = [
 
                 <!-- ─── Appels en cours ───────────────────────────────────── -->
                 <div>
-                    <div class="mb-3 flex items-baseline justify-between">
-                        <h2 class="text-base font-semibold text-gray-900">Appels en cours</h2>
-                        <span v-if="updatedAt" class="text-xs text-gray-400">Mis à jour à {{ updatedAt }} · toutes les 5 s</span>
-                    </div>
+                    <h2 class="mb-3 text-base font-semibold text-gray-900">Appels en cours</h2>
                     <div class="rounded-lg border border-gray-100 bg-white">
                         <DataTable
                             :columns="callColumns"
