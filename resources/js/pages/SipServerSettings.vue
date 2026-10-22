@@ -409,6 +409,16 @@ const PIN_OPTIONS = [
 ]
 const PLATFORMS = { selfhosted: 'Notre serveur', voxnode: 'Voxnode' }
 const telAgents = computed(() => tel.value?.agents ?? [])
+// Pannes de notre serveur détectées par voxnode118 (contrôle toutes les 10 s)
+const healthEvents = computed(() => [...(tel.value?.health?.events ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 10))
+const uptimeText = computed(() => {
+    const s = health.value.uptime_seconds
+    if (s == null) return '—'
+    const d = Math.floor(s / 86400)
+    const h = Math.floor((s % 86400) / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    return d ? `${d} j ${h} h` : h ? `${h} h ${m} min` : `${m} min`
+})
 const agentColumns = [
     { key: 'name', label: 'Agent' },
     { key: 'callcenter', label: 'Centre' },
@@ -669,7 +679,10 @@ function removeIp(ip) {
                                         <span v-if="row.name && row.username" class="ml-2 font-mono text-xs text-gray-400">{{ row.username }}</span>
                                     </template>
                                     <template #callcenter="{ value }"><span class="text-sm text-gray-600">{{ value || '—' }}</span></template>
-                                    <template #platform="{ row }"><span class="text-sm text-gray-600">{{ PLATFORMS[row.current_platform] ?? '—' }}</span></template>
+                                    <template #platform="{ row }">
+                                        <span class="text-sm text-gray-600">{{ PLATFORMS[row.current_platform] ?? '—' }}</span>
+                                        <span v-if="row.switch_failed" class="ml-2 text-xs text-red-600">bascule ratée le {{ new Date(row.switch_failed_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }}</span>
+                                    </template>
                                     <template #pin="{ row }">
                                         <select
                                             :value="row.pin ?? ''"
@@ -851,7 +864,20 @@ function removeIp(ip) {
                                 <div class="flex justify-between gap-4"><dt class="text-gray-500">WebRTC (WSS)</dt><dd class="font-mono text-gray-900">wss://sip.118.ae/ws</dd></div>
                                 <div class="flex justify-between gap-4"><dt class="text-gray-500">Machine</dt><dd class="text-gray-900">OVH RISE-2 · Gravelines</dd></div>
                                 <div class="flex justify-between gap-4"><dt class="text-gray-500">Système</dt><dd class="text-gray-900">Ubuntu 26.04 · Asterisk {{ version }}</dd></div>
+                                <div class="flex justify-between gap-4"><dt class="text-gray-500">En service depuis</dt><dd class="text-gray-900">{{ uptimeText }}</dd></div>
                             </dl>
+
+                            <template v-if="healthEvents.length">
+                                <h3 class="mb-2 mt-5 text-sm font-semibold text-gray-900">Dernières pannes</h3>
+                                <ul class="space-y-1 text-sm">
+                                    <li v-for="(e, i) in healthEvents" :key="i" class="flex gap-3">
+                                        <span class="shrink-0 tabular-nums text-gray-400">{{ new Date(e.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }}</span>
+                                        <span :class="e.state === 'down' ? 'text-red-600' : 'text-gray-700'">{{ e.state === 'down' ? 'Panne' : 'Rétabli' }}</span>
+                                        <span class="min-w-0 truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
+                                        <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
+                                    </li>
+                                </ul>
+                            </template>
 
                             <h3 class="mb-2 mt-5 text-sm font-semibold text-gray-900">Stockage</h3>
                             <dl class="space-y-2 text-sm">
