@@ -62,6 +62,31 @@ function size(bytes) {
     const [unit, factor] = units.find(([, f]) => bytes >= f) ?? ['Ko', 1e3]
     return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: bytes >= 10 * factor ? 0 : 1 }).format(bytes / factor)} ${unit}`
 }
+// Disques : barre rouge au-delà de 90 % ou sous ces seuils d'espace libre (mêmes règles que la page Serveur SIP)
+const DISKS = [
+    { prefix: 'disk_root', label: 'Disque système (/)', minFree: 5e9 },
+    { prefix: 'disk_data', label: 'Disque des enregistrements (/data)', minFree: 20e9 },
+]
+const disks = computed(() =>
+    DISKS.map(({ prefix, label, minFree }) => {
+        const total = health.value[`${prefix}_total`]
+        const usedBytes = health.value[`${prefix}_used`]
+        const free = health.value[`${prefix}_free`]
+        const pct = total ? usedBytes / total : null
+        return { prefix, label, total, used: usedBytes, free, pct, low: (pct !== null && pct > 0.9) || (free != null && free < minFree) }
+    }),
+)
+const pctText = (ratio) => `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: ratio < 0.1 ? 1 : 0 }).format(ratio * 100)} %`
+
+// Bucket 118records (enregistrements publics) : recalculé toutes les heures, alerte au-delà de 3 h
+const cloud = computed(() => {
+    const u = health.value.s3_usage
+    if (!u) return null
+    const ageMin = u.computed_at ? Math.round((Date.now() - u.computed_at * 1000) / 60000) : null
+    const ago = ageMin == null ? 'jamais calculé' : ageMin < 60 ? `calculé il y a ${ageMin} min` : `calculé il y a ${Math.floor(ageMin / 60)} h ${String(ageMin % 60).padStart(2, '0')}`
+    return { bytes: u.bytes, objects: u.objects, ago, stale: ageMin == null || ageMin > 180 }
+})
+
 const used = (prefix) => (health.value[`${prefix}_total`] ? `${size(health.value[`${prefix}_used`])} utilisés sur ${size(health.value[`${prefix}_total`])}` : '—')
 
 const formatDate = (v) => (v ? new Date(v).toLocaleDateString('fr-FR') : '—')
@@ -879,23 +904,46 @@ function removeIp(ip) {
                                 </ul>
                             </template>
 
-                            <h3 class="mb-2 mt-5 text-sm font-semibold text-gray-900">Stockage</h3>
-                            <dl class="space-y-2 text-sm">
-                                <div class="flex justify-between gap-4"><dt class="text-gray-500">Disque des enregistrements</dt><dd class="tabular-nums text-gray-900">{{ used('disk_data') }}</dd></div>
-                                <template v-if="usage">
-                                    <div class="flex justify-between gap-4 pl-4">
-                                        <dt class="text-gray-500">Enregistrements d'appels</dt>
-                                        <dd class="tabular-nums text-gray-900">{{ size(usage.recordings?.bytes) }} · {{ (usage.recordings?.files ?? 0).toLocaleString('fr-FR') }} fichier{{ usage.recordings?.files > 1 ? 's' : '' }}</dd>
+                            <h3 class="mb-3 mt-5 text-sm font-semibold text-gray-900">Stockage</h3>
+                            <div class="space-y-4 text-sm">
+                                <div v-for="d in disks" :key="d.prefix">
+                                    <div class="flex flex-wrap items-baseline justify-between gap-x-4">
+                                        <span class="text-gray-700">{{ d.label }}</span>
+                                        <span class="tabular-nums" :class="d.low ? 'font-medium text-red-600' : 'text-gray-500'">
+                                            <template v-if="d.total">{{ size(d.used) }} utilisés sur {{ size(d.total) }} · <span :class="d.low ? '' : 'text-gray-900'">{{ size(d.free) }} libres</span></template>
+                                            <template v-else>—</template>
+                                        </span>
                                     </div>
-                                    <div class="flex justify-between gap-4 pl-4">
-                                        <dt class="text-gray-500">Plus ancien enregistrement</dt>
-                                        <dd class="text-gray-900">{{ usage.recordings?.oldest_recording ? formatDate(usage.recordings.oldest_recording) : '—' }}</dd>
+                                    <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100">
+                                        <div v-if="d.pct" class="h-full rounded-full" :class="d.low ? 'bg-red-500' : 'bg-gray-900'" :style="{ width: `${Math.max(d.pct * 100, 1)}%` }" :title="pctText(d.pct)" />
                                     </div>
-                                    <div class="flex justify-between gap-4 pl-4"><dt class="text-gray-500">Sons du service interne</dt><dd class="tabular-nums text-gray-900">{{ size(usage.sounds?.bytes) }}</dd></div>
-                                    <div class="flex justify-between gap-4 pl-4"><dt class="text-gray-500">Autre</dt><dd class="tabular-nums text-gray-900">{{ size(usage.other?.bytes) }}</dd></div>
-                                </template>
-                                <div class="flex justify-between gap-4"><dt class="text-gray-500">Disque système</dt><dd class="tabular-nums text-gray-900">{{ used('disk_root') }}</dd></div>
-                            </dl>
+                                    <!-- Détail de /data -->
+                                    <dl v-if="d.prefix === 'disk_data' && usage" class="mt-2 space-y-1 pl-4 text-gray-500">
+                                        <div class="flex justify-between gap-4">
+                                            <dt>Enregistrements d'appels</dt>
+                                            <dd class="tabular-nums text-gray-900">{{ size(usage.recordings?.bytes) }} · {{ (usage.recordings?.files ?? 0).toLocaleString('fr-FR') }} fichier{{ usage.recordings?.files > 1 ? 's' : '' }}</dd>
+                                        </div>
+                                        <div class="flex justify-between gap-4">
+                                            <dt>Plus ancien enregistrement</dt>
+                                            <dd class="text-gray-900">{{ usage.recordings?.oldest_recording ? formatDate(usage.recordings.oldest_recording) : '—' }}</dd>
+                                        </div>
+                                        <div class="flex justify-between gap-4"><dt>Sons (accueil, attente, service interne)</dt><dd class="tabular-nums text-gray-900">{{ size(usage.sounds?.bytes) }}</dd></div>
+                                        <div class="flex justify-between gap-4"><dt>Autre</dt><dd class="tabular-nums text-gray-900">{{ size(usage.other?.bytes) }}</dd></div>
+                                    </dl>
+                                </div>
+
+                                <!-- Cloud : pas de quota, donc pas de barre -->
+                                <div v-if="cloud" class="flex flex-wrap items-baseline justify-between gap-x-4">
+                                    <span class="text-gray-700">Cloud (bucket 118records, enregistrements publics)</span>
+                                    <span class="tabular-nums text-gray-500">
+                                        <span class="text-gray-900">{{ size(cloud.bytes) }}</span> · {{ (cloud.objects ?? 0).toLocaleString('fr-FR') }} fichier{{ cloud.objects > 1 ? 's' : '' }} ·
+                                        <span :class="cloud.stale ? 'font-medium text-red-600' : ''">{{ cloud.ago }}</span>
+                                    </span>
+                                </div>
+                                <p v-if="cloud?.stale" class="rounded-md bg-red-50 px-3 py-2 text-red-700">
+                                    La taille du cloud n'est plus recalculée (normalement toutes les heures) : le chiffre affiché peut être faux.
+                                </p>
+                            </div>
                             <p v-if="usage?.computed_at" class="mt-3 text-xs text-gray-400">
                                 Détail calculé à {{ new Date(usage.computed_at).toLocaleTimeString('fr-FR') }} (toutes les 5 min). Purge prévue : enregistrements agent après 120 j, transfert après 30 j, blacklist conservés.
                             </p>
