@@ -80,6 +80,8 @@ const { filters, reset } = useFilters(
         agent_name: [],
         min_duration: false,
         with_rejected: false,
+        // Colonne « Qualité audio » du tableau jour par jour, seulement sur demande
+        with_quality: false,
     },
     (f) => {
         daily.load(f)
@@ -98,7 +100,8 @@ const hasFilters = computed(() =>
     (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
     (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
     filters.min_duration ||
-    filters.with_rejected
+    filters.with_rejected ||
+    filters.with_quality
 )
 
 // ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
@@ -111,7 +114,7 @@ const columns = computed(() => [
     { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
     { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
     { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
-    { key: 'quality_mos', label: 'Qualité audio', sortable: true, headerClass: 'text-right', scale: true },
+    ...(filters.with_quality ? [{ key: 'quality_mos', label: 'Qualité audio', sortable: true, headerClass: 'text-right', scale: true }] : []),
 ])
 
 const sortKey = ref('date')
@@ -643,6 +646,19 @@ onMounted(() => {
                             Avec les rejetés
                         </label>
                     </div>
+
+                    <!-- Qualité audio : colonne du tableau et répartition par plateforme -->
+                    <div class="flex items-center gap-2 px-3 py-2 bg-white rounded-md border border-gray-200">
+                        <input
+                            type="checkbox"
+                            id="with-quality"
+                            v-model="filters.with_quality"
+                            class="h-4 w-4 rounded border-gray-300"
+                        />
+                        <label for="with-quality" class="text-sm text-gray-700 cursor-pointer select-none">
+                            Avec qualité audio
+                        </label>
+                    </div>
                 </div>
             </FilterBar>
 
@@ -741,7 +757,7 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <td v-if="filters.with_quality" class="px-3 py-2 text-right text-sm">
                                     <div class="font-semibold" :class="qualityClass(daily.data.totals.quality_mos) || 'text-gray-900'">{{ formatQuality(daily.data.totals.quality_mos) }}</div>
                                     <div v-if="daily.data.totals.quality_calls" class="text-xs text-gray-500">{{ measuredText(daily.data.totals.quality_calls, daily.data.totals.quality_degraded) }}</div>
                                 </td>
@@ -833,7 +849,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <td v-if="filters.with_quality" class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : qualityClass(row.quality_mos) || 'text-gray-900'">{{ formatQuality(row.quality_mos) }}</div>
                                         <div v-if="row.quality_calls && !isSunday(row.date)" class="text-xs text-gray-500">{{ measuredText(row.quality_calls, row.quality_degraded) }}</div>
                                     </td>
@@ -854,7 +870,7 @@ onMounted(() => {
             </div>
 
             <!-- Qualité audio du mois affiché, par plateforme (mêmes filtres que le tableau) -->
-            <div v-if="daily.data?.quality_platforms" class="-mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+            <div v-if="filters.with_quality && daily.data?.quality_platforms" class="-mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
                 <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qualité audio par plateforme</span>
                 <span v-for="p in QUALITY_PLATFORMS" :key="p.key" class="flex items-baseline gap-2">
                     <span class="text-gray-500">{{ p.label }}</span>

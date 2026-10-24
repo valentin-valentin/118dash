@@ -747,7 +747,10 @@ class DashboardController extends Controller
         return response()->json([
             'items' => $daily,
             'totals' => $totals,
-            'quality_platforms' => $this->audioQuality($applyFilters(Call::query()), $start->copy()->utc(), $lastDay->copy()->endOfDay()->min($now)->utc()),
+            // Seulement avec le filtre « Avec qualité audio » (requête en plus)
+            'quality_platforms' => $request->input('with_quality') == 'true'
+                ? $this->audioQuality($applyFilters(Call::query()), $start->copy()->utc(), $lastDay->copy()->endOfDay()->min($now)->utc())
+                : null,
         ]);
     }
 
