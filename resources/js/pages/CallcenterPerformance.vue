@@ -14,6 +14,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronRight, ChevronUp
 import {
     addDays, addSums, daysBetween, fmt, formatRange, iso, metrics, parseIso, variation, weekStart,
 } from '@/lib/performance'
+import { QUALITY_SCALE } from '@/lib/quality'
 
 // ─── Période ──────────────────────────────────────────────────────────────────
 const PRESETS = [
@@ -216,6 +217,14 @@ const CARD_GROUPS = [
             { key: 'transfer_ratio', label: 'Part en transfert', format: (v) => fmt.pct(v), best: 'max' },
         ],
     },
+    {
+        title: 'Qualité audio',
+        rows: [
+            { key: 'quality_mos', label: 'Qualité moyenne', format: fmt.quality, best: 'max', hint: QUALITY_SCALE },
+            { key: 'quality_degraded', label: 'Appels dégradés', format: fmt.int, hint: 'Appels mesurés avec un score inférieur à 3,1 (mauvais).' },
+            { key: 'quality_calls', label: 'Appels mesurés', format: fmt.int, hint: 'Appels décrochés d\'au moins 5 s dont la qualité a été mesurée.' },
+        ],
+    },
 ]
 
 // ─── Comparatif détaillé ──────────────────────────────────────────────────────
@@ -260,6 +269,15 @@ const TABLE = [
             { key: 'margin_per_call', label: 'Marge par appel', format: (v) => fmt.eur(v, 2), best: 'max', secondary: true },
             { key: 'payout_per_agent_hour', label: 'Payout / heure agent', format: (v) => fmt.eur(v, 2), best: 'max' },
             { key: 'payout_per_agent_day', label: 'Payout / journée-agent', format: (v) => fmt.eur(v), best: 'max' },
+        ],
+    },
+    {
+        title: 'Qualité audio',
+        rows: [
+            { key: 'quality_mos', label: 'Qualité moyenne', format: fmt.quality, best: 'max', hint: QUALITY_SCALE },
+            { key: 'quality_degraded', label: 'Appels dégradés (score < 3,1)', format: fmt.int, best: 'min' },
+            { key: 'quality_calls', label: 'Appels mesurés', format: fmt.int },
+            { key: 'quality_coverage', label: 'Part des appels mesurés', format: (v) => fmt.pct(v), secondary: true },
         ],
     },
 ]
@@ -437,6 +455,8 @@ const AGENT_COLUMNS = [
     { key: 'avg_agent', label: 'Durée agent', format: fmt.dur, hint: 'Moyenne par appel' },
     { key: 'avg_transfer', label: 'Durée transfert', format: fmt.dur, hint: 'Moyenne par appel' },
     { key: 'agent_ratio', label: 'Ratio agent', format: (v) => fmt.pct(v) },
+    { key: 'quality_mos', label: 'Qualité audio', format: fmt.quality, hint: QUALITY_SCALE },
+    { key: 'quality_degraded', label: 'Appels dégradés', format: fmt.int, hint: 'Appels mesurés avec un score inférieur à 3,1 (mauvais)' },
 ]
 
 const agentKey = (a) => `${a.id}-${a.callcenter_id}`
@@ -554,6 +574,7 @@ const AGENT_COMPARE = [
     { key: 'avg_pause', centerKey: 'avg_pause', label: 'dont pause', format: fmt.dur, better: 'down', indent: true },
     { key: 'avg_transfer', centerKey: 'avg_transfer', label: 'Transfert par appel', format: fmt.dur, better: 'up' },
     { key: 'agent_ratio', centerKey: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v), better: 'down' },
+    { key: 'quality_mos', centerKey: 'quality_mos', label: 'Qualité audio', format: fmt.quality, better: 'up' },
 ]
 
 // Identifiant de ligne (dedi003, prepose995...) : les noms des agents ne sont plus tenus à jour
@@ -948,7 +969,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                         :key="r.key"
                                         class="-mx-2 flex items-baseline gap-2 rounded px-2 py-1 hover:bg-gray-100"
                                     >
-                                        <dt class="text-gray-600">{{ r.label }}</dt>
+                                        <dt class="text-gray-600" :class="r.hint && 'cursor-help'" :title="r.hint">{{ r.label }}</dt>
                                         <span class="min-w-2 flex-1 -translate-y-1 border-b border-dotted border-gray-200" />
                                         <dd class="flex shrink-0 items-center gap-1.5 whitespace-nowrap tabular-nums text-gray-900" :class="{ 'font-semibold': r.best && bestId(r.key, r.best) === c.id }">
                                             <span v-if="r.best && bestId(r.key, r.best) === c.id" class="h-1.5 w-1.5 rounded-full bg-gray-900" title="Meilleur centre sur cet indicateur" />
@@ -1117,7 +1138,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                 </tr>
                                 <template v-for="r in section.rows" :key="r.key">
                                     <tr v-if="!r.secondary || showSecondary" class="group border-b border-gray-50 hover:bg-sky-100/70">
-                                        <td class="px-5 py-1.5 text-gray-700 group-hover:text-gray-900" :class="{ 'pl-9 text-gray-500': r.indent }">
+                                        <td class="px-5 py-1.5 text-gray-700 group-hover:text-gray-900" :class="[{ 'pl-9 text-gray-500': r.indent }, r.hint && 'cursor-help']" :title="r.hint">
                                             {{ r.label }}
                                             <span v-if="r.cost && costEstimated" class="text-xs text-gray-400">(estimé)</span>
                                         </td>
@@ -1297,6 +1318,10 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                     <div class="space-y-1">
                         <p>Journée-agent : un agent qui a pris au moins un appel dans la journée (heure de Paris). Ce n'est pas une présence RH.</p>
                         <p>Conversation / pause : répartition mesurée sur les appels où l'application agent l'a enregistrée, appliquée à toute la durée agent.</p>
+                        <p>
+                            Qualité audio : score estimé à partir du réseau du softphone agent (pertes, gigue, délai), affiché en % d'un appel parfait (score 4,4) avec le score
+                            entre parenthèses. Mesurée depuis le 24/10/2026, sur les appels décrochés d'au moins 5 s. Dégradé : score inférieur à 3,1.
+                        </p>
                         <p v-if="costEstimated">Période partielle : le coût mensuel est réparti au prorata des jours, la marge est une estimation.</p>
                         <p v-if="costMissing">Pas de coût renseigné pour certains centres : marge non calculée (config/callcenters.php).</p>
                         <p v-if="totals.anomalies">{{ fmt.int(totals.anomalies) }} appel(s) avec une durée totale inférieure à agent + transfert : attente négative, laissée telle quelle dans les calculs.</p>

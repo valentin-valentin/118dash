@@ -1,9 +1,12 @@
+import { formatQuality } from '@/lib/quality'
+
 // Calculs et formats de la page Performance des call centers.
 // Les ratios sont toujours calculés à partir des sommes, jamais en moyennant des ratios.
 
 const SUM_FIELDS = [
     'calls', 'payout', 'total_s', 'agent_s', 'transfer_s', 'wait_s',
     'talk_s', 'pause_s', 'phone_calls', 'anomalies', 'agents', 'agent_days', 'days',
+    'quality_calls', 'quality_sum', 'quality_degraded',
 ]
 
 const div = (a, b) => (b ? a / b : null)
@@ -64,6 +67,11 @@ export function metrics(s) {
         avg_pause: avgAgent === null || talkShare === null ? null : avgAgent * (1 - talkShare),
         agent_hours: n('agent_s') / 3600,
         anomalies: n('anomalies'),
+        // Qualité audio : moyenne des scores des appels mesurés (null si aucun)
+        quality_mos: div(n('quality_sum'), n('quality_calls')),
+        quality_calls: n('quality_calls'),
+        quality_degraded: n('quality_degraded'),
+        quality_coverage: div(n('quality_calls'), n('calls')),
     }
 }
 
@@ -97,6 +105,7 @@ export const fmt = {
         if (abs < 60) return `${sign}${abs}\u00a0s`
         return `${sign}${Math.floor(abs / 60)}\u00a0min\u00a0${String(abs % 60).padStart(2, '0')}`
     },
+    quality: (v) => formatQuality(v),
     variation: (v) => (v === null ? '' : `${v > 0 ? '+' : ''}${nf(1).format(v * 100)} %`),
 }
 

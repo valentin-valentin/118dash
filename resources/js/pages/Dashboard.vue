@@ -16,6 +16,7 @@ import {
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
+import { QUALITY_SCALE, formatQuality, qualityClass, qualityLevel } from '@/lib/quality'
 
 // ─── Période pour les KPIs et graphiques ──────────────────────────────────────
 const period = ref('today')
@@ -204,6 +205,16 @@ const compLabels = computed(() => {
         return { comp1: 'Mois dern.', comp1Key: 'last_month', comp2: 'M-2', comp2Key: 'two_months_ago' }
     }
 })
+
+// ─── Qualité audio de la période, par plateforme ──────────────────────────────
+const QUALITY_GROUPS = [
+    { key: 'all', label: 'Tous les appels' },
+    { key: 'voxnode', label: 'Voxnode' },
+    { key: 'selfhosted', label: 'Notre serveur' },
+]
+const quality = computed(() => stats.data?.quality ?? null)
+const qualityCompare = computed(() => quality.value?.[compLabels.value.comp1Key] ?? null)
+const measuredText = (g) => `${formatNumber(g.measured)} appel${g.measured > 1 ? 's' : ''} mesuré${g.measured > 1 ? 's' : ''} · ${formatNumber(g.degraded)} dégradé${g.degraded > 1 ? 's' : ''}`
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDayName(dateString) {
@@ -526,6 +537,36 @@ onMounted(() => {
                                 </div>
                             </div>
                         </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Qualité audio : moyenne de la période, Voxnode et notre serveur côte à côte -->
+            <div class="rounded-lg border border-gray-200 bg-white">
+                <div class="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3">
+                    <div class="cursor-help text-xs font-semibold uppercase tracking-wider text-gray-500" :title="QUALITY_SCALE">Qualité audio ⓘ</div>
+                    <div v-if="qualityCompare?.measured" class="text-xs text-gray-500">
+                        {{ compLabels.comp1 }} : {{ formatQuality(qualityCompare.mos) }}
+                    </div>
+                </div>
+                <div v-if="stats.loading" class="m-4 h-10 animate-pulse rounded bg-gray-100"></div>
+                <p v-else-if="!quality?.current.all.measured" class="px-4 pb-4 pt-2 text-sm text-gray-400">
+                    Pas encore d'appel mesuré sur la période (mesure active depuis le 24/10/2026).
+                </p>
+                <div v-else class="grid grid-cols-1 sm:grid-cols-3">
+                    <div
+                        v-for="g in QUALITY_GROUPS"
+                        :key="g.key"
+                        class="border-gray-100 px-4 pb-3 pt-2 sm:[&:not(:first-child)]:border-l"
+                        :title="quality.current[g.key].mos !== null ? `${qualityLevel(quality.current[g.key].mos)}\n\n${QUALITY_SCALE}` : ''"
+                    >
+                        <div class="text-xs text-gray-500">{{ g.label }}</div>
+                        <div class="mt-0.5 text-2xl font-bold tabular-nums" :class="qualityClass(quality.current[g.key].mos) || 'text-gray-900'">
+                            {{ formatQuality(quality.current[g.key].mos) }}
+                        </div>
+                        <div class="text-xs text-gray-400">
+                            {{ quality.current[g.key].measured ? measuredText(quality.current[g.key]) : 'aucun appel mesuré' }}
+                        </div>
                     </div>
                 </div>
             </div>

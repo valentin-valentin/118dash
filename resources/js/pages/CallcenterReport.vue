@@ -108,6 +108,9 @@ const index = (c, key) => (ensemble.value.m[key] ? (c.m[key] / ensemble.value.m[
 
 // ─── Tableau de synthèse ──────────────────────────────────────────────────────
 // money : montant (masqué hors rapport complet) ; better : sens favorable d'une hausse
+// Qualité audio (page 2) : seulement si des appels ont été mesurés sur la période (mesure active depuis le 24/10/2026)
+const hasQuality = computed(() => ensemble.value.m.quality_calls > 0)
+
 const SECTIONS = computed(() => [
     {
         title: 'Activité',
@@ -302,7 +305,10 @@ const AGENT_COLUMNS = [
     { key: 'avg_pause', label: 'Pause', format: fmt.dur },
     { key: 'avg_transfer', label: 'Transfert', format: fmt.dur },
     { key: 'agent_ratio', label: 'Ratio agent', format: (v) => fmt.pct(v) },
+    { key: 'quality_mos', label: 'Qualité audio', format: fmt.quality, quality: true },
 ]
+// La colonne qualité n'apparaît que si des appels ont été mesurés sur la période
+const agentColumns = computed(() => AGENT_COLUMNS.filter((c) => !c.quality || hasQuality.value))
 
 const agentsByCenter = computed(() =>
     centers.value.filter((c) => agentsScope === 'all' || agentsScope === c.id).map((c) => ({
@@ -621,6 +627,43 @@ const ready = computed(() => !!data.value)
                         </div>
                     </div>
                 </div>
+                <!-- Qualité audio des appels mesurés -->
+                <template v-if="hasQuality">
+                    <div class="mt-6 mb-1.5 flex items-baseline justify-between gap-4">
+                        <h2 class="text-sm font-semibold text-gray-900">Qualité audio</h2>
+                        <span class="text-[10px] text-gray-500">
+                            % d'un appel parfait (score 4,4), score moyen entre parenthèses · ≥ 4,3 excellent · 4,0–4,3 très bon · 3,6–4,0 correct · 3,1–3,6 médiocre · &lt; 3,1 dégradé
+                        </span>
+                    </div>
+                    <table class="w-full text-[11px]">
+                        <thead>
+                            <tr class="border-b border-gray-300 text-gray-500">
+                                <th class="py-1 text-left font-medium" />
+                                <th class="py-1 text-right font-medium">Qualité moyenne</th>
+                                <th class="py-1 text-right font-medium">Appels dégradés</th>
+                                <th class="py-1 text-right font-medium">Appels mesurés</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="e in comparisonRows" :key="e.id" class="border-b border-gray-100" :class="e.id === '_all' && 'text-gray-500'">
+                                <td class="py-[3px]">
+                                    <span class="inline-flex items-center gap-1.5">
+                                        <span class="h-2 w-2 rounded-full" :style="{ background: e.id === '_all' ? '#d1d5db' : e.color }" />
+                                        {{ e.label }}
+                                    </span>
+                                </td>
+                                <td class="py-[3px] text-right tabular-nums">
+                                    <span class="font-semibold" :class="e.id === '_all' ? '' : 'text-gray-900'">{{ fmt.quality(e.m.quality_mos) }}</span>
+                                    <span v-if="variation(e.m.quality_mos, e.prev?.quality_mos) !== null" class="ml-1.5 inline-block w-12 text-[10px] text-gray-400">
+                                        {{ fmt.variation(variation(e.m.quality_mos, e.prev?.quality_mos)) }}
+                                    </span>
+                                </td>
+                                <td class="py-[3px] text-right tabular-nums">{{ fmt.int(e.m.quality_degraded) }} <span class="text-gray-400">({{ fmt.pct(e.m.quality_calls ? e.m.quality_degraded / e.m.quality_calls : null) }})</span></td>
+                                <td class="py-[3px] text-right tabular-nums">{{ fmt.int(e.m.quality_calls) }} <span class="text-gray-400">sur {{ fmt.int(e.m.calls) }}</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </template>
                 <footer class="sheet-footer">
                     <span>Performance des centres d'appels · {{ periodLabel }}</span>
                     <span>2 / {{ pageCount }}</span>
@@ -700,13 +743,13 @@ const ready = computed(() => !!data.value)
                         <thead>
                             <tr class="border-b border-gray-300 text-gray-500">
                                 <th class="py-1 text-left font-medium">Agent</th>
-                                <th v-for="col in AGENT_COLUMNS" :key="col.key" class="py-1 pl-3 text-right font-medium">{{ col.label }}</th>
+                                <th v-for="col in agentColumns" :key="col.key" class="py-1 pl-3 text-right font-medium">{{ col.label }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="a in block.agents" :key="a.name" class="border-b border-gray-100">
                                 <td class="py-1 font-medium text-gray-900">{{ a.name }}</td>
-                                <td v-for="col in AGENT_COLUMNS" :key="col.key" class="py-1 pl-3 text-right tabular-nums text-gray-700">{{ col.format(a.m[col.key]) }}</td>
+                                <td v-for="col in agentColumns" :key="col.key" class="py-1 pl-3 text-right tabular-nums text-gray-700">{{ col.format(a.m[col.key]) }}</td>
                             </tr>
                         </tbody>
                     </table>

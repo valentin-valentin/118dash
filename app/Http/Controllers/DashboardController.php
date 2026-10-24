@@ -102,6 +102,11 @@ class DashboardController extends Controller
             ->first();
 
         return response()->json([
+            // Qualité audio des appels mesurés, par plateforme
+            'quality' => [
+                'current' => $this->audioQuality($currentStart, $currentEnd),
+                $comp1Label => $this->audioQuality($comp1Start, $comp1End)['all'],
+            ],
             'current' => [
                 'calls' => (int) $current->calls,
                 'ca' => round((float) $current->ca, 2),
@@ -127,6 +132,40 @@ class DashboardController extends Controller
                 'avg_duration' => round((float) $comp2->avg_duration),
             ],
         ]);
+    }
+
+    /**
+     * Qualité audio (calls.audio_quality : score MOS 1-5, NULL si l'appel n'a pas été mesuré),
+     * par plateforme : selfhosted = notre serveur, NULL ou voxnode = Voxnode.
+     * Pour chaque groupe : appels mesurés, score moyen, appels dégradés (score < 3,1).
+     */
+    private function audioQuality($start, $end): array
+    {
+        $platform = "CASE WHEN platform = 'selfhosted' THEN 'selfhosted' ELSE 'voxnode' END";
+
+        // Alias distinct de la colonne « platform », sinon le GROUP BY la prendrait
+        $rows = Call::whereBetween('called_at', [$start, $end])
+            ->whereNotNull('audio_quality')
+            ->selectRaw("$platform AS quality_platform, COUNT(*) AS measured, SUM(audio_quality) AS total, SUM(audio_quality < 3.1) AS degraded")
+            ->groupByRaw($platform)
+            ->get()
+            ->keyBy('quality_platform');
+
+        $group = function ($measured, $total, $degraded) {
+            return [
+                'measured' => (int) $measured,
+                'mos' => $measured ? round($total / $measured, 2) : null,
+                'degraded' => (int) $degraded,
+            ];
+        };
+        $result = [];
+        foreach (['voxnode', 'selfhosted'] as $key) {
+            $r = $rows->get($key);
+            $result[$key] = $group($r->measured ?? 0, (float) ($r->total ?? 0), $r->degraded ?? 0);
+        }
+        $result['all'] = $group($rows->sum('measured'), (float) $rows->sum('total'), $rows->sum('degraded'));
+
+        return $result;
     }
 
     /**

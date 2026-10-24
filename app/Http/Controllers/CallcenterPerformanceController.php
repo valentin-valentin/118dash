@@ -24,6 +24,12 @@ class CallcenterPerformanceController extends Controller
 {
     private const TZ = 'Europe/Paris';
 
+    // En dessous de ce score MOS, un appel est compté comme dégradé
+    private const DEGRADED_MOS = 3.1;
+
+    // Score MOS d'un appel téléphonique parfait (100 %)
+    private const MAX_MOS = 4.4;
+
     public function index(): Response
     {
         return Inertia::render('CallcenterPerformance');
@@ -108,6 +114,8 @@ class CallcenterPerformanceController extends Controller
         $talkShare = $phone ? (int) $r->talk_s / $phone : null;
         $agentDays = isset($r->agent_days) ? (int) $r->agent_days : null;
         $div = fn ($a, $b, $d = 2) => $b ? round($a / $b, $d) : '';
+        $qualityCalls = (int) $r->quality_calls;
+        $mos = $qualityCalls ? (float) $r->quality_sum / $qualityCalls : null;
 
         return [
             'appels' => $calls,
@@ -131,6 +139,10 @@ class CallcenterPerformanceController extends Controller
             'duree_agent_moyenne_s' => $div($agentS, $calls, 0),
             'ratio_temps_agent' => $div($agentS, $totalS, 4),
             'ratio_transfert' => $div((int) $r->transfer_s, $totalS, 4),
+            'qualite_audio_pct' => $mos === null ? '' : min(100, round($mos / self::MAX_MOS * 100)),
+            'qualite_audio_mos' => $mos === null ? '' : round($mos, 2),
+            'appels_qualite_mesuree' => $qualityCalls,
+            'appels_degrades' => (int) $r->quality_degraded,
         ];
     }
 
@@ -338,6 +350,8 @@ class CallcenterPerformanceController extends Controller
      * Sommes communes à toutes les agrégations.
      * Attente = total - agent - transfert, sans correction : les appels où elle est
      * négative (durées incohérentes) sont comptés dans `anomalies`.
+     * Qualité audio (calls.audio_quality, score MOS 1-5, NULL si non mesuré) : somme et nombre
+     * d'appels mesurés, pour recalculer la moyenne après regroupement.
      */
     private function sumsSql(): string
     {
@@ -351,7 +365,10 @@ class CallcenterPerformanceController extends Controller
             COALESCE(SUM(phone_duration_agent), 0) AS talk_s,
             COALESCE(SUM(phone_duration_pause), 0) AS pause_s,
             COUNT(phone_duration_agent) AS phone_calls,
-            SUM(total_duration < duration_agent + duration_transfer) AS anomalies
+            SUM(total_duration < duration_agent + duration_transfer) AS anomalies,
+            COUNT(audio_quality) AS quality_calls,
+            COALESCE(SUM(audio_quality), 0) AS quality_sum,
+            COALESCE(SUM(audio_quality < ' . self::DEGRADED_MOS . '), 0) AS quality_degraded
         ';
     }
 
