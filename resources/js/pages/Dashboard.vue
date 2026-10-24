@@ -6,6 +6,7 @@ import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import BrandTreemap from '@/components/BrandTreemap.vue'
+import AudioQualityPanel from '@/components/AudioQualityPanel.vue'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import {
     Dialog,
@@ -60,6 +61,7 @@ const monthOptions = computed(() => {
 
 // ─── Daily Breakdown + Treemap + Filtres ─────────────────────────────────────
 const daily = useApi('/data/daily-breakdown')
+const audioQuality = useApi('/data/audio-quality')
 const brandDistribution = useApi('/data/brand-distribution')
 const companyBreakdown = useApi('/data/company-breakdown')
 
@@ -85,6 +87,7 @@ const { filters, reset } = useFilters(
     },
     (f) => {
         daily.load(f)
+        audioQuality.load(f)
         brandDistribution.load(f)
         companyBreakdown.load(f)
     },
@@ -216,10 +219,6 @@ const compLabels = computed(() => {
 })
 
 // ─── Qualité audio (colonne du tableau jour par jour) ─────────────────────────
-const QUALITY_PLATFORMS = [
-    { key: 'voxnode', label: 'Voxnode' },
-    { key: 'selfhosted', label: 'Notre serveur' },
-]
 const SCALE_LINES = QUALITY_SCALE.split('\n')
 const measuredText = (n, degraded) => `${formatNumber(n)} mesuré${n > 1 ? 's' : ''} · ${formatNumber(degraded)} dégradé${degraded > 1 ? 's' : ''}`
 
@@ -355,6 +354,7 @@ onMounted(() => {
     stats.load({ period: period.value })
     loadFilterOptions()
     daily.load(filters)
+    audioQuality.load(filters)
     brandDistribution.load(filters)
     companyBreakdown.load(filters)
 })
@@ -869,16 +869,8 @@ onMounted(() => {
                 </div>
             </div>
 
-            <!-- Qualité audio du mois affiché, par plateforme (mêmes filtres que le tableau) -->
-            <div v-if="filters.with_quality && daily.data?.quality_platforms" class="-mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
-                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qualité audio par plateforme</span>
-                <span v-for="p in QUALITY_PLATFORMS" :key="p.key" class="flex items-baseline gap-2">
-                    <span class="text-gray-500">{{ p.label }}</span>
-                    <span class="font-semibold tabular-nums" :class="qualityClass(daily.data.quality_platforms[p.key].mos) || 'text-gray-900'">{{ formatQuality(daily.data.quality_platforms[p.key].mos) }}</span>
-                    <span v-if="daily.data.quality_platforms[p.key].measured" class="text-xs text-gray-400">{{ measuredText(daily.data.quality_platforms[p.key].measured, daily.data.quality_platforms[p.key].degraded) }}</span>
-                </span>
-            </div>
-
+            <!-- Qualité audio du mois (mêmes filtres que le tableau), toujours affichée -->
+            <AudioQualityPanel :report="audioQuality.data" :loading="audioQuality.loading" />
 
             <!-- Modal de détail heure par heure -->
             <Dialog :open="showHourlyModal" @update:open="closeHourlyView">

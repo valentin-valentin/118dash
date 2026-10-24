@@ -130,37 +130,179 @@ class DashboardController extends Controller
     }
 
     /**
-     * Qualité audio (calls.audio_quality : score MOS 1-5, NULL si l'appel n'a pas été mesuré),
-     * par plateforme : selfhosted = notre serveur, NULL ou voxnode = Voxnode.
-     * Pour chaque groupe : appels mesurés, score moyen, appels dégradés (score < 3,1).
+     * Qualité audio du mois (mêmes filtres que le tableau jour par jour), toujours affichée sous le tableau.
+     *
+     * calls.audio_quality : score MOS 1-5 estimé par le softphone agent, NULL si l'appel n'a pas été mesuré.
+     * Plateforme : selfhosted = notre serveur, NULL ou voxnode = Voxnode.
+     * Mesurables = appels où un agent a été en ligne au moins 5 s (ce que mesure le softphone).
+     * Dégradé = score < 3,1. Cause d'un appel dégradé : détail réseau de call_quality.
      */
-    private function audioQuality($query, $start, $end): array
+    public function audioQualityReport(Request $request): JsonResponse
     {
-        $platform = "CASE WHEN platform = 'selfhosted' THEN 'selfhosted' ELSE 'voxnode' END";
+        if ($request->filled('month')) {
+            [$year, $month] = explode('-', $request->month);
+            $start = \Carbon\Carbon::createFromDate($year, $month, 1, 'Europe/Paris')->startOfMonth();
+        } else {
+            $start = now('Europe/Paris')->startOfMonth();
+        }
+        $end = $start->copy()->endOfMonth()->min(now('Europe/Paris'));
+        $range = [$start->copy()->utc(), $end->copy()->utc()];
 
-        // Alias distinct de la colonne « platform », sinon le GROUP BY la prendrait
-        $rows = $query->whereBetween('called_at', [$start, $end])
-            ->whereNotNull('audio_quality')
-            ->selectRaw("$platform AS quality_platform, COUNT(*) AS measured, SUM(audio_quality) AS total, SUM(audio_quality < 3.1) AS degraded")
+        // Requête de base : appels du mois avec les filtres de la page
+        $base = fn () => $this->filterCalls($request, Call::query())->whereBetween('calls.called_at', $range);
+        $platform = "CASE WHEN calls.platform = 'selfhosted' THEN 'selfhosted' ELSE 'voxnode' END";
+
+        $eligible = $base()->where('calls.duration_agent', '>=', 5)
+            ->selectRaw("$platform AS quality_platform, COUNT(*) AS n")
+            ->groupByRaw($platform)
+            ->pluck('n', 'quality_platform');
+
+        // Répartition en 5 niveaux (barème : excellent ≥ 4,3 ; très bon ≥ 4,0 ; correct ≥ 3,6 ; médiocre ≥ 3,1 ; mauvais)
+        $measured = $base()->whereNotNull('calls.audio_quality')
+            ->selectRaw("
+                $platform AS quality_platform,
+                COUNT(*) AS measured,
+                SUM(calls.audio_quality) AS total,
+                SUM(calls.audio_quality >= 4.3) AS excellent,
+                SUM(calls.audio_quality >= 4.0 AND calls.audio_quality < 4.3) AS very_good,
+                SUM(calls.audio_quality >= 3.6 AND calls.audio_quality < 4.0) AS fair,
+                SUM(calls.audio_quality >= 3.1 AND calls.audio_quality < 3.6) AS poor,
+                SUM(calls.audio_quality < 3.1) AS bad
+            ")
             ->groupByRaw($platform)
             ->get()
             ->keyBy('quality_platform');
 
-        $group = function ($measured, $total, $degraded) {
-            return [
-                'measured' => (int) $measured,
-                'mos' => $measured ? round($total / $measured, 2) : null,
-                'degraded' => (int) $degraded,
-            ];
-        };
-        $result = [];
+        $platforms = [];
         foreach (['voxnode', 'selfhosted'] as $key) {
-            $r = $rows->get($key);
-            $result[$key] = $group($r->measured ?? 0, (float) ($r->total ?? 0), $r->degraded ?? 0);
+            $r = $measured->get($key);
+            $n = (int) ($r->measured ?? 0);
+            $platforms[$key] = [
+                'eligible' => (int) ($eligible[$key] ?? 0),
+                'measured' => $n,
+                'mos' => $n ? round($r->total / $n, 2) : null,
+                'levels' => [
+                    'excellent' => (int) ($r->excellent ?? 0),
+                    'very_good' => (int) ($r->very_good ?? 0),
+                    'fair' => (int) ($r->fair ?? 0),
+                    'poor' => (int) ($r->poor ?? 0),
+                    'bad' => (int) ($r->bad ?? 0),
+                ],
+            ];
         }
-        $result['all'] = $group($rows->sum('measured'), (float) $rows->sum('total'), $rows->sum('degraded'));
 
-        return $result;
+        // Derniers appels dégradés, avec leur détail réseau
+        $degraded = $base()->where('calls.audio_quality', '<', 3.1)
+            ->leftJoin('call_quality', 'call_quality.call_id', '=', 'calls.id')
+            ->orderByDesc('calls.called_at')
+            ->limit(10)
+            ->get([
+                'calls.id', 'calls.called_at', 'calls.agent_name', 'calls.brand_name', 'calls.audio_quality',
+                \DB::raw("$platform AS quality_platform"),
+                'call_quality.loss_pct', 'call_quality.jitter_max_ms', 'call_quality.rtt_avg_ms',
+            ])
+            ->map(fn ($c) => [
+                'id' => $c->id,
+                'called_at' => $c->called_at,
+                'agent' => $c->agent_name,
+                'center' => $this->centerLabel($c->agent_name),
+                'brand' => $c->brand_name,
+                'platform' => $c->quality_platform,
+                'mos' => (float) $c->audio_quality,
+                'loss_pct' => $c->loss_pct !== null ? (float) $c->loss_pct : null,
+                'jitter_ms' => $c->jitter_max_ms !== null ? (int) $c->jitter_max_ms : null,
+                'rtt_ms' => $c->rtt_avg_ms !== null ? (int) $c->rtt_avg_ms : null,
+            ]);
+
+        // Agents avec le plus d'appels dégradés (rapportés à leurs appels mesurés)
+        $agents = $base()->whereNotNull('calls.audio_quality')->whereNotNull('calls.agent_name')
+            ->selectRaw('calls.agent_name AS agent, COUNT(*) AS measured, SUM(calls.audio_quality < 3.1) AS degraded')
+            ->groupBy('calls.agent_name')
+            ->havingRaw('degraded > 0')
+            ->orderByDesc('degraded')
+            ->limit(5)
+            ->get()
+            ->map(fn ($a) => [
+                'agent' => $a->agent,
+                'center' => $this->centerLabel($a->agent),
+                'measured' => (int) $a->measured,
+                'degraded' => (int) $a->degraded,
+            ]);
+
+        return response()->json([
+            'month' => $start->format('Y-m'),
+            'platforms' => $platforms,
+            'degraded_calls' => $degraded,
+            'agents' => $agents,
+        ]);
+    }
+
+    /**
+     * Centre d'un agent d'après son nom (config/callcenters.php) : noms exacts, puis préfixe le plus long.
+     * Les centres optionnels (Madagascar Remote) restent dans leur centre d'origine.
+     */
+    private function centerLabel(?string $agent): ?string
+    {
+        if (!$agent) {
+            return null;
+        }
+        $best = null;
+        $bestLength = -1;
+        foreach (config('callcenters') as $conf) {
+            if (!empty($conf['optional'])) {
+                continue;
+            }
+            if (in_array($agent, $conf['agents'] ?? [], true)) {
+                return $conf['label'];
+            }
+            foreach ($conf['prefixes'] ?? [] as $prefix) {
+                if (str_starts_with($agent, $prefix) && strlen($prefix) > $bestLength) {
+                    [$best, $bestLength] = [$conf['label'], strlen($prefix)];
+                }
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Filtres de la page (mêmes règles que le tableau jour par jour).
+     */
+    private function filterCalls(Request $request, $query)
+    {
+        if ($request->filled('brand_name')) {
+            $query->whereIn('calls.brand_name', $this->parseMultiSelect($request->brand_name));
+        }
+        if ($request->filled('agent_name')) {
+            $query->whereIn('calls.agent_name', $this->parseMultiSelect($request->agent_name));
+        }
+        if ($request->filled('callcenter_id')) {
+            $query->whereIn('calls.callcenter_id', array_map('intval', $this->parseMultiSelect($request->callcenter_id)));
+        }
+        if ($request->filled('carrier')) {
+            $query->whereIn('calls.carrier', $this->parseMultiSelect($request->carrier));
+        }
+        if ($request->filled('provider_id')) {
+            $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
+            $query->whereHas('phonenumber', fn ($q) => $q->withTrashed()->whereIn('provider_id', $providers));
+        }
+        if ($request->filled('company_id')) {
+            $companies = array_map('intval', $this->parseMultiSelect($request->company_id));
+            $query->whereHas('phonenumber', fn ($q) => $q->withTrashed()->whereIn('company_id', $companies));
+        }
+        if ($request->filled('source_id')) {
+            $sources = array_map('intval', $this->parseMultiSelect($request->source_id));
+            $query->where(function ($q) use ($sources) {
+                $q->whereIn('calls.source_id', $sources)
+                    ->orWhere(fn ($sq) => $sq->whereNull('calls.source_id')
+                        ->whereHas('phonenumber', fn ($psq) => $psq->withTrashed()->whereIn('source_id', $sources)));
+            });
+        }
+        if ($request->filled('min_duration') && $request->min_duration == 'true') {
+            $query->where('calls.total_duration', '>=', 10);
+        }
+
+        return $query;
     }
 
     /**
@@ -747,10 +889,6 @@ class DashboardController extends Controller
         return response()->json([
             'items' => $daily,
             'totals' => $totals,
-            // Seulement avec le filtre « Avec qualité audio » (requête en plus)
-            'quality_platforms' => $request->input('with_quality') == 'true'
-                ? $this->audioQuality($applyFilters(Call::query()), $start->copy()->utc(), $lastDay->copy()->endOfDay()->min($now)->utc())
-                : null,
         ]);
     }
 

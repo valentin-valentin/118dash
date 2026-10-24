@@ -102,6 +102,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/chart-data', [DashboardController::class, 'chartData']);
         Route::get('/brand-distribution', [DashboardController::class, 'brandDistribution']);
         Route::get('/daily-breakdown', [DashboardController::class, 'dailyBreakdown']);
+        Route::get('/audio-quality', [DashboardController::class, 'audioQualityReport']);
         Route::get('/company-breakdown', [DashboardController::class, 'companyBreakdown']);
         Route::get('/hourly-breakdown', [DashboardController::class, 'hourlyBreakdown']);
         Route::get('/dashboard/filter-options', [DashboardController::class, 'filterOptions']);
