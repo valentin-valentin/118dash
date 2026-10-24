@@ -181,6 +181,8 @@ class DashboardController extends Controller
                 'eligible' => (int) ($eligible[$key] ?? 0),
                 'measured' => $n,
                 'mos' => $n ? round($r->total / $n, 2) : null,
+                // Somme des scores : pour recalculer la moyenne de l'ensemble
+                'sum' => (float) ($r->total ?? 0),
                 'levels' => [
                     'excellent' => (int) ($r->excellent ?? 0),
                     'very_good' => (int) ($r->very_good ?? 0),

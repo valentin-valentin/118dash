@@ -41,17 +41,30 @@ const monthLabel = computed(() => {
     return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 })
 
-const rows = computed(() =>
+const platformRows = computed(() =>
     PLATFORMS.map((p) => {
-        const r = props.report?.platforms?.[p.key] ?? { eligible: 0, measured: 0, mos: null, levels: {} }
+        const r = props.report?.platforms?.[p.key] ?? { eligible: 0, measured: 0, mos: null, sum: 0, levels: {} }
         return { ...p, ...r, degraded: r.levels?.bad ?? 0 }
     }),
 )
-const totals = computed(() => {
-    const eligible = rows.value.reduce((n, r) => n + r.eligible, 0)
-    const measured = rows.value.reduce((n, r) => n + r.measured, 0)
-    return { eligible, measured }
+// Ensemble : sommes des deux plateformes, moyenne recalculée à partir des sommes
+const allRow = computed(() => {
+    const rows = platformRows.value
+    const measured = rows.reduce((n, r) => n + r.measured, 0)
+    const levels = Object.fromEntries(LEVELS.map((l) => [l.key, rows.reduce((n, r) => n + (r.levels?.[l.key] ?? 0), 0)]))
+    return {
+        key: 'all',
+        label: 'Ensemble',
+        total: true,
+        eligible: rows.reduce((n, r) => n + r.eligible, 0),
+        measured,
+        mos: measured ? rows.reduce((n, r) => n + (r.sum ?? 0), 0) / measured : null,
+        levels,
+        degraded: levels.bad,
+    }
 })
+const rows = computed(() => [allRow.value, ...platformRows.value])
+const totals = computed(() => ({ eligible: allRow.value.eligible, measured: allRow.value.measured }))
 const hasMeasures = computed(() => totals.value.measured > 0)
 
 // Cause probable d'un appel dégradé : les mesures réseau au-delà des seuils usuels
@@ -65,8 +78,9 @@ function cause(c) {
     return { text: `pertes ${String(c.loss_pct ?? 0).replace('.', ',')} %, gigue ${c.jitter_ms ?? '—'} ms, latence ${c.rtt_ms ?? '—'} ms`, strong: false }
 }
 
-// called_at est en UTC (ISO si l'API le formate, « AAAA-MM-JJ HH:MM:SS » sinon)
-const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 'T')}Z`).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', ' à ') : '—')
+// called_at est en UTC (ISO si l'API le formate, « AAAA-MM-JJ HH:MM:SS » sinon) ; affiché en heure de Paris,
+// comme le reste du tableau de bord, quel que soit le fuseau de l'ordinateur
+const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 'T')}Z`).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', ' à ') : '—')
 </script>
 
 <template>
@@ -99,26 +113,24 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
                 <table class="w-full text-sm">
                     <thead>
                         <tr class="text-left text-xs text-gray-500">
-                            <th class="px-4 pb-1 pt-3 font-normal" />
-                            <th class="px-4 pb-1 pt-3 text-right font-normal">Qualité moyenne</th>
-                            <th class="px-4 pb-1 pt-3 text-right font-normal">Mesurés</th>
-                            <th class="w-1/2 px-4 pb-1 pt-3 font-normal">
-                                <span class="flex flex-wrap gap-x-3 gap-y-1">
-                                    <span v-for="l in LEVELS" :key="l.key" class="flex items-center gap-1">
-                                        <span class="h-2.5 w-2.5 rounded-sm" :style="{ background: l.color }" />
-                                        {{ l.label }}
-                                    </span>
+                            <th class="px-4 pb-2 pt-3 align-bottom leading-4 font-normal" />
+                            <th class="px-4 pb-2 pt-3 align-bottom leading-4 text-right font-normal">Qualité moyenne</th>
+                            <th class="px-4 pb-2 pt-3 align-bottom leading-4 text-right font-normal">Mesurés</th>
+                            <th class="w-1/2 px-4 pb-2 pt-3 align-bottom font-normal leading-4">
+                                <!-- Légende en ligne : même ligne de base que les autres titres -->
+                                <span v-for="l in LEVELS" :key="l.key" class="mr-3 inline-block whitespace-nowrap last:mr-0">
+                                    <span class="relative top-px mr-1.5 inline-block h-2.5 w-2.5 rounded-[2px] align-baseline" :style="{ background: l.color }" />{{ l.label }}
                                 </span>
                             </th>
-                            <th class="px-4 pb-1 pt-3 text-right font-normal">Dégradés</th>
+                            <th class="px-4 pb-2 pt-3 align-bottom leading-4 text-right font-normal">Dégradés</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="r in rows" :key="r.key">
-                            <td class="px-4 py-2 font-medium text-gray-900">{{ r.label }}</td>
+                        <tr v-for="r in rows" :key="r.key" :class="r.total && 'border-t border-b border-t-gray-200 border-b-gray-100 bg-gray-50/70'">
+                            <td class="px-4 py-2 text-gray-900" :class="r.total ? 'font-semibold' : 'font-medium'">{{ r.label }}</td>
                             <td class="whitespace-nowrap px-4 py-2 text-right font-semibold tabular-nums" :class="qualityClass(r.mos) || 'text-gray-900'">{{ formatQuality(r.mos) }}</td>
                             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-gray-700">
-                                {{ int(r.measured) }} <span class="text-gray-400">({{ pct(r.measured, r.eligible) }})</span>
+                                {{ int(r.measured) }}<span class="inline-block w-[3.75rem] text-right text-gray-400">({{ pct(r.measured, r.eligible) }})</span>
                             </td>
                             <td class="px-4 py-2">
                                 <div v-if="r.measured" class="flex h-4 gap-px overflow-hidden rounded-sm">
@@ -132,7 +144,7 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
                                 <span v-else class="text-gray-400">—</span>
                             </td>
                             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums" :class="r.degraded ? 'font-medium text-red-600' : 'text-gray-400'">
-                                {{ int(r.degraded) }} <span v-if="r.measured" class="font-normal text-gray-400">({{ pct(r.degraded, r.measured) }})</span>
+                                {{ int(r.degraded) }}<span class="inline-block w-[3.75rem] text-right font-normal text-gray-400">{{ r.measured ? `(${pct(r.degraded, r.measured)})` : '' }}</span>
                             </td>
                         </tr>
                     </tbody>
@@ -140,7 +152,7 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
             </div>
 
             <!-- Appels dégradés et agents touchés -->
-            <div v-if="report.degraded_calls.length" class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div v-if="report.degraded_calls.length" class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_21rem]">
                 <div class="min-w-0">
                     <div class="mb-1.5 text-xs text-gray-500">Derniers appels dégradés</div>
                     <table class="w-full text-sm">
@@ -158,18 +170,17 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
                 </div>
                 <div v-if="report.agents.length">
                     <div class="mb-1.5 text-xs text-gray-500">Agents les plus touchés</div>
-                    <ul class="space-y-1 text-sm">
-                        <li v-for="a in report.agents" :key="a.agent" class="flex items-baseline justify-between gap-3">
-                            <span>
-                                <span class="font-medium text-gray-900">{{ a.agent }}</span>
-                                <span v-if="a.center" class="ml-1.5 text-xs text-gray-400">{{ a.center }}</span>
-                            </span>
-                            <span class="tabular-nums text-gray-600">
-                                <span class="font-medium text-red-600">{{ int(a.degraded) }}</span> sur {{ int(a.measured) }}
-                                <span class="text-gray-400">({{ pct(a.degraded, a.measured) }})</span>
-                            </span>
-                        </li>
-                    </ul>
+                    <table class="w-full text-sm">
+                        <tbody>
+                            <tr v-for="a in report.agents" :key="a.agent" class="border-b border-gray-50 last:border-b-0">
+                                <td class="whitespace-nowrap py-1 pr-3 font-medium text-gray-900">{{ a.agent }}</td>
+                                <td class="whitespace-nowrap py-1 pr-3 text-gray-500">{{ a.center || '—' }}</td>
+                                <td class="whitespace-nowrap py-1 text-right tabular-nums text-gray-500">
+                                    <span class="font-medium text-red-600">{{ int(a.degraded) }}</span> sur {{ int(a.measured) }}<span class="inline-block w-14 text-right text-gray-400">({{ pct(a.degraded, a.measured) }})</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </template>

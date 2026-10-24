@@ -40,6 +40,9 @@ function parseUrlParams<T extends Record<string, unknown>>(defaults: T): T {
                     const num = Number(v);
                     return !isNaN(num) && v.trim() !== '' ? num : v;
                 }) as any;
+            } else if (typeof defaults[key] === 'boolean') {
+                // Cases à cocher : « true » dans l'adresse
+                result[key] = (value === 'true') as any;
             } else if (typeof defaults[key] === 'number') {
                 // Valeur numérique par défaut (page, per_page...) : on convertit
                 const num = Number(value);
