@@ -108,7 +108,7 @@ const index = (c, key) => (ensemble.value.m[key] ? (c.m[key] / ensemble.value.m[
 
 // ─── Tableau de synthèse ──────────────────────────────────────────────────────
 // money : montant (masqué hors rapport complet) ; better : sens favorable d'une hausse
-// Qualité audio (page 2) : seulement si des appels ont été mesurés sur la période (mesure active depuis le 24/10/2026)
+// Qualité audio (page 2) : seulement si des appels ont été mesurés sur la période
 const hasQuality = computed(() => ensemble.value.m.quality_calls > 0)
 
 const SECTIONS = computed(() => [

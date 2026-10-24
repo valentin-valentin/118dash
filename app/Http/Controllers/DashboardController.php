@@ -102,11 +102,6 @@ class DashboardController extends Controller
             ->first();
 
         return response()->json([
-            // Qualité audio des appels mesurés, par plateforme
-            'quality' => [
-                'current' => $this->audioQuality($currentStart, $currentEnd),
-                $comp1Label => $this->audioQuality($comp1Start, $comp1End)['all'],
-            ],
             'current' => [
                 'calls' => (int) $current->calls,
                 'ca' => round((float) $current->ca, 2),
@@ -139,12 +134,12 @@ class DashboardController extends Controller
      * par plateforme : selfhosted = notre serveur, NULL ou voxnode = Voxnode.
      * Pour chaque groupe : appels mesurés, score moyen, appels dégradés (score < 3,1).
      */
-    private function audioQuality($start, $end): array
+    private function audioQuality($query, $start, $end): array
     {
         $platform = "CASE WHEN platform = 'selfhosted' THEN 'selfhosted' ELSE 'voxnode' END";
 
         // Alias distinct de la colonne « platform », sinon le GROUP BY la prendrait
-        $rows = Call::whereBetween('called_at', [$start, $end])
+        $rows = $query->whereBetween('called_at', [$start, $end])
             ->whereNotNull('audio_quality')
             ->selectRaw("$platform AS quality_platform, COUNT(*) AS measured, SUM(audio_quality) AS total, SUM(audio_quality < 3.1) AS degraded")
             ->groupByRaw($platform)
@@ -539,7 +534,10 @@ class DashboardController extends Controller
                     COALESCE(SUM(payout_source), 0) as reverse,
                     COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                     COALESCE(SUM(total_duration), 0) as total_duration,
-                    COALESCE(AVG(total_duration), 0) as avg_duration
+                    COALESCE(AVG(total_duration), 0) as avg_duration,
+                    COUNT(audio_quality) as quality_calls,
+                    COALESCE(SUM(audio_quality), 0) as quality_sum,
+                    COALESCE(SUM(audio_quality < 3.1), 0) as quality_degraded
                 ')
                 ->first();
 
@@ -551,6 +549,9 @@ class DashboardController extends Controller
                 'benefice' => $data ? (float) $data->benefice : 0,
                 'total_duration' => $data ? (int) $data->total_duration : 0,
                 'avg_duration' => $data ? (float) $data->avg_duration : 0,
+                'quality_calls' => $data ? (int) $data->quality_calls : 0,
+                'quality_sum' => $data ? (float) $data->quality_sum : 0,
+                'quality_degraded' => $data ? (int) $data->quality_degraded : 0,
             ];
         });
 
@@ -642,6 +643,11 @@ class DashboardController extends Controller
                 'benefice' => $benefice,
                 'total_duration' => $totalDuration,
                 'avg_duration' => $avgDuration,
+                // Qualité audio : appels mesurés, score moyen, appels dégradés (score < 3,1)
+                'quality_calls' => $row->quality_calls,
+                'quality_sum' => $row->quality_sum,
+                'quality_mos' => $row->quality_calls ? round($row->quality_sum / $row->quality_calls, 2) : null,
+                'quality_degraded' => $row->quality_degraded,
                 'prev_calls' => $prevCalls,
                 'prev_ca' => $prevCa,
                 'prev_reverse' => $prevReverse,
@@ -732,9 +738,16 @@ class DashboardController extends Controller
             $totals['rejected_calls'] = array_sum($rejectedByDay);
         }
 
+        // Qualité audio du mois : total, puis par plateforme (mêmes filtres que le tableau)
+        $qualityCalls = $daily->sum('quality_calls');
+        $totals['quality_calls'] = $qualityCalls;
+        $totals['quality_mos'] = $qualityCalls ? round($daily->sum('quality_sum') / $qualityCalls, 2) : null;
+        $totals['quality_degraded'] = $daily->sum('quality_degraded');
+
         return response()->json([
             'items' => $daily,
             'totals' => $totals,
+            'quality_platforms' => $this->audioQuality($applyFilters(Call::query()), $start->copy()->utc(), $lastDay->copy()->endOfDay()->min($now)->utc()),
         ]);
     }
 

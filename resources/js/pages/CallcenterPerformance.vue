@@ -1320,7 +1320,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                         <p>Conversation / pause : répartition mesurée sur les appels où l'application agent l'a enregistrée, appliquée à toute la durée agent.</p>
                         <p>
                             Qualité audio : score estimé à partir du réseau du softphone agent (pertes, gigue, délai), affiché en % d'un appel parfait (score 4,4) avec le score
-                            entre parenthèses. Mesurée depuis le 24/10/2026, sur les appels décrochés d'au moins 5 s. Dégradé : score inférieur à 3,1.
+                            entre parenthèses. Mesurée sur les appels décrochés d'au moins 5 s. Dégradé : score inférieur à 3,1.
                         </p>
                         <p v-if="costEstimated">Période partielle : le coût mensuel est réparti au prorata des jours, la marge est une estimation.</p>
                         <p v-if="costMissing">Pas de coût renseigné pour certains centres : marge non calculée (config/callcenters.php).</p>

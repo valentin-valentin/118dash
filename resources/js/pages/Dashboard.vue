@@ -16,7 +16,8 @@ import {
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
-import { QUALITY_SCALE, formatQuality, qualityClass, qualityLevel } from '@/lib/quality'
+import { QUALITY_SCALE, formatQuality, qualityClass } from '@/lib/quality'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // ─── Période pour les KPIs et graphiques ──────────────────────────────────────
 const period = ref('today')
@@ -110,6 +111,7 @@ const columns = computed(() => [
     { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
     { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
     { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
+    { key: 'quality_mos', label: 'Qualité audio', sortable: true, headerClass: 'text-right', scale: true },
 ])
 
 const sortKey = ref('date')
@@ -136,6 +138,10 @@ const sortedRows = computed(() => {
             aVal = new Date(aVal).getTime()
             bVal = new Date(bVal).getTime()
         }
+
+        // Jours sans valeur (ex. qualité non mesurée) toujours en bas
+        if (aVal === null || aVal === undefined) return 1
+        if (bVal === null || bVal === undefined) return -1
 
         if (sortDir.value === 'asc') {
             return aVal > bVal ? 1 : -1
@@ -206,15 +212,13 @@ const compLabels = computed(() => {
     }
 })
 
-// ─── Qualité audio de la période, par plateforme ──────────────────────────────
-const QUALITY_GROUPS = [
-    { key: 'all', label: 'Tous les appels' },
+// ─── Qualité audio (colonne du tableau jour par jour) ─────────────────────────
+const QUALITY_PLATFORMS = [
     { key: 'voxnode', label: 'Voxnode' },
     { key: 'selfhosted', label: 'Notre serveur' },
 ]
-const quality = computed(() => stats.data?.quality ?? null)
-const qualityCompare = computed(() => quality.value?.[compLabels.value.comp1Key] ?? null)
-const measuredText = (g) => `${formatNumber(g.measured)} appel${g.measured > 1 ? 's' : ''} mesuré${g.measured > 1 ? 's' : ''} · ${formatNumber(g.degraded)} dégradé${g.degraded > 1 ? 's' : ''}`
+const SCALE_LINES = QUALITY_SCALE.split('\n')
+const measuredText = (n, degraded) => `${formatNumber(n)} mesuré${n > 1 ? 's' : ''} · ${formatNumber(degraded)} dégradé${degraded > 1 ? 's' : ''}`
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDayName(dateString) {
@@ -541,36 +545,6 @@ onMounted(() => {
                 </div>
             </div>
 
-            <!-- Qualité audio : moyenne de la période, Voxnode et notre serveur côte à côte -->
-            <div class="rounded-lg border border-gray-200 bg-white">
-                <div class="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3">
-                    <div class="cursor-help text-xs font-semibold uppercase tracking-wider text-gray-500" :title="QUALITY_SCALE">Qualité audio ⓘ</div>
-                    <div v-if="qualityCompare?.measured" class="text-xs text-gray-500">
-                        {{ compLabels.comp1 }} : {{ formatQuality(qualityCompare.mos) }}
-                    </div>
-                </div>
-                <div v-if="stats.loading" class="m-4 h-10 animate-pulse rounded bg-gray-100"></div>
-                <p v-else-if="!quality?.current.all.measured" class="px-4 pb-4 pt-2 text-sm text-gray-400">
-                    Pas encore d'appel mesuré sur la période (mesure active depuis le 24/10/2026).
-                </p>
-                <div v-else class="grid grid-cols-1 sm:grid-cols-3">
-                    <div
-                        v-for="g in QUALITY_GROUPS"
-                        :key="g.key"
-                        class="border-gray-100 px-4 pb-3 pt-2 sm:[&:not(:first-child)]:border-l"
-                        :title="quality.current[g.key].mos !== null ? `${qualityLevel(quality.current[g.key].mos)}\n\n${QUALITY_SCALE}` : ''"
-                    >
-                        <div class="text-xs text-gray-500">{{ g.label }}</div>
-                        <div class="mt-0.5 text-2xl font-bold tabular-nums" :class="qualityClass(quality.current[g.key].mos) || 'text-gray-900'">
-                            {{ formatQuality(quality.current[g.key].mos) }}
-                        </div>
-                        <div class="text-xs text-gray-400">
-                            {{ quality.current[g.key].measured ? measuredText(quality.current[g.key]) : 'aucun appel mesuré' }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- Filtres -->
             <FilterBar
                 :has-active-filters="hasFilters"
@@ -685,7 +659,15 @@ onMounted(() => {
                                     :class="[col.headerClass || 'text-left', col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
                                     @click="col.sortable && toggleSort(col.key)"
                                 >
-                                    {{ col.label }}
+                                    <Tooltip v-if="col.scale">
+                                        <TooltipTrigger as-child>
+                                            <span class="cursor-help underline decoration-dotted underline-offset-2" @click.stop>{{ col.label }}</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent class="max-w-xs text-left normal-case tracking-normal">
+                                            <p v-for="line in SCALE_LINES" :key="line" class="leading-relaxed">{{ line }}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                    <template v-else>{{ col.label }}</template>
                                     <template v-if="col.sortable">
                                         <span v-if="sortKey === col.key && sortDir === 'asc'">↑</span>
                                         <span v-else-if="sortKey === col.key && sortDir === 'desc'">↓</span>
@@ -758,6 +740,10 @@ onMounted(() => {
                                             ({{ daily.data.totals.benefice_var >= 0 ? '+' : '' }}{{ daily.data.totals.benefice_var }}%)
                                         </span>
                                     </div>
+                                </td>
+                                <td class="px-3 py-2 text-right text-sm">
+                                    <div class="font-semibold" :class="qualityClass(daily.data.totals.quality_mos) || 'text-gray-900'">{{ formatQuality(daily.data.totals.quality_mos) }}</div>
+                                    <div v-if="daily.data.totals.quality_calls" class="text-xs text-gray-500">{{ measuredText(daily.data.totals.quality_calls, daily.data.totals.quality_degraded) }}</div>
                                 </td>
                             </tr>
 
@@ -847,6 +833,10 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
+                                    <td class="px-3 py-1.5 text-right text-sm">
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : qualityClass(row.quality_mos) || 'text-gray-900'">{{ formatQuality(row.quality_mos) }}</div>
+                                        <div v-if="row.quality_calls && !isSunday(row.date)" class="text-xs text-gray-500">{{ measuredText(row.quality_calls, row.quality_degraded) }}</div>
+                                    </td>
                                 </tr>
                             </template>
 
@@ -862,6 +852,17 @@ onMounted(() => {
                     </table>
                 </div>
             </div>
+
+            <!-- Qualité audio du mois affiché, par plateforme (mêmes filtres que le tableau) -->
+            <div v-if="daily.data?.quality_platforms" class="-mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qualité audio par plateforme</span>
+                <span v-for="p in QUALITY_PLATFORMS" :key="p.key" class="flex items-baseline gap-2">
+                    <span class="text-gray-500">{{ p.label }}</span>
+                    <span class="font-semibold tabular-nums" :class="qualityClass(daily.data.quality_platforms[p.key].mos) || 'text-gray-900'">{{ formatQuality(daily.data.quality_platforms[p.key].mos) }}</span>
+                    <span v-if="daily.data.quality_platforms[p.key].measured" class="text-xs text-gray-400">{{ measuredText(daily.data.quality_platforms[p.key].measured, daily.data.quality_platforms[p.key].degraded) }}</span>
+                </span>
+            </div>
+
 
             <!-- Modal de détail heure par heure -->
             <Dialog :open="showHourlyModal" @update:open="closeHourlyView">

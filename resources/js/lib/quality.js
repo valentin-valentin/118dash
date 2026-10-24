@@ -36,5 +36,5 @@ export const QUALITY_SCALE = [
     '3,6 – 4,0 correct (~82 %)',
     '3,1 – 3,6 médiocre (~70 %)',
     '< 3,1 mauvais : appel compté comme dégradé',
-    'Mesurée sur les appels décrochés d\'au moins 5 s, depuis le 24/10/2026.',
+    'Mesurée sur les appels décrochés d\'au moins 5 s.',
 ].join('\n')
