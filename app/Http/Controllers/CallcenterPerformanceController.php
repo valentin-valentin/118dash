@@ -68,9 +68,13 @@ class CallcenterPerformanceController extends Controller
         foreach ($centers as $c) {
             $rows[] = ['niveau' => 'centre', 'date' => '', 'centre' => $c['label'], 'agent' => '', ...$this->csvValues((object) $c, $c['cost'])];
         }
+        $centersById = $centers->keyBy('id');
         foreach ($this->agents($center, $from, $to) as $a) {
             $a->agent_days = $a->days; // pour un agent, journées-agent = jours actifs
-            $rows[] = ['niveau' => 'agent', 'date' => '', 'centre' => $labels[$a->callcenter_id], 'agent' => $a->id, ...$this->csvValues($a)];
+            // Part du coût du centre : au prorata de ses jours travaillés
+            $c = $centersById->get($a->callcenter_id);
+            $cost = $c && $c['cost'] !== null && $c['agent_days'] ? $c['cost'] * $a->days / $c['agent_days'] : null;
+            $rows[] = ['niveau' => 'agent', 'date' => '', 'centre' => $labels[$a->callcenter_id], 'agent' => $a->id, ...$this->csvValues($a, $cost)];
         }
         foreach ($this->daily($center, $from, $to) as $d) {
             $rows[] = ['niveau' => 'centre_jour', 'date' => $d->date, 'centre' => $labels[$d->id], 'agent' => '', ...$this->csvValues($d)];
@@ -114,6 +118,7 @@ class CallcenterPerformanceController extends Controller
         $talkShare = $phone ? (int) $r->talk_s / $phone : null;
         $agentDays = isset($r->agent_days) ? (int) $r->agent_days : null;
         $div = fn ($a, $b, $d = 2) => $b ? round($a / $b, $d) : '';
+        $talkMinutes = $talkShare === null ? null : $agentS * $talkShare / 60;
         $qualityCalls = (int) $r->quality_calls;
         $mos = $qualityCalls ? (float) $r->quality_sum / $qualityCalls : null;
 
@@ -139,6 +144,9 @@ class CallcenterPerformanceController extends Controller
             'duree_agent_moyenne_s' => $div($agentS, $calls, 0),
             'ratio_temps_agent' => $div($agentS, $totalS, 4),
             'ratio_transfert' => $div((int) $r->transfer_s, $totalS, 4),
+            // Minutes où l'agent parle vraiment avec un client, et ce que coûte chacune
+            'minutes_parlees' => $talkMinutes === null ? '' : round($talkMinutes),
+            'cout_par_minute_parlee' => $cost === null || !$talkMinutes ? '' : round($cost / $talkMinutes, 4),
             'qualite_audio_pct' => $mos === null ? '' : min(100, round($mos / self::MAX_MOS * 100)),
             'qualite_audio_mos' => $mos === null ? '' : round($mos, 2),
             'appels_qualite_mesuree' => $qualityCalls,

@@ -16,6 +16,11 @@ import {
 } from '@/lib/performance'
 import { QUALITY_SCALE } from '@/lib/quality'
 
+// Coût effectif d'une minute où l'agent parle vraiment avec un client
+const TALK_COST_HINT =
+    'Coût du centre sur la période divisé par les minutes de conversation (pause et transfert exclus). ' +
+    'Pour un agent : part du coût du centre au prorata de ses jours travaillés.'
+
 // ─── Période ──────────────────────────────────────────────────────────────────
 const PRESETS = [
     { key: 'today', label: "Aujourd'hui" },
@@ -206,6 +211,7 @@ const CARD_GROUPS = [
             { key: 'cost', label: 'Coût', format: (v) => fmt.eur(v) },
             { key: 'margin', label: 'Marge', format: (v) => fmt.eur(v), best: 'max' },
             { key: 'margin_rate', label: 'Taux de marge', format: (v) => fmt.pct(v), best: 'max' },
+            { key: 'cost_per_talk_minute', label: 'Coût / minute parlée', format: (v) => fmt.eur(v, 3), best: 'min', hint: TALK_COST_HINT },
         ],
     },
     {
@@ -267,6 +273,8 @@ const TABLE = [
             { key: 'payout_over_cost', label: 'Payout / coût', format: fmt.mult, best: 'max', secondary: true },
             { key: 'cost_per_call', label: 'Coût par appel', format: (v) => fmt.eur(v, 2), best: 'min', secondary: true },
             { key: 'margin_per_call', label: 'Marge par appel', format: (v) => fmt.eur(v, 2), best: 'max', secondary: true },
+            { key: 'cost_per_talk_minute', label: 'Coût par minute parlée', format: (v) => fmt.eur(v, 3), best: 'min', cost: true, hint: TALK_COST_HINT },
+            { key: 'talk_minutes_per_agent_day', label: 'Minutes parlées par journée-agent', format: (v) => fmt.int(v), best: 'max', secondary: true },
             { key: 'payout_per_agent_hour', label: 'Payout / heure agent', format: (v) => fmt.eur(v, 2), best: 'max' },
             { key: 'payout_per_agent_day', label: 'Payout / journée-agent', format: (v) => fmt.eur(v), best: 'max' },
         ],
@@ -455,11 +463,19 @@ const AGENT_COLUMNS = [
     { key: 'avg_agent', label: 'Durée agent', format: fmt.dur, hint: 'Moyenne par appel' },
     { key: 'avg_transfer', label: 'Durée transfert', format: fmt.dur, hint: 'Moyenne par appel' },
     { key: 'agent_ratio', label: 'Ratio agent', format: (v) => fmt.pct(v) },
+    { key: 'cost_per_talk_minute', label: 'Coût / min parlée', format: (v) => fmt.eur(v, 3), hint: TALK_COST_HINT },
     { key: 'quality_mos', label: 'Qualité audio', format: fmt.quality, hint: QUALITY_SCALE },
     { key: 'quality_degraded', label: 'Appels dégradés', format: fmt.int, hint: 'Appels mesurés avec un score inférieur à 3,1 (mauvais)' },
 ]
 
 const agentKey = (a) => `${a.id}-${a.callcenter_id}`
+
+// Part du coût du centre portée par un agent : au prorata de ses jours travaillés (journées-agent)
+function agentCost(a) {
+    const center = centersById.value[a.callcenter_id]
+    if (!center || center.cost === null || center.cost === undefined || !Number(center.agent_days)) return null
+    return (Number(center.cost) * Number(a.days)) / Number(center.agent_days)
+}
 
 function agentMetrics(a) {
     const m = metrics(a)
@@ -470,6 +486,7 @@ function agentMetrics(a) {
         ...m,
         calls_per_day: m.days ? m.calls / m.days : null,
         payout_per_day: perDay,
+        talk_minutes_per_day: m.talk_minutes === null || !m.days ? null : m.talk_minutes / m.days,
         vs_center: perDay !== null && centerPerDay ? perDay / centerPerDay - 1 : null,
     }
 }
@@ -492,6 +509,7 @@ const agents = computed(() => {
     const rows = agentsInScope.value
         .filter((a) => !agentFilters.hideSmall || Number(a.calls) >= smallThreshold.value)
         .filter((a) => !q || (a.username ?? '').toLowerCase().includes(q))
+        .map((a) => ({ ...a, cost: agentCost(a) }))
         .map((a) => ({ ...a, center: centersById.value[a.callcenter_id], m: agentMetrics(a) }))
 
     const dir = agentSort.dir === 'asc' ? 1 : -1
@@ -510,7 +528,13 @@ const hiddenSmallAgents = computed(() => agentsInScope.value.filter((a) => Numbe
 // Ligne de total des agents affichés
 const agentsTotal = computed(() => {
     const m = metrics(addSums(agents.value))
-    return { ...m, calls_per_day: m.days ? m.calls / m.days : null, payout_per_day: m.days ? m.payout / m.days : null, vs_center: null }
+    return {
+        ...m,
+        calls_per_day: m.days ? m.calls / m.days : null,
+        payout_per_day: m.days ? m.payout / m.days : null,
+        talk_minutes_per_day: m.talk_minutes === null || !m.days ? null : m.talk_minutes / m.days,
+        vs_center: null,
+    }
 })
 
 function sortAgents(key) {
@@ -574,6 +598,8 @@ const AGENT_COMPARE = [
     { key: 'avg_pause', centerKey: 'avg_pause', label: 'dont pause', format: fmt.dur, better: 'down', indent: true },
     { key: 'avg_transfer', centerKey: 'avg_transfer', label: 'Transfert par appel', format: fmt.dur, better: 'up' },
     { key: 'agent_ratio', centerKey: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v), better: 'down' },
+    { key: 'talk_minutes_per_day', centerKey: 'talk_minutes_per_agent_day', label: 'Minutes parlées par jour', format: (v) => fmt.int(v), better: 'up' },
+    { key: 'cost_per_talk_minute', centerKey: 'cost_per_talk_minute', label: 'Coût par minute parlée', format: (v) => fmt.eur(v, 3), better: 'down' },
     { key: 'quality_mos', centerKey: 'quality_mos', label: 'Qualité audio', format: fmt.quality, better: 'up' },
 ]
 
@@ -1318,6 +1344,11 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                     <div class="space-y-1">
                         <p>Journée-agent : un agent qui a pris au moins un appel dans la journée (heure de Paris). Ce n'est pas une présence RH.</p>
                         <p>Conversation / pause : répartition mesurée sur les appels où l'application agent l'a enregistrée, appliquée à toute la durée agent.</p>
+                        <p>
+                            Coût par minute parlée : coût du centre sur la période divisé par les minutes où l'agent parle vraiment avec un client (temps agent hors pause,
+                            transfert exclu). Un agent porte la part du coût de son centre correspondant à ses jours travaillés : à coût égal, plus il parle par jour,
+                            moins sa minute coûte.
+                        </p>
                         <p>
                             Qualité audio : score estimé à partir du réseau du softphone agent (pertes, gigue, délai), affiché en % d'un appel parfait (score 4,4) avec le score
                             entre parenthèses. Mesurée sur les appels décrochés d'au moins 5 s. Dégradé : score inférieur à 3,1.

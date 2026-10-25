@@ -38,6 +38,8 @@ export function metrics(s) {
     const phoneAgent = n('talk_s') + n('pause_s')
     const talkShare = phoneAgent ? n('talk_s') / phoneAgent : null
     const avgAgent = div(n('agent_s'), n('calls'))
+    // Minutes où l'agent parle vraiment avec un client (durée agent hors pause, transfert exclu)
+    const talkMinutes = talkShare === null ? null : (n('agent_s') * talkShare) / 60
 
     return {
         calls: n('calls'),
@@ -66,6 +68,10 @@ export function metrics(s) {
         avg_talk: avgAgent === null || talkShare === null ? null : avgAgent * talkShare,
         avg_pause: avgAgent === null || talkShare === null ? null : avgAgent * (1 - talkShare),
         agent_hours: n('agent_s') / 3600,
+        talk_minutes: talkMinutes,
+        talk_minutes_per_agent_day: talkMinutes === null ? null : div(talkMinutes, n('agent_days')),
+        // Coût effectif d'une minute de conversation : tout le coût, rapporté au seul temps parlé
+        cost_per_talk_minute: cost === null || !talkMinutes ? null : cost / talkMinutes,
         anomalies: n('anomalies'),
         // Qualité audio : moyenne des scores des appels mesurés (null si aucun)
         quality_mos: div(n('quality_sum'), n('quality_calls')),
