@@ -461,6 +461,7 @@ const AGENT_COLUMNS = [
     { key: 'payout_per_agent_hour', label: '€/h agent', format: (v) => fmt.eur(v, 2) },
     { key: 'payout_per_call', label: '€/appel', format: (v) => fmt.eur(v, 2) },
     { key: 'avg_agent', label: 'Durée agent', format: fmt.dur, hint: 'Moyenne par appel' },
+    { key: 'avg_pause', label: 'Durée pause', format: fmt.dur, hint: 'Moyenne par appel : temps où l\'agent a mis le client en pause (compris dans la durée agent)' },
     { key: 'avg_transfer', label: 'Durée transfert', format: fmt.dur, hint: 'Moyenne par appel' },
     { key: 'agent_ratio', label: 'Ratio agent', format: (v) => fmt.pct(v) },
     { key: 'cost_per_talk_minute', label: 'Coût / min parlée', format: (v) => fmt.eur(v, 3), hint: TALK_COST_HINT },
@@ -1222,7 +1223,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                     <th
                                         v-for="col in AGENT_COLUMNS"
                                         :key="col.key"
-                                        class="cursor-pointer select-none border-b border-gray-200 px-2 py-2 text-right align-bottom leading-tight hover:text-gray-700"
+                                        class="cursor-pointer select-none border-b border-gray-200 px-1.5 py-2 text-right align-bottom leading-tight hover:text-gray-700"
                                         :class="{ 'text-gray-900': agentSort.key === col.key }"
                                         :title="col.hint"
                                         @click="sortAgents(col.key)"
@@ -1256,7 +1257,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                         <td
                                             v-for="col in AGENT_COLUMNS"
                                             :key="col.key"
-                                            class="whitespace-nowrap border-b border-gray-100 px-2 py-2 text-right tabular-nums"
+                                            class="whitespace-nowrap border-b border-gray-100 px-1.5 py-2 text-right tabular-nums"
                                             :class="[
                                                 agentSort.key === col.key ? 'font-medium text-gray-900' : 'text-gray-700',
                                                 col.key === 'vs_center' && a.m.vs_center !== null ? variationClass(a.m.vs_center, 'up') : '',
@@ -1328,7 +1329,7 @@ watch([period, compare, splitRemote], load, { immediate: true, deep: true })
                                     <td
                                         v-for="col in AGENT_COLUMNS"
                                         :key="col.key"
-                                        class="whitespace-nowrap border-t border-gray-200 px-2 py-2 text-right tabular-nums"
+                                        class="whitespace-nowrap border-t border-gray-200 px-1.5 py-2 text-right tabular-nums"
                                     >
                                         {{ col.key === 'vs_center' ? '' : col.format(agentsTotal[col.key]) }}
                                     </td>
