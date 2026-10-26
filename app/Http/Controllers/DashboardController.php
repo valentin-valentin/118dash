@@ -240,6 +240,91 @@ class DashboardController extends Controller
     }
 
     /**
+     * Appels dégradés du mois (score < 3,1), mêmes filtres que le tableau, pour la fenêtre de détail :
+     * enregistrements, durées, détail réseau. 30 par page.
+     * Filtres en plus : platform (voxnode / selfhosted), agent (début du nom), sort (recent / worst).
+     */
+    public function degradedCalls(Request $request): JsonResponse
+    {
+        $request->validate([
+            'platform' => 'nullable|in:voxnode,selfhosted',
+            'agent' => 'nullable|string|max:100',
+            'sort' => 'nullable|in:recent,worst',
+            'page' => 'nullable|integer|min:1',
+        ]);
+
+        if ($request->filled('month')) {
+            [$year, $month] = explode('-', $request->month);
+            $start = \Carbon\Carbon::createFromDate($year, $month, 1, 'Europe/Paris')->startOfMonth();
+        } else {
+            $start = now('Europe/Paris')->startOfMonth();
+        }
+        $end = $start->copy()->endOfMonth()->min(now('Europe/Paris'));
+
+        $query = $this->filterCalls($request, Call::query())
+            ->whereBetween('calls.called_at', [$start->copy()->utc(), $end->copy()->utc()])
+            ->where('calls.audio_quality', '<', 3.1)
+            ->leftJoin('call_quality', 'call_quality.call_id', '=', 'calls.id');
+
+        if ($request->platform === 'selfhosted') {
+            $query->where('calls.platform', 'selfhosted');
+        } elseif ($request->platform === 'voxnode') {
+            $query->where(fn ($q) => $q->whereNull('calls.platform')->orWhere('calls.platform', '!=', 'selfhosted'));
+        }
+        if ($request->filled('agent')) {
+            // Début du nom : « dedi01 » trouve dedi010, dedi014...
+            $query->where('calls.agent_name', 'like', addcslashes($request->agent, '%_\\') . '%');
+        }
+        if ($request->sort === 'worst') {
+            $query->orderBy('calls.audio_quality')->orderByDesc('calls.called_at');
+        } else {
+            $query->orderByDesc('calls.called_at');
+        }
+
+        $page = $query->paginate(30, [
+            'calls.id', 'calls.called_at', 'calls.caller', 'calls.called', 'calls.brand_name', 'calls.agent_name',
+            'calls.platform', 'calls.audio_quality', 'calls.total_duration', 'calls.duration_agent', 'calls.duration_transfer',
+            'calls.phone_duration_agent', 'calls.phone_duration_pause', 'calls.who_hangup',
+            'calls.record_agent', 'calls.record_transfer',
+            'call_quality.packets_received', 'call_quality.packets_lost', 'call_quality.loss_pct',
+            'call_quality.jitter_max_ms', 'call_quality.rtt_avg_ms', 'call_quality.rtt_max_ms',
+            'call_quality.codec', 'call_quality.samples',
+        ]);
+
+        $page->getCollection()->transform(fn ($c) => [
+            'id' => $c->id,
+            'called_at' => $c->called_at,
+            'caller' => $c->caller,
+            'called' => $c->called,
+            'brand' => $c->brand_name,
+            'agent' => $c->agent_name,
+            'center' => $this->centerLabel($c->agent_name),
+            'platform' => $c->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
+            'mos' => (float) $c->audio_quality,
+            'total_s' => (int) $c->total_duration,
+            'agent_s' => (int) $c->duration_agent,
+            'transfer_s' => (int) $c->duration_transfer,
+            'talk_s' => $c->phone_duration_agent !== null ? (int) $c->phone_duration_agent : null,
+            'pause_s' => $c->phone_duration_pause !== null ? (int) $c->phone_duration_pause : null,
+            'who_hangup' => $c->who_hangup,
+            'record_agent' => $c->record_agent ?: null,
+            'record_transfer' => $c->record_transfer ?: null,
+            'network' => $c->packets_received === null ? null : [
+                'packets_received' => (int) $c->packets_received,
+                'packets_lost' => (int) $c->packets_lost,
+                'loss_pct' => $c->loss_pct !== null ? (float) $c->loss_pct : null,
+                'jitter_max_ms' => $c->jitter_max_ms !== null ? (int) $c->jitter_max_ms : null,
+                'rtt_avg_ms' => $c->rtt_avg_ms !== null ? (int) $c->rtt_avg_ms : null,
+                'rtt_max_ms' => $c->rtt_max_ms !== null ? (int) $c->rtt_max_ms : null,
+                'codec' => $c->codec,
+                'samples' => (int) $c->samples,
+            ],
+        ]);
+
+        return response()->json($page);
+    }
+
+    /**
      * Centre d'un agent d'après son nom (config/callcenters.php) : noms exacts, puis préfixe le plus long.
      * Les centres optionnels (Madagascar Remote) restent dans leur centre d'origine.
      */

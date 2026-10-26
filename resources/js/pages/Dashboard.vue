@@ -870,7 +870,7 @@ onMounted(() => {
             </div>
 
             <!-- Qualité audio du mois (mêmes filtres que le tableau), toujours affichée -->
-            <AudioQualityPanel :report="audioQuality.data" :loading="audioQuality.loading" />
+            <AudioQualityPanel :report="audioQuality.data" :loading="audioQuality.loading" :filters="filters" />
 
             <!-- Modal de détail heure par heure -->
             <Dialog :open="showHourlyModal" @update:open="closeHourlyView">

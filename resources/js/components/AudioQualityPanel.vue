@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import DegradedCallsDialog from '@/components/DegradedCallsDialog.vue'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { QUALITY_SCALE, formatQuality, qualityClass } from '@/lib/quality'
 
@@ -11,11 +12,21 @@ import { QUALITY_SCALE, formatQuality, qualityClass } from '@/lib/quality'
  *
  * @prop {Object}  report   réponse de /data/audio-quality
  * @prop {Boolean} loading
+ * @prop {Object}  filters  filtres du tableau de bord, repris par la fenêtre des appels dégradés
  */
 const props = defineProps({
     report: Object,
     loading: Boolean,
+    filters: { type: Object, default: () => ({}) },
 })
+
+// Fenêtre des appels dégradés : ouverte sur un appel, sur un agent, ou sur tout le mois
+const dialogOpen = ref(false)
+const dialogInitial = ref({})
+function openDegraded(initial = {}) {
+    dialogInitial.value = initial
+    dialogOpen.value = true
+}
 
 const PLATFORMS = [
     { key: 'voxnode', label: 'Voxnode' },
@@ -154,10 +165,21 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
             <!-- Appels dégradés et agents touchés -->
             <div v-if="report.degraded_calls.length" class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_21rem]">
                 <div class="min-w-0">
-                    <div class="mb-1.5 text-xs text-gray-500">Derniers appels dégradés</div>
+                    <div class="mb-1.5 flex items-baseline justify-between gap-3">
+                        <span class="text-xs text-gray-500">Derniers appels dégradés</span>
+                        <button type="button" class="text-xs text-gray-600 underline hover:text-gray-900" @click="openDegraded()">
+                            Voir les {{ int(allRow.degraded) }} appels dégradés, avec les enregistrements
+                        </button>
+                    </div>
                     <table class="w-full text-sm">
                         <tbody>
-                            <tr v-for="c in report.degraded_calls" :key="c.id" class="border-b border-gray-50 last:border-b-0">
+                            <tr
+                                v-for="c in report.degraded_calls"
+                                :key="c.id"
+                                class="cursor-pointer border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
+                                title="Écouter et voir le détail"
+                                @click="openDegraded({ callId: c.id })"
+                            >
                                 <td class="whitespace-nowrap py-1 pr-4 tabular-nums text-gray-500">{{ formatWhen(c.called_at) }}</td>
                                 <td class="whitespace-nowrap py-1 pr-4 font-medium text-gray-900">{{ c.agent || '—' }}</td>
                                 <td class="whitespace-nowrap py-1 pr-4 text-gray-500">{{ c.center || '—' }}</td>
@@ -172,7 +194,13 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
                     <div class="mb-1.5 text-xs text-gray-500">Agents les plus touchés</div>
                     <table class="w-full text-sm">
                         <tbody>
-                            <tr v-for="a in report.agents" :key="a.agent" class="border-b border-gray-50 last:border-b-0">
+                            <tr
+                                v-for="a in report.agents"
+                                :key="a.agent"
+                                class="cursor-pointer border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
+                                :title="`Voir les appels dégradés de ${a.agent}`"
+                                @click="openDegraded({ agent: a.agent })"
+                            >
                                 <td class="whitespace-nowrap py-1 pr-3 font-medium text-gray-900">{{ a.agent }}</td>
                                 <td class="whitespace-nowrap py-1 pr-3 text-gray-500">{{ a.center || '—' }}</td>
                                 <td class="whitespace-nowrap py-1 text-right tabular-nums text-gray-500">
@@ -184,5 +212,7 @@ const formatWhen = (v) => (v ? new Date(v.includes('T') ? v : `${v.replace(' ', 
                 </div>
             </div>
         </template>
+
+        <DegradedCallsDialog v-model:open="dialogOpen" :filters="filters" :initial="dialogInitial" />
     </div>
 </template>

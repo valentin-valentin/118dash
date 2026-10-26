@@ -103,6 +103,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/brand-distribution', [DashboardController::class, 'brandDistribution']);
         Route::get('/daily-breakdown', [DashboardController::class, 'dailyBreakdown']);
         Route::get('/audio-quality', [DashboardController::class, 'audioQualityReport']);
+        Route::get('/audio-quality/degraded', [DashboardController::class, 'degradedCalls']);
         Route::get('/company-breakdown', [DashboardController::class, 'companyBreakdown']);
         Route::get('/hourly-breakdown', [DashboardController::class, 'hourlyBreakdown']);
         Route::get('/dashboard/filter-options', [DashboardController::class, 'filterOptions']);
