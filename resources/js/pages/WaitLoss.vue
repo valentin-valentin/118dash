@@ -67,7 +67,17 @@ async function load() {
         if (id === requestId) loading.value = false
     }
 }
-watch(period, load, { immediate: true, deep: true })
+// Le calcul prend quelques secondes : on attend la fin de la saisie des dates avant de le lancer
+let loadTimer = null
+watch(
+    period,
+    (p, old) => {
+        clearTimeout(loadTimer)
+        if (old && p.from === old.from && p.to === old.to) return
+        loadTimer = setTimeout(load, old ? 400 : 0)
+    },
+    { immediate: true, deep: true },
+)
 
 // ─── Formats ──────────────────────────────────────────────────────────────────
 const nf = new Intl.NumberFormat('fr-FR')
@@ -84,16 +94,16 @@ const PLATFORMS = [
     { key: 'voxnode', label: 'Voxnode', color: 'bg-gray-300' },
     { key: 'selfhosted', label: 'Notre serveur', color: 'bg-gray-900' },
 ]
-const OVERVIEW = computed(() =>
-    data.value ? [{ key: 'all', label: 'Ensemble', total: true }, ...PLATFORMS].map((p) => ({ ...p, ...data.value.platforms[p.key] })) : [],
-)
+// Ensemble d'abord : c'est la référence une fois notre serveur rodé
+const GROUPS = [{ key: 'all', label: 'Ensemble', color: 'bg-gray-500', total: true }, ...PLATFORMS]
+const OVERVIEW = computed(() => (data.value ? GROUPS.map((p) => ({ ...p, ...data.value.platforms[p.key] })) : []))
 
 // ─── Tranches d'attente avant abandon ─────────────────────────────────────────
 const BUCKET_LABELS = { 0: 'Moins de 30 s', 30: '30 s – 1 min', 60: '1 – 2 min', 120: '2 – 3 min', 180: '3 – 5 min', 300: 'Plus de 5 min' }
 const bucketLabel = (b) => BUCKET_LABELS[b.from] ?? `${dur(b.from)} et plus`
 const lostTotal = (key) => data.value?.platforms?.[key]?.lost ?? 0
 const bucketMax = computed(() =>
-    Math.max(0.0001, ...(data.value?.buckets ?? []).flatMap((b) => PLATFORMS.map((p) => (lostTotal(p.key) ? b[p.key] / lostTotal(p.key) : 0)))),
+    Math.max(0.0001, ...(data.value?.buckets ?? []).flatMap((b) => GROUPS.map((p) => (lostTotal(p.key) ? b[p.key] / lostTotal(p.key) : 0)))),
 )
 
 // ─── Notre serveur : où les appels sont perdus ────────────────────────────────
@@ -120,7 +130,7 @@ const dayLabel = (d) => {
     return label.charAt(0).toUpperCase() + label.slice(1)
 }
 // Barre du taux de perte : même échelle pour toutes les lignes d'un tableau
-const maxLoss = (rows) => Math.max(0.0001, ...rows.flatMap((r) => PLATFORMS.map((p) => lossRate(r[p.key]) ?? 0)))
+const maxLoss = (rows) => Math.max(0.0001, ...rows.flatMap((r) => GROUPS.map((p) => lossRate(r[p.key]) ?? 0)))
 const hourMax = computed(() => maxLoss(hours.value))
 const dayMax = computed(() => maxLoss(days.value))
 </script>
@@ -200,7 +210,7 @@ const dayMax = computed(() => maxLoss(days.value))
                 </div>
             </section>
 
-            <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
+            <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
                 <!-- ─── 2. Notre serveur : où les appels sont perdus ─────── -->
                 <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
                     <header class="border-b border-gray-100 px-4 py-3">
@@ -257,13 +267,13 @@ const dayMax = computed(() => maxLoss(days.value))
                 <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
                     <header class="border-b border-gray-100 px-4 py-3">
                         <h2 class="text-sm font-semibold text-gray-900">Quand les clients raccrochent</h2>
-                        <p class="text-xs text-gray-500">Appels perdus selon le temps passé depuis le début de l'appel, en part des appels perdus de chaque plateforme.</p>
+                        <p class="text-xs text-gray-500">Appels perdus selon le temps passé depuis le début de l'appel, en part des appels perdus de chaque colonne (nombre au survol).</p>
                     </header>
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="text-xs text-gray-500">
                                 <th class="px-4 pb-1.5 pt-3 text-left align-bottom font-normal leading-4">Raccroché après</th>
-                                <th v-for="p in PLATFORMS" :key="p.key" class="w-2/5 px-4 pb-1.5 pt-3 text-left align-bottom font-normal leading-4">
+                                <th v-for="p in GROUPS" :key="p.key" class="w-[28%] px-3 pb-1.5 pt-3 text-left align-bottom font-normal leading-4" :class="p.total && 'font-medium text-gray-700'">
                                     <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-[2px]" :class="p.color" />{{ p.label }}</span>
                                 </th>
                             </tr>
@@ -271,7 +281,7 @@ const dayMax = computed(() => maxLoss(days.value))
                         <tbody>
                             <tr v-for="b in data?.buckets ?? []" :key="b.from" class="border-t border-gray-50">
                                 <td class="whitespace-nowrap px-4 py-2 text-gray-700">{{ bucketLabel(b) }}</td>
-                                <td v-for="p in PLATFORMS" :key="p.key" class="px-4 py-2">
+                                <td v-for="p in GROUPS" :key="p.key" class="px-3 py-2" :class="p.total && 'bg-gray-50/70'">
                                     <div class="flex items-center gap-2">
                                         <div class="h-3 flex-1 overflow-hidden rounded-sm bg-gray-50">
                                             <div
@@ -280,9 +290,7 @@ const dayMax = computed(() => maxLoss(days.value))
                                                 :style="{ width: `${lostTotal(p.key) ? (b[p.key] / lostTotal(p.key) / bucketMax) * 100 : 0}%` }"
                                             />
                                         </div>
-                                        <span class="w-24 text-right tabular-nums text-gray-900">
-                                            {{ pct(b[p.key], lostTotal(p.key), 0) }} <span class="text-gray-400">{{ int(b[p.key]) }}</span>
-                                        </span>
+                                        <span class="w-11 text-right tabular-nums text-gray-900" :title="`${int(b[p.key])} appels perdus`">{{ pct(b[p.key], lostTotal(p.key), 0) }}</span>
                                     </div>
                                 </td>
                             </tr>
@@ -305,38 +313,38 @@ const dayMax = computed(() => maxLoss(days.value))
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="text-xs text-gray-500">
-                                <th rowspan="2" class="px-4 pb-2 pt-3 text-left align-bottom font-normal" />
-                                <th v-for="p in PLATFORMS" :key="p.key" colspan="3" class="border-l border-gray-100 px-4 pt-3 text-left font-medium text-gray-700">
+                                <th rowspan="2" class="px-3 pb-2 pt-3 text-left align-bottom font-normal" />
+                                <th v-for="p in GROUPS" :key="p.key" colspan="3" class="border-l border-gray-100 px-3 pt-3 text-left font-medium text-gray-700" :class="p.total && 'bg-gray-50/70'">
                                     <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-[2px]" :class="p.color" />{{ p.label }}</span>
                                 </th>
                             </tr>
                             <tr class="text-xs text-gray-500">
-                                <template v-for="p in PLATFORMS" :key="p.key">
-                                    <th class="border-l border-gray-100 px-4 pb-2 pt-1 text-right font-normal">Appels</th>
-                                    <th class="px-4 pb-2 pt-1 text-left font-normal">Perdus</th>
-                                    <th class="px-4 pb-2 pt-1 text-right font-normal">Attente méd. avant décroché</th>
+                                <template v-for="p in GROUPS" :key="p.key">
+                                    <th class="border-l border-gray-100 px-3 pb-2 pt-1 text-right font-normal" :class="p.total && 'bg-gray-50/70'">Appels</th>
+                                    <th class="px-3 pb-2 pt-1 text-left font-normal" :class="p.total && 'bg-gray-50/70'">Perdus</th>
+                                    <th class="cursor-help px-3 pb-2 pt-1 text-right font-normal" :class="p.total && 'bg-gray-50/70'" title="Attente médiane avant décroché">Attente méd.</th>
                                 </template>
                             </tr>
                         </thead>
                         <tbody :class="loading && 'opacity-60'">
                             <tr v-for="r in t.rows" :key="r[t.key]" class="border-t border-gray-50 hover:bg-gray-50/60">
-                                <td class="whitespace-nowrap px-4 py-1.5 text-gray-700">{{ t.label(r) }}</td>
-                                <template v-for="p in PLATFORMS" :key="p.key">
-                                    <td class="border-l border-gray-100 px-4 py-1.5 text-right tabular-nums text-gray-700">{{ int(r[p.key]?.calls ?? 0) }}</td>
-                                    <td class="px-4 py-1.5">
+                                <td class="whitespace-nowrap px-3 py-1.5 text-gray-700">{{ t.label(r) }}</td>
+                                <template v-for="p in GROUPS" :key="p.key">
+                                    <td class="border-l border-gray-100 px-3 py-1.5 text-right tabular-nums" :class="p.total ? 'bg-gray-50/70 font-medium text-gray-900' : 'text-gray-700'">{{ int(r[p.key]?.calls ?? 0) }}</td>
+                                    <td class="px-3 py-1.5" :class="p.total && 'bg-gray-50/70'">
                                         <div v-if="r[p.key]?.calls" class="flex items-center gap-2">
-                                            <span class="w-14 text-right tabular-nums text-gray-900">{{ pct(r[p.key].lost, r[p.key].calls, 0) }}</span>
-                                            <div class="h-2 w-20 overflow-hidden rounded-sm bg-gray-50">
+                                            <span class="w-11 text-right tabular-nums text-gray-900" :class="p.total && 'font-medium'">{{ pct(r[p.key].lost, r[p.key].calls, 0) }}</span>
+                                            <div class="h-2 w-14 overflow-hidden rounded-sm bg-gray-100">
                                                 <div class="h-full rounded-sm" :class="p.color" :style="{ width: `${(lossRate(r[p.key]) / t.max) * 100}%` }" />
                                             </div>
                                         </div>
                                         <span v-else class="text-gray-300">—</span>
                                     </td>
-                                    <td class="px-4 py-1.5 text-right tabular-nums text-gray-700">{{ dur(r[p.key]?.answer_wait_median) }}</td>
+                                    <td class="whitespace-nowrap px-3 py-1.5 text-right tabular-nums" :class="p.total ? 'bg-gray-50/70 font-medium text-gray-900' : 'text-gray-700'">{{ dur(r[p.key]?.answer_wait_median) }}</td>
                                 </template>
                             </tr>
                             <tr v-if="!loading && !t.rows.length">
-                                <td colspan="7" class="px-4 py-6 text-center text-sm text-gray-400">Aucun appel sur la période</td>
+                                <td colspan="10" class="px-4 py-6 text-center text-sm text-gray-400">Aucun appel sur la période</td>
                             </tr>
                         </tbody>
                     </table>

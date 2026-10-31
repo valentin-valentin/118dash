@@ -51,7 +51,7 @@ class WaitLossController extends Controller
         $platforms = ['all' => $empty(), 'voxnode' => $empty(), 'selfhosted' => $empty()];
         $hours = [];
         $days = [];
-        $buckets = ['voxnode' => array_fill(0, count(self::BUCKETS), 0), 'selfhosted' => array_fill(0, count(self::BUCKETS), 0)];
+        $buckets = array_fill_keys(['all', 'voxnode', 'selfhosted'], array_fill(0, count(self::BUCKETS), 0));
         // Nos appels détaillés (forced_wait / queue_wait renseignés)
         $detail = ['calls' => 0, 'answered' => 0, 'lost_welcome' => 0, 'lost_forced' => 0, 'lost_queue' => 0, 'queue_waits' => [], 'forced_waits' => []];
 
@@ -77,14 +77,18 @@ class WaitLossController extends Controller
                 $this->add($platforms[$key], $lost, $total, $agent, (int) $r->duration_transfer);
             }
             $hours[$platform][$hour] ??= $empty();
+            $hours['all'][$hour] ??= $empty();
             $days[$platform][$day] ??= $empty();
             $days['all'][$day] ??= $empty();
             $this->add($hours[$platform][$hour], $lost, $total, $agent, (int) $r->duration_transfer);
+            $this->add($hours['all'][$hour], $lost, $total, $agent, (int) $r->duration_transfer);
             $this->add($days[$platform][$day], $lost, $total, $agent, (int) $r->duration_transfer);
             $this->add($days['all'][$day], $lost, $total, $agent, (int) $r->duration_transfer);
 
             if ($lost) {
-                $buckets[$platform][$this->bucket($total)]++;
+                $bucket = $this->bucket($total);
+                $buckets[$platform][$bucket]++;
+                $buckets['all'][$bucket]++;
             }
 
             if ($platform === 'selfhosted' && $r->forced_wait !== null && $r->queue_wait !== null) {
@@ -116,7 +120,7 @@ class WaitLossController extends Controller
         ];
 
         $byHour = [];
-        foreach (['voxnode', 'selfhosted'] as $p) {
+        foreach (['all', 'voxnode', 'selfhosted'] as $p) {
             foreach ($hours[$p] ?? [] as $h => $g) {
                 $byHour[$h][$p] = $summary($g);
             }
@@ -133,7 +137,13 @@ class WaitLossController extends Controller
 
         return response()->json([
             'platforms' => array_map($summary, $platforms),
-            'buckets' => array_map(fn ($b, $i) => ['from' => $b[0], 'to' => $b[1], 'voxnode' => $buckets['voxnode'][$i], 'selfhosted' => $buckets['selfhosted'][$i]], self::BUCKETS, array_keys(self::BUCKETS)),
+            'buckets' => array_map(fn ($b, $i) => [
+                'from' => $b[0],
+                'to' => $b[1],
+                'all' => $buckets['all'][$i],
+                'voxnode' => $buckets['voxnode'][$i],
+                'selfhosted' => $buckets['selfhosted'][$i],
+            ], self::BUCKETS, array_keys(self::BUCKETS)),
             'hours' => array_map(fn ($h, $v) => ['hour' => $h, ...$v], array_keys($byHour), $byHour),
             'days' => array_map(fn ($d, $v) => ['date' => $d, ...$v], array_keys($byDay), $byDay),
             'selfhosted_detail' => $detail['calls'] ? [
