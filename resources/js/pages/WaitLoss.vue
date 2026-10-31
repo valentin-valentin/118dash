@@ -99,7 +99,7 @@ const GROUPS = [{ key: 'all', label: 'Ensemble', color: 'bg-gray-500', total: tr
 const OVERVIEW = computed(() => (data.value ? GROUPS.map((p) => ({ ...p, ...data.value.platforms[p.key] })) : []))
 
 // ─── Tranches d'attente avant abandon ─────────────────────────────────────────
-const BUCKET_LABELS = { 0: 'Moins de 30 s', 30: '30 s – 1 min', 60: '1 – 2 min', 120: '2 – 3 min', 180: '3 – 5 min', 300: 'Plus de 5 min' }
+const BUCKET_LABELS = { 0: 'Moins de 5 s', 5: '5 s – 30 s', 30: '30 s – 1 min', 60: '1 – 2 min', 120: '2 – 3 min', 180: '3 – 5 min', 300: 'Plus de 5 min' }
 const bucketLabel = (b) => BUCKET_LABELS[b.from] ?? `${dur(b.from)} et plus`
 const lostTotal = (key) => data.value?.platforms?.[key]?.lost ?? 0
 const bucketMax = computed(() =>

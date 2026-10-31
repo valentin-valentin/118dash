@@ -28,7 +28,7 @@ class WaitLossController extends Controller
     private const TZ = 'Europe/Paris';
 
     // Tranches d'attente avant abandon (secondes)
-    private const BUCKETS = [[0, 30], [30, 60], [60, 120], [120, 180], [180, 300], [300, null]];
+    private const BUCKETS = [[0, 5], [5, 30], [30, 60], [60, 120], [120, 180], [180, 300], [300, null]];
 
     public function index(): Response
     {
