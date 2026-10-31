@@ -766,7 +766,8 @@ class DashboardController extends Controller
                     COALESCE(AVG(total_duration), 0) as avg_duration,
                     COUNT(audio_quality) as quality_calls,
                     COALESCE(SUM(audio_quality), 0) as quality_sum,
-                    COALESCE(SUM(audio_quality < 3.1), 0) as quality_degraded
+                    COALESCE(SUM(audio_quality < 3.1), 0) as quality_degraded,
+                    COALESCE(SUM(COALESCE(duration_agent, 0) = 0), 0) as lost_calls
                 ')
                 ->first();
 
@@ -781,6 +782,8 @@ class DashboardController extends Controller
                 'quality_calls' => $data ? (int) $data->quality_calls : 0,
                 'quality_sum' => $data ? (float) $data->quality_sum : 0,
                 'quality_degraded' => $data ? (int) $data->quality_degraded : 0,
+                // Perdus : le client a raccroché avant qu'un agent décroche
+                'lost_calls' => $data ? (int) $data->lost_calls : 0,
             ];
         });
 
@@ -877,6 +880,7 @@ class DashboardController extends Controller
                 'quality_sum' => $row->quality_sum,
                 'quality_mos' => $row->quality_calls ? round($row->quality_sum / $row->quality_calls, 2) : null,
                 'quality_degraded' => $row->quality_degraded,
+                'lost_calls' => $row->lost_calls,
                 'prev_calls' => $prevCalls,
                 'prev_ca' => $prevCa,
                 'prev_reverse' => $prevReverse,
@@ -972,6 +976,7 @@ class DashboardController extends Controller
         $totals['quality_calls'] = $qualityCalls;
         $totals['quality_mos'] = $qualityCalls ? round($daily->sum('quality_sum') / $qualityCalls, 2) : null;
         $totals['quality_degraded'] = $daily->sum('quality_degraded');
+        $totals['lost_calls'] = $daily->sum('lost_calls');
 
         return response()->json([
             'items' => $daily,

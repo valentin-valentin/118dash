@@ -54,6 +54,13 @@ return [
 
     // API téléphonie de voxnode118 : répartition du trafic entre notre serveur et Voxnode,
     // santé de notre serveur, mode des agents. Appels côté serveur uniquement.
+    // Appels en cours chez Voxnode (file d'attente en direct, page Serveur SIP).
+    // Clé en dur, volontairement (dépôt privé, compte Voxnode du propriétaire) ; elle ne sort jamais du serveur.
+    'voxnode_cc' => [
+        'url' => env('VOXNODE_CC_URL', 'https://cc.voxnode.com/clients/getOngoingCalls'),
+        'key' => env('VOXNODE_CC_KEY', 'S6DoolZZZX6tnKGXibykSmYEXDNOr4u_sD0QD1sLhxM'),
+    ],
+
     'telephony_api' => [
         'url' => rtrim((string) env('TELEPHONY_API_URL'), '/'),
         'token' => env('TELEPHONY_API_TOKEN'),

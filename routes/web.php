@@ -12,6 +12,7 @@ use App\Http\Controllers\PartnerStatsController;
 use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RejectedCallController;
+use App\Http\Controllers\WaitLossController;
 use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\RsvaAuditController;
 use App\Http\Controllers\SipServerController;
@@ -87,6 +88,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/assignment-history', [AssignmentHistoryController::class, 'index'])->name('assignment-history.index');
 
     Route::get('/rejected-calls', [RejectedCallController::class, 'index'])->name('rejected-calls.index');
+    Route::get('/wait-loss', [WaitLossController::class, 'index'])->name('wait-loss.index');
 
     Route::get('/routing-logs', [RoutingLogController::class, 'index'])->name('routing-logs.index');
     Route::get('/routing-logs/{routingLog}', [RoutingLogController::class, 'show'])->name('routing-logs.show');
@@ -173,6 +175,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/assignment-history', [AssignmentHistoryController::class, 'data']);
 
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
+        Route::get('/wait-loss', [WaitLossController::class, 'data']);
         Route::get('/rejected-calls/details', [RejectedCallController::class, 'details']);
 
         Route::get('/routing-logs/stats', [RoutingLogController::class, 'stats']);

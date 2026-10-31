@@ -33,6 +33,16 @@ const REASONS = [
 
 const reasonLabels = Object.fromEntries(REASONS.map(r => [r.key, r.long]))
 
+// Appelant déjà client (au moins un appel abouti avant ce rejet) ou jamais abouti
+const CALLER_KINDS = [
+    { key: 'existing_callers', short: 'Callers existants', long: 'Appelants qui avaient déjà eu au moins un appel abouti avant ce rejet' },
+    { key: 'new_callers', short: 'Nouveaux callers', long: "Appelants qui n'avaient jamais eu d'appel abouti" },
+]
+
+function formatFirstCall(iso) {
+    return iso ? new Date(iso).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' }) : ''
+}
+
 // ─── Filter Options ───────────────────────────────────────────────────────────
 const {
     options: filterOptions,
@@ -198,12 +208,19 @@ onMounted(() => {
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-gray-200">
-                                <th class="whitespace-nowrap px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400">Date</th>
-                                <th class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Rejetés</th>
+                                <th class="whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-gray-400">Date</th>
+                                <th class="whitespace-nowrap px-2 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400">Rejetés</th>
                                 <th
-                                    v-for="reason in visibleReasons"
+                                    v-for="kind in CALLER_KINDS"
+                                    :key="kind.key"
+                                    class="w-24 cursor-help px-2 py-1.5 text-right align-bottom text-xs font-medium uppercase leading-tight tracking-wide text-gray-400"
+                                    :title="kind.long"
+                                >{{ kind.short }}</th>
+                                <th
+                                    v-for="(reason, i) in visibleReasons"
                                     :key="reason.key"
-                                    class="whitespace-nowrap px-3 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-400"
+                                    class="px-2 py-1.5 text-right align-bottom text-xs font-medium uppercase leading-tight tracking-wide text-gray-400"
+                                    :class="[i === 0 && 'border-l border-gray-200', reason.short.length > 10 ? 'w-20' : 'whitespace-nowrap']"
                                     :title="reason.long"
                                 >{{ reason.short }}</th>
                             </tr>
@@ -212,14 +229,21 @@ onMounted(() => {
                         <tbody>
                             <!-- Total en haut -->
                             <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
-                                <td class="px-3 py-2 text-left font-bold text-gray-900">Total</td>
-                                <td class="px-3 py-2 text-right">
+                                <td class="px-2 py-2 text-left font-bold text-gray-900">Total</td>
+                                <td class="px-2 py-2 text-right">
                                     <div class="font-bold text-gray-900">{{ formatNumber(daily.data.totals.total) }}</div>
                                 </td>
+                                <td v-for="kind in CALLER_KINDS" :key="kind.key" class="px-2 py-2 text-right">
+                                    <div class="font-semibold text-gray-900">{{ formatNumber(daily.data.totals[kind.key]) }}</div>
+                                    <div v-if="percentOfTotal(daily.data.totals[kind.key]) !== null" class="text-xs text-gray-500">
+                                        {{ percentOfTotal(daily.data.totals[kind.key]) }}%
+                                    </div>
+                                </td>
                                 <td
-                                    v-for="reason in visibleReasons"
+                                    v-for="(reason, i) in visibleReasons"
                                     :key="reason.key"
-                                    class="px-3 py-2 text-right"
+                                    class="px-2 py-2 text-right"
+                                    :class="i === 0 && 'border-l border-gray-200'"
                                 >
                                     <div class="font-semibold text-gray-900">{{ formatNumber(daily.data.totals[reason.key]) }}</div>
                                     <div v-if="percentOfTotal(daily.data.totals[reason.key]) !== null" class="text-xs text-gray-500">
@@ -231,7 +255,7 @@ onMounted(() => {
                             <!-- Skeleton loading -->
                             <template v-if="daily.loading">
                                 <tr v-for="n in 8" :key="n" class="border-b border-gray-50">
-                                    <td v-for="col in (visibleReasons.length + 2)" :key="col" class="px-3 py-2">
+                                    <td v-for="col in (visibleReasons.length + 4)" :key="col" class="px-2 py-2">
                                         <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
                                     </td>
                                 </tr>
@@ -252,16 +276,25 @@ onMounted(() => {
                                     ]"
                                     @click="!isSunday(row.date) && selectDay(row)"
                                 >
-                                    <td class="px-3 py-1.5">
+                                    <td class="whitespace-nowrap px-2 py-1.5">
                                         <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right">
+                                    <td class="px-2 py-1.5 text-right">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'font-bold text-gray-900'">{{ formatNumber(row.total) }}</div>
                                     </td>
+                                    <td v-for="kind in CALLER_KINDS" :key="kind.key" class="px-2 py-1.5 text-right">
+                                        <div :class="row[kind.key] === 0 || isSunday(row.date) ? 'text-gray-300' : 'text-gray-900'">
+                                            {{ formatNumber(row[kind.key]) }}
+                                        </div>
+                                        <div v-if="!isSunday(row.date) && percentOfDay(row, row[kind.key]) !== null" class="text-xs text-gray-500">
+                                            {{ percentOfDay(row, row[kind.key]) }}%
+                                        </div>
+                                    </td>
                                     <td
-                                        v-for="reason in visibleReasons"
+                                        v-for="(reason, i) in visibleReasons"
                                         :key="reason.key"
-                                        class="px-3 py-1.5 text-right"
+                                        class="px-2 py-1.5 text-right"
+                                        :class="i === 0 && 'border-l border-gray-200'"
                                     >
                                         <div :class="row[reason.key] === 0 || isSunday(row.date) ? 'text-gray-300' : 'text-gray-900'">
                                             {{ formatNumber(row[reason.key]) }}
@@ -276,7 +309,7 @@ onMounted(() => {
                             <!-- Vide -->
                             <template v-else>
                                 <tr>
-                                    <td :colspan="visibleReasons.length + 2" class="px-3 py-8 text-center text-sm text-gray-300">
+                                    <td :colspan="visibleReasons.length + 4" class="px-2 py-8 text-center text-sm text-gray-300">
                                         Aucun appel rejeté
                                     </td>
                                 </tr>
@@ -288,7 +321,7 @@ onMounted(() => {
 
             <!-- Modal détail d'un jour -->
             <Dialog :open="showDetailsModal" @update:open="closeDetailsModal">
-                <DialogContent class="!w-[95vw] md:!w-[85vw] lg:!w-[75vw] !max-w-4xl max-h-[90vh] overflow-y-auto !p-0">
+                <DialogContent class="!w-[95vw] md:!w-[85vw] lg:!w-[75vw] !max-w-5xl max-h-[90vh] overflow-y-auto !p-0">
                     <div class="px-6 pt-4 pb-2">
                         <DialogTitle class="text-base font-bold">
                             Rejets du {{ details.data?.date_label || '' }}
@@ -313,6 +346,7 @@ onMounted(() => {
                                 <tr>
                                     <th class="whitespace-nowrap px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Heure</th>
                                     <th class="whitespace-nowrap px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Appelant</th>
+                                    <th class="whitespace-nowrap px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Caller</th>
                                     <th class="whitespace-nowrap px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Numéro appelé</th>
                                     <th class="whitespace-nowrap px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Source</th>
                                     <th class="whitespace-nowrap px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Company</th>
@@ -329,6 +363,10 @@ onMounted(() => {
                                 >
                                     <td class="px-4 py-1 font-mono text-xs text-gray-700">{{ row.time }}</td>
                                     <td class="px-4 py-1 font-mono text-xs text-gray-700">{{ row.from }}</td>
+                                    <td class="whitespace-nowrap px-4 py-1 text-xs" :title="row.existing_caller ? `Premier appel abouti le ${formatFirstCall(row.first_call_at)}` : 'Aucun appel abouti avant ce rejet'">
+                                        <span v-if="row.existing_caller" class="text-gray-900">Existant <span class="text-gray-400">· {{ formatFirstCall(row.first_call_at).slice(0, 5) }}</span></span>
+                                        <span v-else class="text-gray-500">Nouveau</span>
+                                    </td>
                                     <td class="px-4 py-1 font-mono text-xs text-gray-900">{{ row.phonenumber || row.to }}</td>
                                     <td class="px-4 py-1 text-xs text-gray-700">{{ row.source_name || '-' }}</td>
                                     <td class="px-4 py-1 text-xs text-gray-700">{{ row.company_name || '-' }}</td>

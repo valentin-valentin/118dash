@@ -50,7 +50,7 @@ class SipServerController extends Controller
             return response()->json(['configured' => false]);
         }
 
-        $live = Cache::remember('sip-api:live', self::LIVE_TTL, fn () => $this->fetch(['health', 'agents', 'calls', 'opening-hours']));
+        $live = Cache::remember('sip-api:live', self::LIVE_TTL, fn () => $this->fetch(['health', 'agents', 'calls', 'opening-hours', 'queue']));
         $slow = Cache::remember('sip-api:slow', self::SLOW_TTL, fn () => $this->fetch(['trusted-ips', 'sounds', 'welcome']));
 
         return response()->json([
@@ -58,7 +58,58 @@ class SipServerController extends Controller
             'fetched_at' => now()->toIso8601String(),
             ...$live,
             ...$slow,
+            // Appels en cours chez Voxnode (relus toutes les 10 s au plus)
+            'voxnode' => config('services.voxnode_cc.key')
+                ? Cache::remember('voxnode-cc:ongoing', 10, fn () => $this->voxnodeOngoingCalls())
+                : ['ok' => false, 'configured' => false, 'error' => 'VOXNODE_CC_KEY non renseignée'],
         ]);
+    }
+
+    /**
+     * Appels en cours chez Voxnode, appelant au format +33.
+     * stage : ivr (accueil) | forced (attente forcée) | queue (vraie attente) | waiting (attente, étape
+     * non précisée : ancien format « queue ») | agent | transferred.
+     * Un appel « transferred » avec un agent est compté avec un agent (Voxnode ne renvoie pas toujours « agent »).
+     */
+    private function voxnodeOngoingCalls(): array
+    {
+        try {
+            $response = Http::withHeaders(['API-KEY' => config('services.voxnode_cc.key')])
+                ->acceptJson()->timeout(5)->get(config('services.voxnode_cc.url'));
+        } catch (Throwable $e) {
+            return ['ok' => false, 'error' => 'API Voxnode injoignable'];
+        }
+        if (!$response->successful()) {
+            return ['ok' => false, 'error' => "Erreur HTTP {$response->status()}"];
+        }
+
+        $stages = [
+            'ivr' => 'ivr',
+            'queue-artificial' => 'forced',
+            'queue-natural' => 'queue',
+            'queue' => 'waiting',
+            'agent' => 'agent',
+            'transferred' => 'transferred',
+        ];
+        $calls = collect($response->json('calls') ?? [])->map(function ($c) use ($stages) {
+            $agent = ($c['agentExtension'] ?? '') ?: null;
+            $stage = $stages[$c['status'] ?? ''] ?? 'waiting';
+            if ($stage === 'transferred' && $agent) {
+                $stage = 'agent';
+            }
+
+            return [
+                'id' => $c['id'] ?? null,
+                // 06... → +336...
+                'caller' => preg_replace('/^0(\d{9})$/', '+33$1', (string) ($c['caller'] ?? '')),
+                'called' => $c['called'] ?? null,
+                'agent' => $agent,
+                'stage' => $stage,
+                'started_at' => isset($c['timestamp']) ? (int) $c['timestamp'] : null,
+            ];
+        })->values();
+
+        return ['ok' => true, 'calls' => $calls];
     }
 
     /**

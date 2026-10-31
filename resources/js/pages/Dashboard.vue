@@ -84,6 +84,8 @@ const { filters, reset } = useFilters(
         with_rejected: false,
         // Colonne « Qualité audio » du tableau jour par jour, seulement sur demande
         with_quality: false,
+        // Colonne « Perdus » (appels raccrochés avant qu'un agent décroche)
+        with_loss: false,
     },
     (f) => {
         daily.load(f)
@@ -104,7 +106,8 @@ const hasFilters = computed(() =>
     (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
     filters.min_duration ||
     filters.with_rejected ||
-    filters.with_quality
+    filters.with_quality ||
+    filters.with_loss
 )
 
 // ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
@@ -117,6 +120,7 @@ const columns = computed(() => [
     { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
     { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
     { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
+    ...(filters.with_loss ? [{ key: 'lost_calls', label: 'Perdus', sortable: true, headerClass: 'text-right' }] : []),
     ...(filters.with_quality ? [{ key: 'quality_mos', label: 'Qualité audio', sortable: true, headerClass: 'text-right', scale: true }] : []),
 ])
 
@@ -220,6 +224,8 @@ const compLabels = computed(() => {
 
 // ─── Qualité audio (colonne du tableau jour par jour) ─────────────────────────
 const SCALE_LINES = QUALITY_SCALE.split('\n')
+// Taux d'appels perdus d'une ligne (détail sur la page Attente et pertes)
+const lostRate = (r) => (r?.calls ? `${((r.lost_calls / r.calls) * 100).toFixed(1).replace('.', ',')} %` : '—')
 const measuredText = (n, degraded) => `${formatNumber(n)} mesuré${n > 1 ? 's' : ''} · ${formatNumber(degraded)} dégradé${degraded > 1 ? 's' : ''}`
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -659,6 +665,19 @@ onMounted(() => {
                             Avec qualité audio
                         </label>
                     </div>
+
+                    <!-- Appels perdus : colonne du tableau -->
+                    <div class="flex items-center gap-2 px-3 py-2 bg-white rounded-md border border-gray-200">
+                        <input
+                            type="checkbox"
+                            id="with-loss"
+                            v-model="filters.with_loss"
+                            class="h-4 w-4 rounded border-gray-300"
+                        />
+                        <label for="with-loss" class="text-sm text-gray-700 cursor-pointer select-none">
+                            Avec attente et pertes
+                        </label>
+                    </div>
                 </div>
             </FilterBar>
 
@@ -757,6 +776,10 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
+                                <td v-if="filters.with_loss" class="px-3 py-2 text-right text-sm">
+                                    <div class="font-semibold text-gray-900">{{ lostRate(daily.data.totals) }}</div>
+                                    <div class="text-xs text-gray-500">{{ formatNumber(daily.data.totals.lost_calls) }} appels</div>
+                                </td>
                                 <td v-if="filters.with_quality" class="px-3 py-2 text-right text-sm">
                                     <div class="font-semibold" :class="qualityClass(daily.data.totals.quality_mos) || 'text-gray-900'">{{ formatQuality(daily.data.totals.quality_mos) }}</div>
                                     <div v-if="daily.data.totals.quality_calls" class="text-xs text-gray-500">{{ measuredText(daily.data.totals.quality_calls, daily.data.totals.quality_degraded) }}</div>
@@ -848,6 +871,10 @@ onMounted(() => {
                                                 ({{ row.benefice_var >= 0 ? '+' : '' }}{{ row.benefice_var }}%)
                                             </span>
                                         </div>
+                                    </td>
+                                    <td v-if="filters.with_loss" class="px-3 py-1.5 text-right text-sm">
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ lostRate(row) }}</div>
+                                        <div v-if="row.calls && !isSunday(row.date)" class="text-xs text-gray-500">{{ formatNumber(row.lost_calls) }} appels</div>
                                     </td>
                                     <td v-if="filters.with_quality" class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : qualityClass(row.quality_mos) || 'text-gray-900'">{{ formatQuality(row.quality_mos) }}</div>

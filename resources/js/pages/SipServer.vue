@@ -186,13 +186,25 @@ function channelAgent(channel) {
     return name && agentNames.value.has(name) ? name : null
 }
 
+// Étape d'un appel, commune aux deux plateformes :
+// welcome = accueil / attente forcée, queue = vraie attente (faute d'agent libre), waiting = attente sans détail (Voxnode, ancien format)
 function callStatus(first, agent) {
     if (first.context === 'internal-service' || first.context === 'transfer') return { key: 'transfer', label: 'Transfert service interne' }
     if (first.context === 'panel-dial' || first.context === 'panel-out') return { key: 'panel', label: 'Softphone du panel' }
     if (agent) return { key: 'talking', label: 'En conversation' }
-    if (first.context === 'from-providers') return { key: 'waiting', label: first.app === 'Queue' ? 'En file' : 'Accueil / attente forcée' }
+    if (first.context === 'from-providers') return first.app === 'Queue' ? { key: 'queue', label: 'Vraie attente' } : { key: 'welcome', label: 'Accueil / attente forcée' }
     return { key: 'other', label: first.context }
 }
+const VOXNODE_STAGES = {
+    ivr: { key: 'welcome', label: 'Accueil' },
+    forced: { key: 'welcome', label: 'Attente forcée' },
+    queue: { key: 'queue', label: 'Vraie attente' },
+    waiting: { key: 'waiting', label: 'En attente (étape non précisée)' },
+    agent: { key: 'talking', label: 'En conversation' },
+    transferred: { key: 'transfer', label: 'Transféré' },
+}
+// Ordre d'affichage : les clients qui attendent un agent d'abord
+const STAGE_ORDER = { queue: 0, waiting: 1, welcome: 2, talking: 3, transfer: 4, panel: 5, other: 6 }
 
 const calls = computed(() => {
     const channels = data.value?.calls?.data?.calls ?? []
@@ -204,6 +216,7 @@ const calls = computed(() => {
             const agent = chs.map((c) => channelAgent(c.channel)).find(Boolean) ?? null
             return {
                 id: first.linkedid || first.uniqueid,
+                platform: 'selfhosted',
                 caller: first.caller,
                 // « s » = extension interne d'Asterisk, pas un numéro
                 exten: first.exten === 's' ? null : first.exten,
@@ -214,12 +227,33 @@ const calls = computed(() => {
         })
         .sort((a, b) => b.seconds - a.seconds)
 })
-const waitingCalls = computed(() => calls.value.filter((c) => c.status.key === 'waiting'))
+
+// Appels en cours chez Voxnode (relus par le panel toutes les 10 s)
+const voxnode = computed(() => data.value?.voxnode ?? null)
+const voxnodeCalls = computed(() =>
+    (voxnode.value?.ok ? voxnode.value.calls : []).map((c) => ({
+        id: `vx-${c.id}`,
+        platform: 'voxnode',
+        caller: c.caller,
+        exten: c.called,
+        status: VOXNODE_STAGES[c.stage] ?? VOXNODE_STAGES.waiting,
+        agent: c.agent,
+        seconds: c.started_at ? Math.max(0, Math.round(Date.now() / 1000 - c.started_at)) : 0,
+    })),
+)
+
+// Les deux plateformes ensemble
+const liveCalls = computed(() =>
+    [...calls.value, ...voxnodeCalls.value].sort((a, b) => (STAGE_ORDER[a.status.key] ?? 9) - (STAGE_ORDER[b.status.key] ?? 9) || b.seconds - a.seconds),
+)
+const byStage = (key) => liveCalls.value.filter((c) => c.status.key === key)
+const splitCalls = (list) => ({ ours: list.filter((c) => c.platform === 'selfhosted').length, theirs: list.filter((c) => c.platform === 'voxnode').length })
 
 const callColumns = [
+    { key: 'platform', label: 'Plateforme' },
     { key: 'caller', label: 'Appelant' },
     { key: 'exten', label: 'Numéro appelé' },
-    { key: 'status', label: 'Statut' },
+    { key: 'status', label: 'Étape' },
     { key: 'agent', label: 'Agent' },
     { key: 'seconds', label: 'Durée' },
 ]
@@ -235,7 +269,7 @@ const byName = (a, b) => a.username.localeCompare(b.username)
 const busyAgents = computed(() => onlineAgents.value.filter((a) => a.in_call).sort(byName))
 const freeAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call).sort(byName))
 // Durée de l'appel en cours, connue pour les agents en conversation sur notre serveur
-const callSeconds = computed(() => Object.fromEntries(calls.value.filter((c) => c.agent).map((c) => [c.agent, c.seconds])))
+const callSeconds = computed(() => Object.fromEntries(liveCalls.value.filter((c) => c.agent).map((c) => [c.agent, c.seconds])))
 const moving = (a) => !!a.current_platform && !!a.wanted_platform && a.current_platform !== a.wanted_platform
 const countOn = (list, key) => list.filter((a) => a.current_platform === key).length
 
@@ -244,13 +278,22 @@ const countOn = (list, key) => list.filter((a) => a.current_platform === key).le
 const split = (list) => (tel.value ? { ours: countOn(list, 'selfhosted'), theirs: countOn(list, 'voxnode') } : null)
 
 const callFigures = computed(() => {
-    const maxWait = waitingCalls.value.length ? Math.max(...waitingCalls.value.map((c) => c.seconds)) : 0
+    const queue = byStage('queue')
+    const welcome = byStage('welcome')
+    // Le client qui attend un agent depuis le plus longtemps (durée depuis le début de son appel)
+    const longest = queue.reduce((a, b) => (!a || b.seconds > a.seconds ? b : a), null)
     return [
         { label: 'En conversation', value: busyAgents.value.length, split: split(busyAgents.value) },
-        { label: 'En attente', value: waitingCalls.value.length, sub: 'accueil + file' },
-        { label: 'Attente la plus longue', value: waitingCalls.value.length ? wait(maxWait) : '—' },
-        { label: 'Transferts en cours', value: calls.value.filter((c) => c.status.key === 'transfer').length, sub: 'vers le service interne' },
+        { label: 'Accueil + attente forcée', value: welcome.length, split: splitCalls(welcome) },
+        { label: 'Vraie attente', value: queue.length, split: splitCalls(queue) },
+        { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : 'personne n\'attend un agent', title: 'Client en vraie attente depuis le plus longtemps' },
     ]
+})
+// Note du groupe Appels : Voxnode non branché, ou attentes sans détail d'étape
+const callsNote = computed(() => {
+    if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Voxnode non branché (VOXNODE_CC_KEY)' : `Voxnode indisponible : ${voxnode.value.error}`
+    const legacy = byStage('waiting').length
+    return legacy ? `+ ${legacy} chez Voxnode en attente, étape non précisée` : ''
 })
 
 // Part des nouveaux numéros envoyée chez nous : un pourcentage court, la raison en dessous
@@ -376,7 +419,7 @@ const sinceLastRun = computed(() => {
                 <!-- En ce moment : deux groupes, appels et agents -->
                 <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,4fr)_minmax(0,3fr)]">
                     <div v-for="group in [
-                        { title: 'Appels', note: 'attente et transferts : notre serveur uniquement', figures: callFigures },
+                        { title: 'Appels', note: callsNote, figures: callFigures },
                         { title: 'Agents', note: '', figures: agentFigures },
                     ]" :key="group.title" class="rounded-lg border border-gray-100 bg-white">
                         <div class="flex items-baseline justify-between gap-3 px-4 pt-3">
@@ -393,7 +436,7 @@ const sinceLastRun = computed(() => {
                                     <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-900" />nous {{ f.split.ours }}</span>
                                     <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-200" />Voxnode {{ f.split.theirs }}</span>
                                 </p>
-                                <p v-else-if="f.sub" class="truncate text-xs" :class="f.problem ? 'text-red-600' : 'text-gray-400'">{{ f.sub }}</p>
+                                <p v-else-if="f.sub" :title="f.sub" class="truncate text-xs" :class="f.problem ? 'text-red-600' : 'text-gray-400'">{{ f.sub }}</p>
                             </div>
                         </div>
                     </div>
@@ -403,19 +446,25 @@ const sinceLastRun = computed(() => {
                 <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
                     <section class="min-w-0">
                         <h2 class="mb-2 text-sm font-semibold text-gray-900">
-                            Appels en cours sur notre serveur <span class="ml-1 font-normal tabular-nums text-gray-400">{{ calls.length }}</span>
+                            Appels en cours <span class="ml-1 font-normal tabular-nums text-gray-400">{{ liveCalls.length }}</span>
                         </h2>
                         <div class="rounded-lg border border-gray-100 bg-white">
                             <DataTable
                                 :columns="callColumns"
-                                :rows="calls"
+                                :rows="liveCalls"
                                 :loading="loading"
                                 :empty-message="data?.calls?.ok === false ? `Liste indisponible : ${data.calls.error}` : 'Aucun appel en cours'"
                             >
+                                <template #platform="{ value }">
+                                    <span class="flex items-center gap-1.5 whitespace-nowrap text-sm text-gray-600">
+                                        <span class="h-2 w-2 rounded-sm" :class="value === 'selfhosted' ? 'bg-gray-900' : 'bg-gray-300'" />
+                                        {{ PLATFORMS[value] }}
+                                    </span>
+                                </template>
                                 <template #caller="{ value }"><span class="font-mono text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #exten="{ value }"><span class="font-mono text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #status="{ value }">
-                                    <span class="text-sm" :class="value.key === 'waiting' ? 'font-medium text-amber-700' : 'text-gray-700'">{{ value.label }}</span>
+                                    <span class="whitespace-nowrap text-sm" :class="value.key === 'queue' ? 'font-medium text-amber-700' : 'text-gray-700'">{{ value.label }}</span>
                                 </template>
                                 <template #agent="{ value }"><span class="text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #seconds="{ value }"><span class="text-sm tabular-nums text-gray-900">{{ wait(value) }}</span></template>

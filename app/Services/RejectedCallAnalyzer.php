@@ -107,6 +107,37 @@ class RejectedCallAnalyzer
     }
 
     /**
+     * Ajoute à chaque appel si l'appelant est déjà client (existing_caller) : il a eu au moins
+     * un appel abouti (table calls) avant ce rejet. first_call_at : date de son premier appel (UTC), sinon null.
+     */
+    public function withCallerKind(array $calls): array
+    {
+        $froms = array_values(array_unique(array_filter(array_column($calls, 'from'))));
+
+        // Premier appel abouti de chaque appelant (index sur calls.caller)
+        $firstCall = [];
+        foreach (array_chunk($froms, 1000) as $chunk) {
+            $rows = DB::table('calls')
+                ->whereIn('caller', $chunk)
+                ->whereNotNull('called_at')
+                ->groupBy('caller')
+                ->selectRaw('caller, MIN(called_at) AS first_at')
+                ->get();
+            foreach ($rows as $row) {
+                $firstCall[$row->caller] = Carbon::parse($row->first_at, 'UTC');
+            }
+        }
+
+        foreach ($calls as &$call) {
+            $first = $firstCall[$call['from']] ?? null;
+            $call['existing_caller'] = $first !== null && $first->lt($call['called_at']);
+            $call['first_call_at'] = $call['existing_caller'] ? $first : null;
+        }
+
+        return $calls;
+    }
+
+    /**
      * Comptes par jour (clé Y-m-d en Europe/Paris).
      */
     public function countsByDay(array $calls): array

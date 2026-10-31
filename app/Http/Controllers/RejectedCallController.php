@@ -37,7 +37,7 @@ class RejectedCallController extends Controller
             $end = now('Europe/Paris')->endOfMonth();
         }
 
-        $calls = $this->analyzer->withReasons($this->analyzer->dedupedCalls($request, $start, $end));
+        $calls = $this->analyzer->withCallerKind($this->analyzer->withReasons($this->analyzer->dedupedCalls($request, $start, $end)));
 
         // Générer les jours du mois jusqu'à aujourd'hui (pas au-delà)
         $today = now('Europe/Paris');
@@ -52,20 +52,26 @@ class RejectedCallController extends Controller
                 'date' => $currentDay->format('Y-m-d'),
                 'date_label' => $dayName . ' ' . $currentDay->format('d/m'),
                 'total' => 0,
+                // Appelants déjà clients (au moins un appel abouti avant) / jamais aboutis
+                'existing_callers' => 0,
+                'new_callers' => 0,
             ], $emptyReasons);
             $currentDay->addDay();
         }
 
-        $totals = array_merge(['total' => 0], $emptyReasons);
+        $totals = array_merge(['total' => 0, 'existing_callers' => 0, 'new_callers' => 0], $emptyReasons);
 
         foreach ($calls as $call) {
             $day = $call['paris_at']->format('Y-m-d');
             if (!isset($items[$day])) {
                 continue;
             }
+            $kind = $call['existing_caller'] ? 'existing_callers' : 'new_callers';
             $items[$day][$call['reason']]++;
+            $items[$day][$kind]++;
             $items[$day]['total']++;
             $totals[$call['reason']]++;
+            $totals[$kind]++;
             $totals['total']++;
         }
 
@@ -88,7 +94,7 @@ class RejectedCallController extends Controller
         $dayStart = \Carbon\Carbon::parse($date, 'Europe/Paris')->startOfDay();
         $dayEnd = $dayStart->copy()->endOfDay();
 
-        $calls = $this->analyzer->withReasons($this->analyzer->dedupedCalls($request, $dayStart, $dayEnd));
+        $calls = $this->analyzer->withCallerKind($this->analyzer->withReasons($this->analyzer->dedupedCalls($request, $dayStart, $dayEnd)));
 
         // Infos numéro / source / company pour chaque appel
         $phoneIds = array_values(array_unique(array_filter(array_column($calls, 'phonenumber_id'))));
@@ -117,6 +123,8 @@ class RejectedCallController extends Controller
                 'reason' => $call['reason'],
                 'delay_minutes' => $call['delay_minutes'],
                 'retries' => $call['retries'],
+                'existing_caller' => $call['existing_caller'],
+                'first_call_at' => $call['first_call_at']?->toIso8601String(),
             ];
         }, $calls);
 
