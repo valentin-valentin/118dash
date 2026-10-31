@@ -116,7 +116,9 @@ class WaitLossController extends Controller
             'answered' => $g['calls'] - $g['lost'],
             'lost' => $g['lost'],
             'answer_wait_median' => $this->median($g['answer_waits']),
+            'answer_wait_avg' => $this->average($g['answer_waits']),
             'abandon_wait_median' => $this->median($g['abandon_waits']),
+            'abandon_wait_avg' => $this->average($g['abandon_waits']),
         ];
 
         $byHour = [];
@@ -180,6 +182,11 @@ class WaitLossController extends Controller
         }
 
         return count(self::BUCKETS) - 1;
+    }
+
+    private function average(array $values): ?int
+    {
+        return $values ? (int) round(array_sum($values) / count($values)) : null;
     }
 
     private function median(array $values): ?int

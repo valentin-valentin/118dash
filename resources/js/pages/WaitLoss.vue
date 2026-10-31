@@ -175,16 +175,22 @@ const dayMax = computed(() => maxLoss(days.value))
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="text-xs text-gray-500">
-                                <th class="px-4 pb-2 pt-3 text-left align-bottom font-normal leading-4" />
-                                <th class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Appels</th>
-                                <th class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Décrochés</th>
-                                <th class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Perdus</th>
-                                <th class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Attente médiane avant décroché</th>
-                                <th class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Attente médiane avant abandon</th>
+                                <th rowspan="2" class="px-4 pb-2 pt-3 text-left align-bottom font-normal leading-4" />
+                                <th rowspan="2" class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Appels</th>
+                                <th rowspan="2" class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Décrochés</th>
+                                <th rowspan="2" class="px-4 pb-2 pt-3 text-right align-bottom font-normal leading-4">Perdus</th>
+                                <th colspan="2" class="border-l border-gray-100 px-4 pt-3 text-center font-normal leading-4 text-gray-700">Attente avant décroché</th>
+                                <th colspan="2" class="border-l border-gray-100 px-4 pt-3 text-center font-normal leading-4 text-gray-700">Attente avant abandon</th>
+                            </tr>
+                            <tr class="text-xs text-gray-500">
+                                <th class="border-l border-gray-100 px-4 pb-2 pt-1 text-right font-normal leading-4">Médiane</th>
+                                <th class="px-4 pb-2 pt-1 text-right font-normal leading-4">Moyenne</th>
+                                <th class="border-l border-gray-100 px-4 pb-2 pt-1 text-right font-normal leading-4">Médiane</th>
+                                <th class="px-4 pb-2 pt-1 text-right font-normal leading-4">Moyenne</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-if="loading && !data"><td colspan="6" class="px-4 py-3"><div class="h-16 animate-pulse rounded bg-gray-50" /></td></tr>
+                            <tr v-if="loading && !data"><td colspan="8" class="px-4 py-3"><div class="h-16 animate-pulse rounded bg-gray-50" /></td></tr>
                             <tr
                                 v-for="r in OVERVIEW"
                                 :key="r.key"
@@ -202,8 +208,10 @@ const dayMax = computed(() => maxLoss(days.value))
                                     <span class="font-semibold text-gray-900">{{ pct(r.lost, r.calls) }}</span>
                                     <span class="ml-1.5 inline-block w-16 text-gray-400">{{ int(r.lost) }}</span>
                                 </td>
-                                <td class="px-4 py-2.5 text-right tabular-nums text-gray-900">{{ dur(r.answer_wait_median) }}</td>
-                                <td class="px-4 py-2.5 text-right tabular-nums text-gray-900">{{ dur(r.abandon_wait_median) }}</td>
+                                <td class="border-l border-gray-100 px-4 py-2.5 text-right tabular-nums text-gray-900">{{ dur(r.answer_wait_median) }}</td>
+                                <td class="px-4 py-2.5 text-right tabular-nums text-gray-600">{{ dur(r.answer_wait_avg) }}</td>
+                                <td class="border-l border-gray-100 px-4 py-2.5 text-right tabular-nums text-gray-900">{{ dur(r.abandon_wait_median) }}</td>
+                                <td class="px-4 py-2.5 text-right tabular-nums text-gray-600">{{ dur(r.abandon_wait_avg) }}</td>
                             </tr>
                         </tbody>
                     </table>
