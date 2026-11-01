@@ -117,7 +117,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/providers/stats', [ProviderController::class, 'stats']);
         Route::get('/providers', [ProviderController::class, 'data']);
         Route::get('/providers/selfhosted', [ProviderController::class, 'selfhostedList']);
-        Route::put('/providers/{provider}/selfhosted', [ProviderController::class, 'setSelfhosted'])->whereNumber('provider');
 
         Route::get('/companies/stats', [CompanyController::class, 'stats']);
         Route::get('/companies', [CompanyController::class, 'data']);

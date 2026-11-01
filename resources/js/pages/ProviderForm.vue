@@ -21,11 +21,10 @@ const props = defineProps({
 
 const isEdit = computed(() => !!props.provider)
 
-const configString = ref(
-    props.provider?.config
-        ? JSON.stringify(props.provider.config, null, 2)
-        : ''
-)
+// config.selfhosted a son propre interrupteur : retiré du JSON affiché, remis à l'enregistrement
+const { selfhosted: initialSelfhosted = false, ...otherConfig } = props.provider?.config ?? {}
+const selfhosted = ref(!!initialSelfhosted)
+const configString = ref(Object.keys(otherConfig).length ? JSON.stringify(otherConfig, null, 2) : '')
 
 const form = useForm({
     name: props.provider?.name || '',
@@ -40,11 +39,11 @@ const form = useForm({
 function submit() {
     // Parse config JSON
     try {
-        if (configString.value.trim()) {
-            form.config = JSON.parse(configString.value)
-        } else {
-            form.config = null
-        }
+        const config = configString.value.trim() ? JSON.parse(configString.value) : {}
+        // Lu par voxnode118 : les numéros de ce fournisseur peuvent être routés sur notre serveur SIP
+        if (selfhosted.value) config.selfhosted = true
+        else if (props.provider?.config && 'selfhosted' in props.provider.config) config.selfhosted = false
+        form.config = Object.keys(config).length ? config : null
     } catch (e) {
         alert('Le format JSON de la configuration est invalide')
         return
@@ -154,6 +153,14 @@ function submit() {
                                 v-model:checked="form.enabled"
                             />
                             <Label for="enabled">Provider actif</Label>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <Switch
+                                id="selfhosted"
+                                v-model:checked="selfhosted"
+                            />
+                            <Label for="selfhosted">Routable sur notre serveur SIP</Label>
                         </div>
 
                         <div class="space-y-2">

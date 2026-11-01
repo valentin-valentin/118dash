@@ -125,10 +125,10 @@ const statusItems = computed(() => {
     }
     if (routedProviders.value) {
         items.push({
-            label: 'Fournisseurs chez nous',
+            label: 'Fournisseurs routables',
             value: routedProviders.value.length ? routedProviders.value.map((p) => p.name).join(', ') : 'aucun',
             href: '/providers',
-            title: 'Seuls les numéros de ces fournisseurs peuvent arriver sur notre serveur (réglable sur la page Fournisseurs)',
+            title: 'Seuls les numéros de ces fournisseurs peuvent arriver sur notre serveur (réglable dans la fiche du fournisseur)',
         })
     }
     if (tel.value) {

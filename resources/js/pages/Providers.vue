@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import ColorBadge from '@/components/ColorBadge.vue'
@@ -13,9 +13,6 @@ import { Button } from '@/components/ui/button'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
 import { Plus, Pencil } from 'lucide-vue-next'
-import { Switch } from '@/components/ui/switch'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { xsrfToken } from '@/lib/csrf'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/providers/stats')
@@ -54,36 +51,9 @@ const columns = [
     { key: 'name', label: 'Nom', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
     { key: 'enabled', label: 'Statut', sortable: true },
-    { key: 'selfhosted', label: 'Routé chez nous' },
+    { key: 'selfhosted', label: 'Routable chez nous' },
     { key: 'actions', label: 'Actions' },
 ]
-
-// ─── « Routé chez nous » : config.selfhosted, lu par voxnode118 ───────────────
-// Seuls les numéros des fournisseurs routés chez nous peuvent arriver sur notre serveur SIP.
-const routing = ref(null) // { provider, enabled } en attente de confirmation
-const routingBusy = ref(false)
-const routingError = ref(null)
-const isSelfhosted = (row) => !!row.config?.selfhosted
-
-async function confirmRouting() {
-    const { provider, enabled } = routing.value
-    routingBusy.value = true
-    routingError.value = null
-    try {
-        const res = await fetch(`/data/providers/${provider.id}/selfhosted`, {
-            method: 'PUT',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrfToken() },
-            body: JSON.stringify({ selfhosted: enabled }),
-        })
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `Erreur HTTP ${res.status}`)
-        provider.config = { ...(provider.config ?? {}), selfhosted: enabled }
-        routing.value = null
-    } catch (e) {
-        routingError.value = e.message
-    } finally {
-        routingBusy.value = false
-    }
-}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
@@ -188,11 +158,7 @@ onMounted(() => {
                     </template>
 
                     <template #selfhosted="{ row }">
-                        <Switch
-                            :checked="isSelfhosted(row)"
-                            :aria-label="`${row.name} routé chez nous`"
-                            @update:checked="(v) => { routing = { provider: row, enabled: v }; routingError = null }"
-                        />
+                        <span class="text-sm" :class="row.config?.selfhosted ? 'text-gray-900' : 'text-gray-400'">{{ row.config?.selfhosted ? 'Oui' : '—' }}</span>
                     </template>
 
                     <template #actions="{ row }">
@@ -234,29 +200,5 @@ onMounted(() => {
             </div>
         </div>
 
-        <!-- Confirmation : routage d'un fournisseur sur notre serveur SIP -->
-        <Dialog :open="!!routing" @update:open="(open) => !open && !routingBusy && (routing = null)">
-            <DialogContent class="max-w-md">
-                <DialogHeader>
-                    <DialogTitle>{{ routing?.enabled ? `Router ${routing?.provider.name} chez nous ?` : `Ne plus router ${routing?.provider.name} chez nous ?` }}</DialogTitle>
-                    <DialogDescription class="text-gray-700">
-                        <template v-if="routing?.enabled">
-                            Ses numéros pourront être envoyés sur notre serveur SIP, dans la limite de la part réglée dans la configuration du serveur SIP.
-                            À n'activer que pour un fournisseur dont les appels ont été testés chez nous.
-                        </template>
-                        <template v-else>
-                            Ses numéros ne seront plus envoyés sur notre serveur SIP : ils restent chez Voxnode.
-                        </template>
-                    </DialogDescription>
-                </DialogHeader>
-                <p v-if="routingError" class="text-sm text-red-600">{{ routingError }}</p>
-                <DialogFooter>
-                    <Button variant="outline" :disabled="routingBusy" @click="routing = null">Annuler</Button>
-                    <Button :variant="routing?.enabled ? 'default' : 'destructive'" :disabled="routingBusy" @click="confirmRouting">
-                        {{ routing?.enabled ? 'Router chez nous' : 'Ne plus router' }}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
     </AppLayout>
 </template>
