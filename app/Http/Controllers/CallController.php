@@ -197,6 +197,27 @@ class CallController extends Controller
             $query->where('phone_cant_provide_service', $request->phone_cant_provide_service === 'yes');
         }
 
+        // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+        if ($request->filled('platform')) {
+            $hasFilters = true;
+            if ($request->platform === 'selfhosted') {
+                $query->where('platform', 'selfhosted');
+            } else {
+                $query->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'));
+            }
+        }
+
+        // Qualité audio (score MOS) : dégradés (< 3,1), mesurés, non mesurés
+        if ($request->filled('audio_quality')) {
+            $hasFilters = true;
+            match ($request->audio_quality) {
+                'degraded' => $query->where('audio_quality', '<', 3.1),
+                'measured' => $query->whereNotNull('audio_quality'),
+                'unmeasured' => $query->whereNull('audio_quality'),
+                default => null,
+            };
+        }
+
         if ($request->filled('blacklist_id')) {
             $hasFilters = true;
             if ($request->blacklist_id === 'any') {
@@ -228,7 +249,7 @@ class CallController extends Controller
         $hasFilters = $this->applyFilters($request, $query);
 
         // Tri
-        $sortable = ['id', 'called_at', 'total_duration', 'duration_agent', 'payout', 'brand_name', 'agent_name'];
+        $sortable = ['id', 'called_at', 'total_duration', 'duration_agent', 'payout', 'brand_name', 'agent_name', 'audio_quality'];
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'called_at';
         $dir = $request->dir === 'asc' ? 'asc' : 'desc';
 
@@ -284,6 +305,8 @@ class CallController extends Controller
         'record_transfer' => 'Enregistrement transfert',
         'callcenter' => 'Call center',
         'blacklist' => 'Blacklist',
+        'platform' => 'Plateforme',
+        'audio_quality' => 'Qualité audio (score)',
     ];
 
     public function export(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
@@ -332,6 +355,7 @@ class CallController extends Controller
                         'callcenter' => $call->callcenter?->name,
                         'blacklist' => $call->blacklist?->phonenumber,
                         'called_at' => $call->called_at?->format('Y-m-d H:i:s'),
+                        'platform' => $call->platform === 'selfhosted' ? 'notre serveur' : 'voxnode',
                         default => $call->{$c},
                     }, $columns), ';', '"', '');
                 }

@@ -34,7 +34,18 @@ let clock = null
 onMounted(() => (clock = setInterval(() => (now.value = Date.now()), 1000)))
 onUnmounted(() => clearInterval(clock))
 
+// Fournisseurs routés chez nous (providers.config.selfhosted) : relus toutes les minutes au plus
+const routedProviders = ref(null)
+let providersLoadedAt = 0
+async function loadProviders() {
+    if (Date.now() - providersLoadedAt < 60000) return
+    providersLoadedAt = Date.now()
+    const res = await fetch('/data/providers/selfhosted', { headers: { Accept: 'application/json' } }).catch(() => null)
+    if (res?.ok) routedProviders.value = (await res.json()).filter((p) => p.selfhosted)
+}
+
 async function load() {
+    loadProviders()
     try {
         const [res, tel] = await Promise.all([
             fetch('/data/sip/status', { headers: { Accept: 'application/json' } }),
@@ -104,6 +115,22 @@ const statusItems = computed(() => {
     const items = []
     if (hoursNow.value) items.push({ label: 'Horaires', value: hoursNow.value.text, problem: false })
     items.push({ label: 'Notre serveur', ...ours })
+    if (tel.value && 'selfhosted_transfers_internal' in st) {
+        items.push({
+            label: 'Transferts chez nous',
+            value: st.selfhosted_transfers_internal ? 'service interne' : 'vers les marques',
+            href: '/sip-server/settings#trafic',
+            title: st.selfhosted_transfers_internal ? "Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)" : '',
+        })
+    }
+    if (routedProviders.value) {
+        items.push({
+            label: 'Fournisseurs chez nous',
+            value: routedProviders.value.length ? routedProviders.value.map((p) => p.name).join(', ') : 'aucun',
+            href: '/providers',
+            title: 'Seuls les numéros de ces fournisseurs peuvent arriver sur notre serveur (réglable sur la page Fournisseurs)',
+        })
+    }
     if (tel.value) {
         items.push({
             label: 'Voxnode',
@@ -167,6 +194,9 @@ const alerts = computed(() => {
     if (tel.value && st.selfhosted_enabled && !st.selfhosted_manual_off && !tel.value.available?.selfhosted) {
         list.push(`Notre serveur est en panne : tout part chez Voxnode, retour après ${st.pbx_recovery_minutes} min de bonne santé.`)
     }
+    // Redémarrage récent d'Asterisk : les appels en cours ont été coupés
+    const restart = (tel.value?.health?.events ?? []).find((e) => e.state === 'restart' && Date.now() - new Date(e.at).getTime() < 30 * 60 * 1000)
+    if (restart) list.push(`Notre serveur a redémarré à ${formatTime(restart.at)} : les appels en cours ont été coupés. ${restart.reason ?? ''}`.trim())
     if (lineDown.value) list.push("La ligne OVH n'est pas enregistrée : les appels sortants du softphone ne passent pas.")
     if (diskLow('disk_data', DATA_LOW_BYTES) || diskLow('disk_root', ROOT_LOW_BYTES)) list.push('Le disque de notre serveur est presque plein (détail dans Configuration).')
     if (hoursProblem.value?.level === 'error') list.push(hoursProblem.value.text)
@@ -360,10 +390,53 @@ onMounted(() => {
     if (window.location.hash === '#modes') modesOpen.value = true
 })
 
+// ─── 8. Réseau des agents (agent_network_quality, tranches de 5 min) ─────────
+// À surveiller : SIP moyen > 600 ms, OPTIONS sans réponse ou coupures répétés
+const networkOpen = ref(false)
+const networkHours = ref(24)
+const network = ref(null)
+const networkLoading = ref(false)
+async function loadNetwork() {
+    networkLoading.value = true
+    try {
+        const res = await fetch(`/data/telephony/network?hours=${networkHours.value}`, { headers: { Accept: 'application/json' } })
+        network.value = res.ok ? await res.json() : null
+    } finally {
+        networkLoading.value = false
+    }
+}
+watch(networkHours, () => networkOpen.value && loadNetwork())
+watch(networkOpen, (open) => open && !network.value && loadNetwork())
+
+const liveNetwork = computed(() => Object.fromEntries((telAgents.value ?? []).map((a) => [a.username, a])))
+const networkFlag = (r) => (r.sip_avg !== null && r.sip_avg > 600) || r.sip_lost >= 3 || r.disconnects >= 2
+const networkRows = computed(() =>
+    [...(network.value?.agents ?? [])]
+        .map((r) => ({ ...r, flagged: networkFlag(r), live: liveNetwork.value[r.username] ?? null }))
+        .sort((a, b) => b.flagged - a.flagged || (b.sip_avg ?? 0) - (a.sip_avg ?? 0)),
+)
+const flaggedCount = computed(() => networkRows.value.filter((r) => r.flagged).length)
+// Mesure en direct : ancienne au-delà de 10 min
+function liveText(a) {
+    if (!a?.net_sip_measured_at && !a?.net_measured_at) return { text: '—', old: true }
+    const at = new Date(a.net_sip_measured_at ?? a.net_measured_at).getTime()
+    const old = Date.now() - at > 10 * 60 * 1000
+    return { text: `SIP ${a.net_sip_ms ?? '—'} ms · app ${a.net_http_ms ?? '—'} ms`, old, at }
+}
+const ms = (v) => (v === null || v === undefined ? '—' : `${new Intl.NumberFormat('fr-FR').format(v)} ms`)
+
 // ─── 7. Dernières pannes de notre serveur (détectées par voxnode118) ─────────
+// Types d'événements de santé : panne, retour, redémarrage d'Asterisk (appels en cours coupés)
+const HEALTH_EVENTS = {
+    down: { label: 'Panne', class: 'text-red-600' },
+    up: { label: 'Rétabli', class: 'text-gray-700' },
+    restart: { label: 'Redémarrage', class: 'text-amber-700' },
+}
 const healthEvents = computed(() => [...(tel.value?.health?.events ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 10))
 
 // ─── 5. Régulateur ────────────────────────────────────────────────────────────
+// Décalage d'agents autour du pourcentage : +2 = 2 agents de plus chez nous
+const offsetText = (v) => (v === null || v === undefined ? '—' : v === 0 ? 'aucun' : `${v > 0 ? '+' : '−'}${Math.abs(v)} agent${Math.abs(v) > 1 ? 's' : ''} chez nous`)
 const regulatorEvents = computed(() => (regulator.value?.events ?? []).slice(0, 10))
 const sinceLastRun = computed(() => {
     if (!lastRun.value?.at) return ''
@@ -397,10 +470,18 @@ const sinceLastRun = computed(() => {
                 <!-- État : chaque élément dit son état en toutes lettres -->
                 <div class="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border bg-white px-4 py-2.5 text-sm" :class="statusItems.some((i) => i.problem) ? 'border-red-200' : 'border-gray-100'">
                     <div v-if="loading" class="h-5 w-96 animate-pulse rounded bg-gray-100" />
-                    <span v-for="item in statusItems" :key="item.label" class="flex items-center gap-2" :title="item.title">
+                    <component
+                        :is="item.href ? Link : 'span'"
+                        v-for="item in statusItems"
+                        :key="item.label"
+                        :href="item.href"
+                        class="flex items-center gap-2"
+                        :class="item.href && 'hover:underline'"
+                        :title="item.title"
+                    >
                         <span class="text-gray-500">{{ item.label }}</span>
                         <span class="font-medium" :class="item.problem ? 'text-red-600' : 'text-gray-900'">{{ item.value }}</span>
-                    </span>
+                    </component>
                     <span v-if="freshness" class="ml-auto text-xs tabular-nums" :class="freshness.problem ? 'font-medium text-red-600' : 'text-gray-400'">{{ freshness.text }}</span>
                 </div>
 
@@ -527,14 +608,27 @@ const sinceLastRun = computed(() => {
                         <span class="min-w-0 flex-1 truncate text-gray-600">{{ lastRun?.reason || '—' }}</span>
                         <span class="shrink-0 text-xs text-gray-400">{{ sinceLastRun }}</span>
                     </summary>
-                    <div class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[18rem_1fr]">
+                    <div class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[26rem_1fr]">
                         <dl class="space-y-1">
                             <div class="flex justify-between"><dt class="text-gray-500">Agents automatiques en ligne</dt><dd class="tabular-nums">{{ lastRun?.active_agents ?? '—' }}</dd></div>
                             <div class="flex justify-between"><dt class="text-gray-500">Chez nous / objectif</dt><dd class="tabular-nums">{{ lastRun?.on_selfhosted ?? '—' }} / {{ lastRun?.target ?? '—' }}</dd></div>
+                            <div class="flex justify-between" title="Agents en plus (+) ou en moins (−) chez nous par rapport au pourcentage, selon la vraie attente des deux côtés. Revient vers 0, d'un agent toutes les 5 min sans attente.">
+                                <dt class="cursor-help text-gray-500">Décalage d'agents</dt>
+                                <dd class="tabular-nums">{{ offsetText(lastRun?.offset) }}</dd>
+                            </div>
                             <template v-if="lastRun?.queue">
-                                <div class="flex justify-between"><dt class="text-gray-500">Clients en file</dt><dd class="tabular-nums">{{ lastRun.queue.waiting }}<template v-if="lastRun.queue.waiting_long"> · {{ lastRun.queue.waiting_long }} longs</template></dd></div>
-                                <div class="flex justify-between"><dt class="text-gray-500">Attente la plus longue</dt><dd class="tabular-nums">{{ lastRun.queue.max_wait }} s</dd></div>
+                                <div class="flex justify-between"><dt class="text-gray-500">File chez nous</dt><dd class="tabular-nums">{{ lastRun.queue.waiting }}<template v-if="lastRun.queue.waiting_long"> · {{ lastRun.queue.waiting_long }} longs</template></dd></div>
+                                <div class="flex justify-between"><dt class="text-gray-500">Attente la plus longue chez nous</dt><dd class="tabular-nums">{{ lastRun.queue.max_wait }} s</dd></div>
                             </template>
+                            <div class="flex justify-between">
+                                <dt class="text-gray-500">File chez Voxnode</dt>
+                                <dd class="tabular-nums" :class="!lastRun?.voxnode_queue && 'text-gray-400'">
+                                    <template v-if="lastRun?.voxnode_queue">
+                                        {{ lastRun.voxnode_queue.calls }} appels · {{ lastRun.voxnode_queue.natural }} en vraie attente<template v-if="lastRun.voxnode_queue.waiting_long"> · {{ lastRun.voxnode_queue.waiting_long }} longs</template>
+                                    </template>
+                                    <template v-else>non mesurée</template>
+                                </dd>
+                            </div>
                             <p v-if="telSettings.pbx_failover_mode === 'simulate'" class="pt-1 text-xs text-amber-700">Mode simulation : les bascules ne sont pas appliquées.</p>
                         </dl>
                         <ul v-if="regulatorEvents.length" class="space-y-1">
@@ -584,16 +678,81 @@ const sinceLastRun = computed(() => {
                     </div>
                 </details>
 
+                <!-- Réseau des agents : historique par agent, replié -->
+                <details v-if="telAgents" class="rounded-lg border border-gray-100 bg-white text-sm" :open="networkOpen" @toggle="networkOpen = $event.target.open">
+                    <summary class="flex cursor-pointer items-center gap-3 px-4 py-2.5">
+                        <span class="font-semibold text-gray-900">Réseau des agents</span>
+                        <span class="text-gray-600">
+                            {{ network ? (flaggedCount ? `${flaggedCount} connexion${flaggedCount > 1 ? 's' : ''} à surveiller` : 'aucune connexion à surveiller') : 'qualité de la connexion de chaque agent' }}
+                        </span>
+                    </summary>
+                    <div class="border-t border-gray-100">
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-xs text-gray-500">
+                            <div class="inline-flex rounded-md border border-gray-200 p-0.5">
+                                <button
+                                    v-for="(label, h) in { 24: '24 h', 168: '7 jours', 720: '30 jours' }"
+                                    :key="h"
+                                    type="button"
+                                    class="rounded px-2.5 py-1"
+                                    :class="networkHours === Number(h) ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                                    @click="networkHours = Number(h)"
+                                >
+                                    {{ label }}
+                                </button>
+                            </div>
+                            <span>À surveiller : SIP moyen au-delà de 600 ms, OPTIONS sans réponse (3 et plus) ou coupures répétées (2 et plus).</span>
+                        </div>
+                        <div class="overflow-x-auto" :class="networkLoading && 'opacity-60'">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-y border-gray-100 text-left text-xs uppercase tracking-wide text-gray-400">
+                                        <th class="px-4 py-2 font-medium">Agent</th>
+                                        <th class="px-3 py-2 font-medium">Plateforme</th>
+                                        <th class="px-3 py-2 font-medium" title="Dernière mesure remontée par le softphone">En direct</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Réponse SIP OPTIONS du serveur, authentification comprise">SIP moyen</th>
+                                        <th class="px-3 py-2 text-right font-medium">SIP max</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="OPTIONS envoyés sans réponse">Sans réponse</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Coupures de l'enregistrement SIP">Coupures</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Aller-retour vers l'application">App moyen</th>
+                                        <th class="px-4 py-2 font-medium">État</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="r in networkRows" :key="`${r.agent_id}-${r.platform}`" class="border-b border-gray-50 last:border-b-0">
+                                        <td class="whitespace-nowrap px-4 py-1.5">
+                                            <span class="font-medium text-gray-900">{{ r.username || `#${r.agent_id}` }}</span>
+                                            <span v-if="r.name" class="ml-2 text-xs text-gray-400">{{ r.name }}</span>
+                                        </td>
+                                        <td class="whitespace-nowrap px-3 py-1.5 text-gray-600">{{ PLATFORMS[r.platform] }}</td>
+                                        <td class="whitespace-nowrap px-3 py-1.5 tabular-nums" :class="liveText(r.live).old ? 'text-gray-400' : (r.live?.net_sip_ms > 600 ? 'text-red-600' : 'text-gray-700')" :title="liveText(r.live).at ? `Mesuré le ${formatDateTime(new Date(liveText(r.live).at).toISOString())}` : ''">
+                                            {{ liveText(r.live).text }}
+                                        </td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums" :class="r.sip_avg > 600 ? 'font-medium text-red-600' : 'text-gray-900'">{{ ms(r.sip_avg) }}</td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums text-gray-600">{{ ms(r.sip_max) }}</td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums" :class="r.sip_lost >= 3 ? 'font-medium text-red-600' : r.sip_lost ? 'text-gray-900' : 'text-gray-300'">{{ r.sip_lost }}</td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums" :class="r.disconnects >= 2 ? 'font-medium text-red-600' : r.disconnects ? 'text-gray-900' : 'text-gray-300'">{{ r.disconnects }}</td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums text-gray-600">{{ ms(r.http_avg) }}</td>
+                                        <td class="whitespace-nowrap px-4 py-1.5" :class="r.flagged ? 'font-medium text-red-600' : 'text-gray-500'">{{ r.flagged ? 'À surveiller' : 'Bon' }}</td>
+                                    </tr>
+                                    <tr v-if="!networkLoading && network && !networkRows.length">
+                                        <td colspan="9" class="px-4 py-6 text-center text-gray-400">Aucune mesure sur la période</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </details>
+
                 <!-- Dernières pannes : historique, replié -->
                 <details v-if="healthEvents.length" class="rounded-lg border border-gray-100 bg-white text-sm">
                     <summary class="flex cursor-pointer items-center gap-3 px-4 py-2.5">
-                        <span class="font-semibold text-gray-900">Dernières pannes de notre serveur</span>
+                        <span class="font-semibold text-gray-900">Pannes et redémarrages de notre serveur</span>
                         <span class="text-gray-600">{{ healthEvents.length }} événement{{ healthEvents.length > 1 ? 's' : '' }} · dernier le {{ formatDateTime(healthEvents[0].at) }}</span>
                     </summary>
                     <ul class="space-y-1 border-t border-gray-100 px-4 py-3">
                         <li v-for="(e, i) in healthEvents" :key="i" class="flex gap-3">
                             <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
-                            <span :class="e.state === 'down' ? 'text-red-600' : 'text-gray-700'">{{ e.state === 'down' ? 'Panne' : 'Rétabli' }}</span>
+                            <span :class="HEALTH_EVENTS[e.state]?.class ?? 'text-gray-700'">{{ HEALTH_EVENTS[e.state]?.label ?? e.state }}</span>
                             <span class="min-w-0 truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
                             <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
                         </li>

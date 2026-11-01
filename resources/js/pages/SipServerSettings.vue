@@ -195,6 +195,36 @@ const priorityForm = numberForm({
     priority_min_duration: { min: 1, max: 3600, error: "Durée d'appel : entre 1 et 3600 secondes." },
     priority_window_hours: { min: 1, max: 720, error: 'Période : entre 1 et 720 heures.' },
 })
+// Test des agents IA : environ N appels par jour envoyés au prestataire, 0 = coupé
+const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Agents IA : entre 0 et 1000 appels par jour.' } })
+
+// En cas de panne de notre serveur : bascule réelle ou simple journal (simulation)
+async function setFailoverMode(mode) {
+    if (mode === telSettings.value.pbx_failover_mode) return
+    const ok = await ask(
+        mode === 'simulate'
+            ? {
+                  title: 'Passer en simulation ?',
+                  body: "En cas de panne de notre serveur, rien ne basculera plus sur Voxnode : la panne sera seulement journalisée. Les appels envoyés chez nous pendant une panne seront perdus.",
+                  confirm: 'Passer en simulation',
+                  danger: true,
+              }
+            : { title: 'Réactiver la bascule automatique ?', body: 'En cas de panne de notre serveur, ses numéros et ses agents basculeront sur Voxnode.', confirm: 'Réactiver' },
+    )
+    if (ok) saveTelephony({ pbx_failover_mode: mode }, mode === 'simulate' ? 'Bascule en simulation' : 'Bascule automatique réactivée')
+}
+
+// Transferts depuis notre serveur : vers la marque choisie, ou tous vers le service interne
+async function setTransfersInternal(internal) {
+    if (internal === !!telSettings.value.selfhosted_transfers_internal) return
+    const ok = await ask(
+        internal
+            ? { title: 'Envoyer tous les transferts au service interne ?', body: "Sur notre serveur, chaque transfert partira au service interne au lieu de la marque. La marque choisie par l'agent reste enregistrée.", confirm: 'Service interne' }
+            : { title: 'Transférer vers les marques ?', body: "Sur notre serveur, chaque transfert partira vers la marque choisie par l'agent.", confirm: 'Vers les marques', danger: true },
+    )
+    if (ok) saveTelephony({ selfhosted_transfers_internal: internal }, internal ? 'Transferts : service interne' : 'Transferts : vers les marques')
+}
+
 const regulatorForm = numberForm({
     regulator_max_moves: { min: 1, max: 10, error: 'Agents déplacés : entre 1 et 10.' },
     regulator_cooldown_minutes: { min: 0, max: 60, error: 'Délai avant de redéplacer un agent : entre 0 et 60 minutes.' },
@@ -652,6 +682,54 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </p>
                                         </div>
                                     </div>
+                                    <!-- En cas de panne : bascule réelle ou simulation -->
+                                    <div v-if="'pbx_failover_mode' in telSettings" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
+                                        <div class="text-sm font-medium text-gray-900">En cas de panne</div>
+                                        <div>
+                                            <div class="inline-flex rounded-md border border-gray-200 p-0.5">
+                                                <button
+                                                    v-for="(label, key) in { active: 'Bascule automatique', simulate: 'Simulation' }"
+                                                    :key="key"
+                                                    type="button"
+                                                    class="rounded px-3 py-1.5 text-sm transition-colors"
+                                                    :class="telSettings.pbx_failover_mode === key ? (key === 'simulate' ? 'bg-amber-600 text-white' : 'bg-gray-900 text-white') : 'text-gray-600 hover:bg-gray-50'"
+                                                    :disabled="busy"
+                                                    @click="setFailoverMode(key)"
+                                                >
+                                                    {{ label }}
+                                                </button>
+                                            </div>
+                                            <p class="mt-2 text-sm" :class="telSettings.pbx_failover_mode === 'simulate' ? 'text-amber-700' : 'text-gray-500'">
+                                                {{ telSettings.pbx_failover_mode === 'simulate'
+                                                    ? 'Une panne de notre serveur est seulement journalisée : rien ne bascule sur Voxnode.'
+                                                    : 'Une panne de notre serveur envoie ses numéros et ses agents sur Voxnode.' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <!-- Transferts depuis notre serveur -->
+                                    <div v-if="'selfhosted_transfers_internal' in telSettings" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
+                                        <div class="text-sm font-medium text-gray-900">Transferts depuis notre serveur</div>
+                                        <div>
+                                            <div class="inline-flex rounded-md border border-gray-200 p-0.5">
+                                                <button
+                                                    v-for="(label, key) in { brand: 'Vers la marque', internal: 'Tous au service interne' }"
+                                                    :key="key"
+                                                    type="button"
+                                                    class="rounded px-3 py-1.5 text-sm transition-colors"
+                                                    :class="(telSettings.selfhosted_transfers_internal ? 'internal' : 'brand') === key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                                                    :disabled="busy"
+                                                    @click="setTransfersInternal(key === 'internal')"
+                                                >
+                                                    {{ label }}
+                                                </button>
+                                            </div>
+                                            <p class="mt-2 text-sm text-gray-500">
+                                                {{ telSettings.selfhosted_transfers_internal
+                                                    ? "Chaque transfert sur notre serveur part au service interne ; la marque choisie par l'agent reste enregistrée."
+                                                    : "Chaque transfert sur notre serveur part vers la marque choisie par l'agent." }}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
 
@@ -687,6 +765,27 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <template v-if="trafficForm.dirty">
                                         <Button type="button" variant="outline" size="sm" :disabled="busy" @click="trafficForm.reset()">Annuler</Button>
                                         <Button type="submit" size="sm" :disabled="busy || !!trafficForm.error">Enregistrer</Button>
+                                    </template>
+                                </footer>
+                            </form>
+
+                            <!-- Test des agents IA -->
+                            <form v-if="aiForm.available.length" class="rounded-lg border border-gray-100 bg-white" @submit.prevent="aiForm.save()">
+                                <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
+                                    <div>
+                                        <Label for="ai-calls" class="text-gray-900">Test des agents IA</Label>
+                                        <p class="text-sm text-gray-500">Appels envoyés chaque jour au prestataire IA, répartis au hasard sur la journée. 0 = test coupé.</p>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-sm text-gray-600">
+                                        <Input id="ai-calls" v-model.number="aiForm.values.ai_daily_calls" type="number" min="0" max="1000" class="h-9 w-24 text-right tabular-nums" />
+                                        appels / jour
+                                    </div>
+                                </div>
+                                <footer v-if="aiForm.dirty || aiForm.error" class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
+                                    <span v-if="aiForm.error" class="mr-auto text-sm text-red-600">{{ aiForm.error }}</span>
+                                    <template v-if="aiForm.dirty">
+                                        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="aiForm.reset()">Annuler</Button>
+                                        <Button type="submit" size="sm" :disabled="busy || !!aiForm.error">Enregistrer</Button>
                                     </template>
                                 </footer>
                             </form>

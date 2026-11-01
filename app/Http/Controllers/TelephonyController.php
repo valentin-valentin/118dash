@@ -6,6 +6,7 @@ use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -53,6 +54,12 @@ class TelephonyController extends Controller
             'selfhosted_manual_off' => 'sometimes|boolean',
             'voxnode_manual_off' => 'sometimes|boolean',
             'pbx_recovery_minutes' => 'sometimes|integer|between:1,120',
+            // En cas de panne : active = numéros et agents basculent sur Voxnode, simulate = journalisé seulement
+            'pbx_failover_mode' => 'sometimes|in:active,simulate',
+            // Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)
+            'selfhosted_transfers_internal' => 'sometimes|boolean',
+            // Test des agents IA : environ N appels par jour envoyés au prestataire, 0 = coupé
+            'ai_daily_calls' => 'sometimes|integer|between:0,1000',
             // Régulateur : déplacements automatiques des agents entre les plateformes
             'regulator_max_moves' => 'sometimes|integer|between:1,10',
             'regulator_cooldown_minutes' => 'sometimes|integer|between:0,60',
@@ -69,6 +76,7 @@ class TelephonyController extends Controller
         ], [
             'selfhosted_percent.between' => 'Part du trafic : entre 0 et 100 %.',
             'pbx_recovery_minutes.between' => 'Délai de retour : entre 1 et 120 minutes.',
+            'ai_daily_calls.between' => 'Agents IA : entre 0 et 1000 appels par jour.',
             'regulator_max_moves.between' => 'Agents déplacés par cycle : entre 1 et 10.',
             'regulator_cooldown_minutes.between' => 'Délai entre deux déplacements : entre 0 et 60 minutes.',
             'regulator_wait_seconds.between' => "Seuil d'attente : entre 0 et 600 secondes.",
@@ -118,6 +126,50 @@ class TelephonyController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Réseau des agents sur une période (table agent_network_quality de voxnode118, tranches de 5 min) :
+     * aller-retour vers l'app (HTTP), réponse SIP OPTIONS du serveur où l'agent est connecté,
+     * OPTIONS sans réponse et coupures SIP. Une ligne par agent et par plateforme.
+     * Repères : SIP > 600 ms, OPTIONS perdus ou coupures répétés = connexion à surveiller.
+     */
+    public function network(Request $request): JsonResponse
+    {
+        $hours = (int) ($request->validate(['hours' => 'nullable|integer|in:24,168,720'])['hours'] ?? 24);
+
+        // FROM_UNIXTIME : period_start est un TIMESTAMP, comparé quel que soit le fuseau du serveur MySQL
+        $rows = DB::table('agent_network_quality as q')
+            ->leftJoin('agents as a', 'a.id', '=', 'q.agent_id')
+            ->whereRaw('q.period_start >= FROM_UNIXTIME(?)', [now()->subHours($hours)->getTimestamp()])
+            ->groupBy('q.agent_id', 'q.platform', 'a.voxnode_username', 'a.name')
+            ->selectRaw('
+                q.agent_id, q.platform, a.voxnode_username AS username, a.name,
+                SUM(q.samples) AS samples,
+                SUM(q.http_sum) AS http_sum, SUM(q.http_count) AS http_count, MAX(q.http_max) AS http_max,
+                SUM(q.sip_sum) AS sip_sum, SUM(q.sip_count) AS sip_count, MAX(q.sip_max) AS sip_max,
+                SUM(q.sip_lost) AS sip_lost, SUM(q.disconnects) AS disconnects,
+                UNIX_TIMESTAMP(MAX(q.period_start)) AS last_period
+            ')
+            ->get()
+            ->map(fn ($r) => [
+                'agent_id' => (int) $r->agent_id,
+                'username' => $r->username,
+                'name' => $r->name,
+                'platform' => $r->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
+                'samples' => (int) $r->samples,
+                'http_avg' => $r->http_count ? (int) round($r->http_sum / $r->http_count) : null,
+                'http_max' => $r->http_count ? (int) $r->http_max : null,
+                'sip_avg' => $r->sip_count ? (int) round($r->sip_sum / $r->sip_count) : null,
+                'sip_max' => $r->sip_count ? (int) $r->sip_max : null,
+                'sip_count' => (int) $r->sip_count,
+                'sip_lost' => (int) $r->sip_lost,
+                'disconnects' => (int) $r->disconnects,
+                'last_at' => $r->last_period ? date(DATE_ATOM, (int) $r->last_period) : null,
+            ])
+            ->values();
+
+        return response()->json(['hours' => $hours, 'agents' => $rows]);
     }
 
     public function updateAgent(Request $request, int $agent): JsonResponse

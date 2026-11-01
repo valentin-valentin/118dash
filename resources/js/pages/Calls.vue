@@ -1,4 +1,5 @@
 <script setup>
+import { formatQuality, qualityClass } from '@/lib/quality'
 import { computed, onMounted, ref } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -68,6 +69,8 @@ const { filters, reset } = useFilters(
         phone_reported_by_agent: '',
         phone_cant_provide_service: '',
         blacklist_id: '',
+        platform: '',
+        audio_quality: '',
         sort: 'called_at',
         dir: 'desc',
         per_page: 50,
@@ -93,7 +96,9 @@ const hasFilters = computed(() =>
     !!filters.phone_agent_hangup ||
     !!filters.phone_reported_by_agent ||
     !!filters.phone_cant_provide_service ||
-    !!filters.blacklist_id
+    !!filters.blacklist_id ||
+    !!filters.platform ||
+    !!filters.audio_quality
 )
 
 function toggleSort(key) {
@@ -117,6 +122,7 @@ const columns = [
     { key: 'carrier', label: 'Opé.', sortable: true },
     { key: 'duration', label: 'Durée', sortable: true },
     { key: 'payout', label: 'Payout', sortable: true },
+    { key: 'audio_quality', label: 'Qualité', sortable: true },
 ]
 
 function formatDate(dateString) {
@@ -202,6 +208,8 @@ const exportableColumns = [
     { key: 'record_transfer', label: 'Enregistrement transfert' },
     { key: 'callcenter', label: 'Call center' },
     { key: 'blacklist', label: 'Blacklist' },
+    { key: 'platform', label: 'Plateforme' },
+    { key: 'audio_quality', label: 'Qualité audio (score)' },
 ]
 
 const exportOpen = ref(false)
@@ -446,6 +454,29 @@ onMounted(() => {
                         :searchable="false"
                     />
 
+                    <!-- Plateforme -->
+                    <FilterSelect
+                        v-model="filters.platform"
+                        :options="[
+                            { value: 'voxnode', label: 'Voxnode' },
+                            { value: 'selfhosted', label: 'Notre serveur' },
+                        ]"
+                        placeholder="Plateforme"
+                        :searchable="false"
+                    />
+
+                    <!-- Qualité audio -->
+                    <FilterSelect
+                        v-model="filters.audio_quality"
+                        :options="[
+                            { value: 'degraded', label: 'Dégradés (score < 3,1)' },
+                            { value: 'measured', label: 'Qualité mesurée' },
+                            { value: 'unmeasured', label: 'Qualité non mesurée' },
+                        ]"
+                        placeholder="Qualité audio"
+                        :searchable="false"
+                    />
+
                     <!-- Blacklist -->
                     <FilterSelect
                         v-model="filters.blacklist_id"
@@ -564,6 +595,15 @@ onMounted(() => {
                             </div>
                         </div>
                     </template>
+                    <template #audio_quality="{ row }">
+                        <div class="whitespace-nowrap text-sm">
+                            <span :class="qualityClass(row.audio_quality === null ? null : Number(row.audio_quality)) || 'text-gray-700'">
+                                {{ row.audio_quality === null || row.audio_quality === undefined ? '—' : formatQuality(Number(row.audio_quality), 1) }}
+                            </span>
+                            <div class="text-xs text-gray-400">{{ row.platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode' }}</div>
+                        </div>
+                    </template>
+
                     <template #payout="{ row }">
                         <div v-if="row.payout !== null && row.payout !== undefined" class="text-sm">
                             <span class="text-gray-500 text-xs">{{ formatCurrency(parseFloat(row.payout)) }} - {{ formatCurrency(parseFloat(row.payout_source || 0)) }} = </span>

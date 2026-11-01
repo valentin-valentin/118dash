@@ -80,6 +80,8 @@ const { filters, reset } = useFilters(
         carrier: [],
         callcenter_id: [],
         agent_name: [],
+        // Plateforme : '' = toutes, voxnode, selfhosted (notre serveur)
+        platform: '',
         min_duration: false,
         with_rejected: false,
         // Colonne « Qualité audio » du tableau jour par jour, seulement sur demande
@@ -104,6 +106,7 @@ const hasFilters = computed(() =>
     (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
     (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
     (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
+    !!filters.platform ||
     filters.min_duration ||
     filters.with_rejected ||
     filters.with_quality ||
@@ -625,6 +628,17 @@ onMounted(() => {
                         placeholder="Agents"
                         searchable
                         multiple
+                    />
+
+                    <!-- Plateforme -->
+                    <FilterSelect
+                        v-model="filters.platform"
+                        :options="[
+                            { value: 'voxnode', label: 'Voxnode' },
+                            { value: 'selfhosted', label: 'Notre serveur' },
+                        ]"
+                        placeholder="Plateforme"
+                        :searchable="false"
                     />
 
                     <!-- Filtre durée minimum -->

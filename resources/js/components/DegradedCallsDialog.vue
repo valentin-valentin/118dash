@@ -67,7 +67,8 @@ watch(
     () => props.open,
     (open) => {
         if (!open) return
-        platform.value = ''
+        // Même plateforme que le filtre du tableau de bord, s'il y en a un
+        platform.value = props.filters.platform ?? ''
         sort.value = 'recent'
         agent.value = props.initial.agent ?? ''
         selectedId.value = props.initial.callId ?? null

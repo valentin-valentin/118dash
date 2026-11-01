@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Provider;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -103,6 +105,36 @@ class ProviderController extends Controller
             'last_page' => $paginator->lastPage(),
             'per_page' => $paginator->perPage(),
         ]);
+    }
+
+    /**
+     * « Routé chez nous » : providers.config $.selfhosted, lu par voxnode118 pour envoyer les numéros
+     * de ce fournisseur sur notre serveur SIP. JSON_SET ne touche à aucune autre clé de la configuration.
+     */
+    public function setSelfhosted(Request $request, Provider $provider): JsonResponse
+    {
+        $enabled = $request->validate(['selfhosted' => 'required|boolean'])['selfhosted'];
+
+        DB::update(
+            "UPDATE providers SET config = JSON_SET(COALESCE(NULLIF(config, ''), '{}'), '$.selfhosted', JSON_EXTRACT(?, '$.v')), updated_at = ? WHERE id = ?",
+            [json_encode(['v' => (bool) $enabled]), now(), $provider->id],
+        );
+
+        Log::info('[Fournisseurs] ' . $provider->name . ' : routé chez nous = ' . ($enabled ? 'oui' : 'non'), ['user' => auth()->user()?->email]);
+
+        return response()->json(['id' => $provider->id, 'selfhosted' => (bool) $enabled]);
+    }
+
+    /**
+     * Fournisseurs dont les numéros peuvent venir sur notre serveur (page Serveur SIP).
+     */
+    public function selfhostedList(): JsonResponse
+    {
+        return response()->json(
+            Provider::orderBy('name')->get(['id', 'name', 'enabled', 'color', 'config'])
+                ->map(fn ($p) => ['id' => $p->id, 'name' => $p->name, 'enabled' => (bool) $p->enabled, 'color' => $p->color, 'selfhosted' => (bool) ($p->config['selfhosted'] ?? false)])
+                ->values(),
+        );
     }
 
     public function stats(): JsonResponse

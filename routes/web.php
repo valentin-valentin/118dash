@@ -116,6 +116,8 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/providers/stats', [ProviderController::class, 'stats']);
         Route::get('/providers', [ProviderController::class, 'data']);
+        Route::get('/providers/selfhosted', [ProviderController::class, 'selfhostedList']);
+        Route::put('/providers/{provider}/selfhosted', [ProviderController::class, 'setSelfhosted'])->whereNumber('provider');
 
         Route::get('/companies/stats', [CompanyController::class, 'stats']);
         Route::get('/companies', [CompanyController::class, 'data']);
@@ -158,6 +160,7 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/sip/playlist', [SipServerController::class, 'updatePlaylist']);
         Route::put('/sip/welcome', [SipServerController::class, 'updateWelcome']);
         Route::get('/telephony', [TelephonyController::class, 'status']);
+        Route::get('/telephony/network', [TelephonyController::class, 'network']);
         Route::put('/telephony/settings', [TelephonyController::class, 'updateSettings']);
         Route::put('/telephony/agents/{agent}', [TelephonyController::class, 'updateAgent'])->whereNumber('agent');
 

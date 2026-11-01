@@ -369,6 +369,12 @@ class DashboardController extends Controller
         if ($request->filled('carrier')) {
             $query->whereIn('calls.carrier', $this->parseMultiSelect($request->carrier));
         }
+        // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+        if ($request->filled('platform')) {
+            $request->platform === 'selfhosted'
+                ? $query->where('calls.platform', 'selfhosted')
+                : $query->where(fn ($q) => $q->whereNull('calls.platform')->orWhere('calls.platform', '!=', 'selfhosted'));
+        }
         if ($request->filled('provider_id')) {
             $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
             $query->whereHas('phonenumber', fn ($q) => $q->withTrashed()->whereIn('provider_id', $providers));
@@ -447,6 +453,12 @@ class DashboardController extends Controller
             if ($request->filled('carrier')) {
                 $carriers = $this->parseMultiSelect($request->carrier);
                 $query->whereIn('carrier', $carriers);
+            }
+            // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+            if ($request->filled('platform')) {
+                $request->platform === 'selfhosted'
+                    ? $query->where('platform', 'selfhosted')
+                    : $query->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'));
             }
 
             if ($request->filled('provider_id')) {
@@ -576,6 +588,12 @@ class DashboardController extends Controller
             $carriers = $this->parseMultiSelect($request->carrier);
             $query->whereIn('carrier', $carriers);
         }
+        // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+        if ($request->filled('platform')) {
+            $request->platform === 'selfhosted'
+                ? $query->where('platform', 'selfhosted')
+                : $query->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'));
+        }
 
         if ($request->filled('provider_id')) {
             $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
@@ -690,6 +708,12 @@ class DashboardController extends Controller
             if ($request->filled('carrier')) {
                 $carriers = $this->parseMultiSelect($request->carrier);
                 $query->whereIn('carrier', $carriers);
+            }
+            // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+            if ($request->filled('platform')) {
+                $request->platform === 'selfhosted'
+                    ? $query->where('platform', 'selfhosted')
+                    : $query->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'));
             }
 
             if ($request->filled('provider_id')) {
@@ -1045,6 +1069,12 @@ class DashboardController extends Controller
                 $carriers = $this->parseMultiSelect($request->carrier);
                 $query->whereIn('calls.carrier', $carriers);
             }
+            // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+            if ($request->filled('platform')) {
+                $request->platform === 'selfhosted'
+                    ? $query->where('calls.platform', 'selfhosted')
+                    : $query->where(fn ($q) => $q->whereNull('calls.platform')->orWhere('calls.platform', '!=', 'selfhosted'));
+            }
 
             if ($request->filled('provider_id')) {
                 $providers = array_map('intval', $this->parseMultiSelect($request->provider_id));
@@ -1243,6 +1273,12 @@ class DashboardController extends Controller
             if ($request->filled('carrier')) {
                 $carriers = $this->parseMultiSelect($request->carrier);
                 $query->whereIn('carrier', $carriers);
+            }
+            // Plateforme : selfhosted = notre serveur ; NULL ou voxnode = Voxnode
+            if ($request->filled('platform')) {
+                $request->platform === 'selfhosted'
+                    ? $query->where('platform', 'selfhosted')
+                    : $query->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'));
             }
 
             if ($request->filled('provider_id')) {
