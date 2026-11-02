@@ -196,7 +196,7 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - **Règles communes (Dashboard et page Rejetés)** :
   1. **Dédup des relances opérateur** : une ligne est une relance si la ligne précédente du même couple (`from`,`to`) date de ≤ 300 s. La fenêtre est glissante : chaque relance repousse la fenêtre. On compte 10 min de marge avant la borne.
   2. On ne garde que les appels **entre 8 h et 20 h (heure de Paris, `HOUR` dans 8..19), hors dimanche**.
-  SQL équivalent (MySQL 8, session UTC) :
+  SQL équivalent (session UTC) :
   ```sql
   WITH d AS (
     SELECT id, `from`, `to`, phonenumber_id, called_at,

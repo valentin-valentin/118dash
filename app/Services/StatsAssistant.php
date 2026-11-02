@@ -19,7 +19,7 @@ class StatsAssistant
     private const MAX_STEPS = 25;
     private const MAX_ROWS = 200;
     private const MAX_RESULT_CHARS = 40000;
-    private const QUERY_TIMEOUT_MS = 600000;
+    private const QUERY_TIMEOUT_S = 600;
 
     // Tarifs Claude Opus 5.5, en dollars par million de jetons
     private const PRICES = ['input' => 4.0, 'cache_write' => 5.0, 'cache_read' => 0.20, 'output' => 20.0];
@@ -153,12 +153,41 @@ class StatsAssistant
     private function connection(): \PDO
     {
         $pdo = DB::connection('assistant')->getPdo();
-        // Instants en UTC quel que soit le fuseau du serveur MySQL ; requêtes longues autorisées
+        // Instants en UTC quel que soit le fuseau du serveur ; requêtes longues autorisées.
+        // La limite de durée ne s'écrit pas pareil sous MySQL (millisecondes) et MariaDB (secondes).
         $pdo->exec("SET SESSION time_zone = '+00:00'");
-        $pdo->exec('SET SESSION max_execution_time = ' . self::QUERY_TIMEOUT_MS);
+        // Sur un serveur qui ne connaît aucune des deux variables (MySQL < 5.7.8), pas de limite.
+        try {
+            $pdo->exec($this->isMariaDb()
+                ? 'SET SESSION max_statement_time = ' . self::QUERY_TIMEOUT_S
+                : 'SET SESSION max_execution_time = ' . self::QUERY_TIMEOUT_S * 1000);
+        } catch (\PDOException) {
+        }
         $pdo->exec('SET SESSION TRANSACTION READ ONLY');
 
         return $pdo;
+    }
+
+    private ?string $serverVersion = null;
+
+    private function serverVersion(): string
+    {
+        return $this->serverVersion ??= (string) DB::connection('assistant')->getPdo()->query('SELECT VERSION()')->fetchColumn();
+    }
+
+    private function isMariaDb(): bool
+    {
+        return str_contains(strtolower($this->serverVersion()), 'mariadb');
+    }
+
+    /**
+     * Nom du moteur pour le prompt, ex. « MariaDB 10.11 » ou « MySQL 8.0 ».
+     */
+    private function engineName(): string
+    {
+        preg_match('/^(\d+\.\d+)/', $this->serverVersion(), $m);
+
+        return ($this->isMariaDb() ? 'MariaDB' : 'MySQL') . (isset($m[1]) ? " {$m[1]}" : '');
     }
 
     private function resultForClaude(array $result): string
@@ -182,7 +211,7 @@ class StatsAssistant
     {
         return [
             'name' => 'run_sql',
-            'description' => 'Exécute une requête MySQL 8 en lecture seule sur la base du panel et renvoie les colonnes et au plus '
+            'description' => 'Exécute une requête SQL (' . $this->engineName() . ') en lecture seule sur la base du panel et renvoie les colonnes et au plus '
                 . self::MAX_ROWS . ' lignes. Une seule requête par appel. La session est en UTC. '
                 . 'Agrège en SQL (COUNT, SUM, GROUP BY) plutôt que de rapatrier des lignes : la table calls compte près de 2 millions de lignes.',
             'inputSchema' => [
@@ -214,7 +243,7 @@ Comment travailler :
 - Tu n'as que la lecture : si on te demande de modifier quelque chose, explique que ce n'est pas possible ici.
 
 Contraintes techniques :
-- MySQL 8, session en UTC : les colonnes TIMESTAMP sont lues en UTC. Les gérants raisonnent en heure de Paris : convertis les bornes de période (une journée de Paris va de 22:00 ou 23:00 UTC la veille à la même heure le jour même selon l'heure d'été) et regroupe par jour ou heure de Paris avec l'expression du glossaire.
+- Base {$this->engineName()}, session en UTC : les colonnes TIMESTAMP sont lues en UTC. Les gérants raisonnent en heure de Paris : convertis les bornes de période (une journée de Paris va de 22:00 ou 23:00 UTC la veille à la même heure le jour même selon l'heure d'été) et regroupe par jour ou heure de Paris avec l'expression du glossaire.
 - Certaines tables ne sont lisibles que colonne par colonne (agents, callcenters, providers, providers_companies, sources, refunds, routing_logs, disabled_calls) : n'utilise jamais SELECT * dessus, nomme les colonnes.
 - Au plus 200 lignes reviennent par requête : agrège en SQL. Évite les requêtes sans filtre de date sur les grosses tables (calls, agent_logs, visitor_assignments, agent_attendances) quand ce n'est pas nécessaire.
 
