@@ -1081,7 +1081,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </span>
                                         </div>
 
-                                        <p class="mt-3 text-xs text-gray-400">L'opérateur est connu dès le 2e appel d'un numéro, ou recherché au moment de l'appel (1 s max) ; s'il est inconnu, la durée de base s'applique.</p>
+                                        <p class="mt-3 text-xs text-gray-400">L'opérateur de l'appelant est recherché au moment de l'appel. Si ce service ne répond pas, on prend l'opérateur connu de ses appels précédents ; sinon la durée de base s'applique.</p>
                                     </div>
                                 </li>
                                 <li class="relative pb-6 pl-6 pt-1" :class="hasTransferAnnouncement && 'border-l border-gray-200'">
