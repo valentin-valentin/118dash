@@ -501,6 +501,99 @@ function resetWait() {
     waitEdited.value = false
 }
 
+// Attente forcée par opérateur de l'appelant : exceptions à l'attente de base (réglage de l'API téléphonie).
+// L'objet complet est envoyé à chaque enregistrement ; un opérateur sans ligne garde l'attente de base.
+const CARRIERS = {
+    FRTE: 'Orange',
+    SFR0: 'SFR',
+    BOUY: 'Bouygues Telecom',
+    FRMO: 'Free Mobile',
+    FREE: 'Free',
+    TRAT: 'Transatel',
+    LYCA: 'LycaMobile',
+    NRJ: 'NRJ Mobile',
+    AFON: 'Afone',
+    LPTL: 'La Poste',
+    LPST: 'La Poste',
+    CORI: 'Coriolis',
+    COMP: 'Completel',
+    SYMA: 'Syma',
+    ORCA: 'Orange Caraïbe',
+    OUTR: 'Outremer Telecom',
+    ORRU: 'Orange Réunion',
+    SRR: 'SFR Réunion',
+}
+const carrierLabel = (code) => CARRIERS[code] ?? null
+const carrierWaitAvailable = computed(() => !!telSettings.value && 'forced_wait_by_carrier' in telSettings.value)
+const carrierRows = ref([])
+const carrierEdited = ref(false)
+const savedCarrierRows = () =>
+    Object.entries(telSettings.value?.forced_wait_by_carrier ?? {})
+        .map(([code, w]) => ({ code, min: w.min, max: w.max }))
+        .sort((a, b) => a.code.localeCompare(b.code))
+const carrierPayload = () =>
+    Object.fromEntries(
+        carrierRows.value
+            .map((r) => [r.code.trim().toUpperCase(), { min: Number(r.min), max: Number(r.max) }])
+            .sort(([a], [b]) => a.localeCompare(b)),
+    )
+const carrierDiffers = () => JSON.stringify(carrierPayload()) !== JSON.stringify(Object.fromEntries(savedCarrierRows().map((r) => [r.code, { min: r.min, max: r.max }])))
+watch(telSettings, () => {
+    if (!carrierEdited.value) carrierRows.value = savedCarrierRows()
+}, { immediate: true })
+watch(carrierRows, () => {
+    if (telSettings.value && carrierDiffers()) carrierEdited.value = true
+}, { deep: true })
+const carrierDirty = computed(() => carrierEdited.value && !!telSettings.value && carrierDiffers())
+const carrierError = computed(() => {
+    const seen = new Set()
+    for (const r of carrierRows.value) {
+        const code = r.code.trim().toUpperCase()
+        if (!/^[A-Z0-9]{2,6}$/.test(code)) return `Code opérateur « ${r.code || '…'} » : 2 à 6 lettres ou chiffres.`
+        if (seen.has(code)) return `${code} apparaît deux fois.`
+        seen.add(code)
+        const min = Number(r.min)
+        const max = Number(r.max)
+        if (isEmpty(r.min) || isEmpty(r.max) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 600) return `${code} : durées en secondes, entre 0 et 600.`
+        if (min > max) return `${code} : le minimum doit être inférieur ou égal au maximum.`
+    }
+    if (carrierRows.value.length > 50) return '50 opérateurs au plus.'
+    return null
+})
+// Opérateurs vus sur 30 jours, proposés dans la liste (avec ceux connus même s'ils n'ont pas appelé)
+const seenCarriers = ref([])
+fetch('/data/telephony/carriers', { headers: { Accept: 'application/json' } })
+    .then((res) => (res.ok ? res.json() : []))
+    .then((rows) => (seenCarriers.value = rows))
+    .catch(() => {})
+const carrierOptions = computed(() => {
+    const counts = Object.fromEntries(seenCarriers.value.map((c) => [c.code, c.calls]))
+    const codes = [...seenCarriers.value.map((c) => c.code), ...Object.keys(CARRIERS).filter((c) => !(c in counts))]
+    return codes.map((code) => ({
+        code,
+        label: [carrierLabel(code), counts[code] ? `${counts[code].toLocaleString('fr-FR')} appels sur 30 jours` : null].filter(Boolean).join(' · '),
+    }))
+})
+function addCarrierRow() {
+    carrierRows.value.push({ code: '', min: waitMin.value ?? 0, max: waitMax.value ?? 0 })
+}
+function removeCarrierRow(index) {
+    carrierRows.value.splice(index, 1)
+}
+async function saveCarrierWait() {
+    if (carrierError.value) return
+    const payload = carrierPayload()
+    const count = Object.keys(payload).length
+    if (await saveTelephony({ forced_wait_by_carrier: payload }, count ? `Attente par opérateur : ${count} opérateur${count > 1 ? 's' : ''}` : 'Attente par opérateur : aucune exception')) {
+        carrierEdited.value = false
+        carrierRows.value = savedCarrierRows()
+    }
+}
+function resetCarrierWait() {
+    carrierRows.value = savedCarrierRows()
+    carrierEdited.value = false
+}
+
 // ─── Fournisseurs : IP autorisées à nous envoyer des appels ───────────────────
 const trustedIps = computed(() => data.value?.['trusted-ips']?.data?.ips ?? [])
 const showIpDialog = ref(false)
@@ -927,6 +1020,63 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             <Button type="submit" size="sm" :disabled="busy || !!waitError">Enregistrer</Button>
                                         </span>
                                     </form>
+
+                                    <!-- Exceptions par opérateur de l'appelant -->
+                                    <div v-if="carrierWaitAvailable" class="mt-3 rounded-lg border border-gray-100 px-4 py-3 text-sm text-gray-700">
+                                        <div class="flex flex-wrap items-baseline justify-between gap-2">
+                                            <div>
+                                                <h4 class="font-medium text-gray-900">Par opérateur de l'appelant</h4>
+                                                <p class="text-xs text-gray-500">Remplace l'attente ci-dessus pour ces opérateurs ; 0 et 0 = pas d'attente forcée. Les autres opérateurs gardent l'attente de base.</p>
+                                            </div>
+                                            <Button type="button" variant="outline" size="sm" :disabled="busy || carrierRows.length >= 50" @click="addCarrierRow">
+                                                <Plus class="h-3.5 w-3.5" /> Ajouter un opérateur
+                                            </Button>
+                                        </div>
+                                        <table v-if="carrierRows.length" class="mt-3 w-full text-sm">
+                                            <thead class="text-left text-xs text-gray-500">
+                                                <tr>
+                                                    <th class="pb-1.5 font-medium">Opérateur</th>
+                                                    <th class="pb-1.5 font-medium">Attente forcée</th>
+                                                    <th class="w-8 pb-1.5" />
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(row, index) in carrierRows" :key="index" class="border-t border-gray-100">
+                                                    <td class="py-1.5 pr-3">
+                                                        <div class="flex items-center gap-2">
+                                                            <Input v-model="row.code" list="carrier-codes" placeholder="Code" class="h-8 w-24 font-mono uppercase" aria-label="Code opérateur" />
+                                                            <span class="text-xs text-gray-500">{{ carrierLabel(row.code.trim().toUpperCase()) ?? '' }}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td class="py-1.5 pr-3 whitespace-nowrap">
+                                                        Entre
+                                                        <Input v-model.number="row.min" type="number" min="0" max="600" class="mx-1 inline-flex h-8 w-20 text-right tabular-nums" aria-label="Minimum en secondes" />
+                                                        et
+                                                        <Input v-model.number="row.max" type="number" min="0" max="600" class="mx-1 inline-flex h-8 w-20 text-right tabular-nums" aria-label="Maximum en secondes" />
+                                                        s
+                                                        <span v-if="Number(row.min) === 0 && Number(row.max) === 0 && !isEmpty(row.min) && !isEmpty(row.max)" class="ml-1 text-xs text-gray-500">pas d'attente</span>
+                                                        <span v-else class="ml-1 text-xs text-gray-400">{{ minutes(row.min) }} à {{ minutes(row.max) }}</span>
+                                                    </td>
+                                                    <td class="py-1.5 text-right">
+                                                        <button type="button" class="text-gray-400 hover:text-red-600" :title="`Retirer ${row.code || 'cette ligne'}`" @click="removeCarrierRow(index)">
+                                                            <Trash2 class="h-4 w-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        <p v-else class="mt-2 text-xs text-gray-500">Aucune exception : tous les appelants ont l'attente de base.</p>
+                                        <datalist id="carrier-codes">
+                                            <option v-for="c in carrierOptions" :key="c.code" :value="c.code">{{ c.label }}</option>
+                                        </datalist>
+                                        <div v-if="carrierDirty || carrierError" class="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+                                            <span v-if="carrierError" class="text-xs text-red-600">{{ carrierError }}</span>
+                                            <span v-if="carrierDirty" class="ml-auto flex gap-2">
+                                                <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetCarrierWait">Annuler</Button>
+                                                <Button type="button" size="sm" :disabled="busy || !!carrierError" @click="saveCarrierWait">Enregistrer</Button>
+                                            </span>
+                                        </div>
+                                    </div>
                                 </li>
                                 <li class="relative pb-6 pl-6 pt-1" :class="hasTransferAnnouncement && 'border-l border-gray-200'">
                                     <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">3</span>

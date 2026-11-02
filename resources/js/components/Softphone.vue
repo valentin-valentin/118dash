@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { usePage } from '@inertiajs/vue3'
-import { Delete, Mic, MicOff, Phone, PhoneOff, Volume2, X } from 'lucide-vue-next'
+import { Link, usePage } from '@inertiajs/vue3'
+import { Delete, History, Mic, MicOff, Phone, PhoneOff, Volume2, X } from 'lucide-vue-next'
 import { call, hangup, isInCall, normalizeNumber, sendDtmf, setMuted, setVolume, softphone } from '@/composables/useSoftphone'
 
 /**
@@ -75,9 +75,15 @@ onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
                     <span class="h-2 w-2 rounded-full" :class="softphone.connected ? 'bg-green-500' : 'bg-gray-300'" :title="softphone.connected ? 'Connecté au serveur' : 'Non connecté'" />
                     Softphone
                 </div>
-                <button type="button" class="text-gray-400 hover:text-gray-700" title="Réduire" @click="softphone.open = false">
-                    <X class="h-4 w-4" />
-                </button>
+                <div class="flex items-center gap-3">
+                    <Link href="/softphone/history" class="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800" title="Appels du softphone : enregistrements et journaux">
+                        <History class="h-3.5 w-3.5" />
+                        Historique
+                    </Link>
+                    <button type="button" class="text-gray-400 hover:text-gray-700" title="Réduire" @click="softphone.open = false">
+                        <X class="h-4 w-4" />
+                    </button>
+                </div>
             </div>
 
             <div class="space-y-3 p-4">

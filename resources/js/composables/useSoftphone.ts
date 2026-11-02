@@ -8,6 +8,11 @@ import type { Session } from 'sip.js';
  * Un seul état pour toute l'application (module singleton) : le widget est monté à la racine,
  * à côté des pages Inertia, donc l'appel continue quand on change de page.
  * Pas de REGISTER : le panel ne fait que des appels sortants (INVITE authentifiés par digest).
+ *
+ * Journal d'appel : chaque appel a un identifiant (en-tête X-Panel-Call-Id), avec lequel le serveur SIP range
+ * l'enregistrement, la fiche et son journal Asterisk. Le navigateur note tout, du clic jusqu'à la fin : traces SIP.js
+ * complètes (messages SIP envoyés et reçus), états du softphone, WebSocket, ICE, micro, statistiques audio.
+ * À la fin, le journal part au serveur SIP via le panel (page Historique du softphone).
  */
 
 export type SoftphoneStatus =
@@ -52,6 +57,116 @@ export const softphone = reactive({
     history: readHistory(),
 });
 
+// Journal de l'appel en cours : null hors appel (les traces SIP.js entre deux appels ne sont pas gardées)
+interface CallLog {
+    id: string;
+    number: string;
+    startedAt: number;
+    lines: string[];
+    sent: boolean;
+}
+let callLog: CallLog | null = null;
+let statsTimer: ReturnType<typeof setInterval> | null = null;
+
+function newCallId(): string {
+    return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Ajoute une ligne horodatée (ms) au journal de l'appel en cours. */
+function log(source: string, message: string) {
+    if (!callLog) return;
+    const now = Date.now();
+    const elapsed = ((now - callLog.startedAt) / 1000).toFixed(3).padStart(8);
+    callLog.lines.push(`${new Date(now).toISOString()} +${elapsed}s [${source}] ${message}`);
+}
+
+/** Envoie le journal d'un appel au serveur SIP (une seule fois par appel). */
+function sendCallLog(keepalive = false) {
+    const current = callLog;
+    if (!current || current.sent) return;
+    current.sent = true;
+    callLog = null;
+    stopStats();
+    clearTimeout(sendTimer);
+
+    const query = new URLSearchParams({ number: current.number, started_at: String(Math.floor(current.startedAt / 1000)) });
+    const xsrf = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+    fetch(`/data/softphone/calls/${current.id}/browser-log?${query}`, {
+        method: 'POST',
+        keepalive,
+        headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            Accept: 'application/json',
+            'X-XSRF-TOKEN': xsrf ? decodeURIComponent(xsrf[1]) : '',
+        },
+        body: current.lines.join('\n') + '\n',
+    }).catch(() => {});
+}
+
+// Fin d'appel : on note encore 2 s (réponse au BYE ou au CANCEL, fermeture WebRTC) avant d'envoyer
+let sendTimer: ReturnType<typeof setTimeout> | undefined;
+function sendCallLogSoon() {
+    stopStats();
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(() => sendCallLog(), 2000);
+}
+
+// Page fermée ou rechargée pendant un appel : on tente quand même d'envoyer le journal
+if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => {
+        log('panel', 'page fermée ou rechargée pendant l\'appel');
+        sendCallLog(true);
+    });
+}
+
+/** Statistiques WebRTC toutes les 5 s : pertes, gigue, aller-retour. */
+function startStats(peerConnection: RTCPeerConnection) {
+    stopStats();
+    statsTimer = setInterval(async () => {
+        try {
+            const report = await peerConnection.getStats();
+            const parts: string[] = [];
+            report.forEach((stat: any) => {
+                if (stat.type === 'inbound-rtp' && stat.kind === 'audio') {
+                    parts.push(`reçu paquets=${stat.packetsReceived} perdus=${stat.packetsLost} gigue=${Math.round((stat.jitter ?? 0) * 1000)}ms`);
+                } else if (stat.type === 'outbound-rtp' && stat.kind === 'audio') {
+                    parts.push(`envoyé paquets=${stat.packetsSent}`);
+                } else if (stat.type === 'remote-inbound-rtp' && stat.kind === 'audio') {
+                    parts.push(`distant perdus=${stat.packetsLost} gigue=${Math.round((stat.jitter ?? 0) * 1000)}ms rtt=${Math.round((stat.roundTripTime ?? 0) * 1000)}ms`);
+                } else if (stat.type === 'candidate-pair' && stat.nominated && stat.state === 'succeeded') {
+                    parts.push(`paire ICE rtt=${Math.round((stat.currentRoundTripTime ?? 0) * 1000)}ms`);
+                }
+            });
+            if (parts.length) log('stats', parts.join(' | '));
+        } catch (e) {
+            log('stats', `getStats impossible : ${e instanceof Error ? e.message : e}`);
+        }
+    }, 5000);
+}
+
+function stopStats() {
+    if (statsTimer) clearInterval(statsTimer);
+    statsTimer = null;
+}
+
+/** Événements de la connexion WebRTC : ICE, connexion, pistes reçues. */
+function watchPeerConnection(peerConnection: RTCPeerConnection) {
+    peerConnection.addEventListener('icegatheringstatechange', () => log('ice', `collecte ${peerConnection.iceGatheringState}`));
+    peerConnection.addEventListener('iceconnectionstatechange', () => log('ice', `connexion ${peerConnection.iceConnectionState}`));
+    peerConnection.addEventListener('connectionstatechange', () => {
+        log('webrtc', `connexion ${peerConnection.connectionState}`);
+        if (peerConnection.connectionState === 'connected') startStats(peerConnection);
+    });
+    peerConnection.addEventListener('signalingstatechange', () => log('webrtc', `signalisation ${peerConnection.signalingState}`));
+    peerConnection.addEventListener('icecandidate', (e) => {
+        log('ice', e.candidate ? `candidat local ${e.candidate.candidate}` : 'fin des candidats locaux');
+    });
+    peerConnection.addEventListener('icecandidateerror', (e: any) => log('ice', `erreur candidat ${e.errorCode} ${e.errorText ?? ''} ${e.url ?? ''}`));
+    peerConnection.addEventListener('track', (e) => log('webrtc', `piste reçue ${e.track.kind}`));
+}
+
 let userAgent: UserAgent | null = null;
 let session: Session | null = null;
 let domain = '';
@@ -71,9 +186,13 @@ export function normalizeNumber(input: string): string | null {
 }
 
 async function ensureConnected(): Promise<UserAgent> {
-    if (userAgent?.isConnected()) return userAgent;
+    if (userAgent?.isConnected()) {
+        log('websocket', 'déjà connecté');
+        return userAgent;
+    }
 
     if (!userAgent) {
+        log('panel', 'récupération des identifiants du softphone');
         const response = await fetch('/data/softphone/credentials', { headers: { Accept: 'application/json' } });
         if (!response.ok) {
             const body = await response.json().catch(() => null);
@@ -90,14 +209,28 @@ async function ensureConnected(): Promise<UserAgent> {
             authorizationUsername: credentials.username,
             authorizationPassword: credentials.password,
             displayName: 'Panel',
-            logLevel: 'error',
+            // Traces complètes (messages SIP compris) vers le journal de l'appel ; la console ne garde que les erreurs
+            logLevel: 'debug',
+            logBuiltinEnabled: false,
+            logConnector: (level, category, label, content) => {
+                if (level === 'error') console.error(`[${category}]`, content);
+                log(`sip.js ${level} ${category}${label ? ` ${label}` : ''}`, content);
+            },
             delegate: {
-                onConnect: () => (softphone.connected = true),
-                onDisconnect: () => (softphone.connected = false),
+                onConnect: () => {
+                    softphone.connected = true;
+                    log('websocket', 'connecté');
+                },
+                onDisconnect: (error) => {
+                    softphone.connected = false;
+                    log('websocket', `déconnecté${error ? ` : ${error.message}` : ''}`);
+                },
             },
         });
+        log('websocket', `connexion à ${credentials.ws_url}`);
         await userAgent.start();
     } else {
+        log('websocket', 'reconnexion');
         await userAgent.reconnect();
     }
     softphone.connected = true;
@@ -116,6 +249,8 @@ function attachRemoteAudio() {
 }
 
 function finish(reason: string | null) {
+    log('panel', `fin de l'appel : ${reason ?? '—'}`);
+    sendCallLogSoon();
     softphone.status = 'ended';
     softphone.endReason = reason;
     softphone.muted = false;
@@ -145,10 +280,22 @@ export async function call(input: string): Promise<void> {
         return;
     }
 
+    sendCallLog();
+    const startedAt = Date.now();
+    callLog = { id: newCallId(), number, startedAt, lines: [], sent: false };
+    log('panel', `appel ${number} (id ${callLog.id})`);
+    log('panel', `navigateur ${navigator.userAgent}`);
+    try {
+        const permission = await navigator.permissions?.query({ name: 'microphone' as PermissionName });
+        log('micro', `permission ${permission?.state ?? 'inconnue'}`);
+    } catch {
+        log('micro', 'permission non consultable');
+    }
+
     Object.assign(softphone, {
         status: 'connecting',
         number,
-        startedAt: Date.now(),
+        startedAt,
         earlyAt: null,
         answeredAt: null,
         endReason: null,
@@ -162,14 +309,24 @@ export async function call(input: string): Promise<void> {
         const target = UserAgent.makeURI(`sip:${number}@${domain}`);
         if (!target) throw new Error('Numéro invalide');
 
+        const callId = callLog?.id ?? newCallId();
         const inviter = new Inviter(ua, target, {
             // Indispensable pour entendre le MGIT : l'audio du 183 est joué avant le décroché
             earlyMedia: true,
+            // Relie l'enregistrement et le journal du serveur SIP à ce journal
+            extraHeaders: [`X-Panel-Call-Id: ${callId}`],
+            delegate: {
+                onSessionDescriptionHandler: (handler) => {
+                    const peerConnection = (handler as Web.SessionDescriptionHandler).peerConnection;
+                    if (peerConnection) watchPeerConnection(peerConnection);
+                },
+            },
             sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } },
         });
         session = inviter;
 
         inviter.stateChange.addListener((state) => {
+            log('session', `état ${state}`);
             if (state === SessionState.Established) {
                 softphone.status = 'established';
                 softphone.answeredAt = Date.now();
@@ -184,6 +341,7 @@ export async function call(input: string): Promise<void> {
             requestDelegate: {
                 onProgress: (response) => {
                     const code = response.message.statusCode ?? 0;
+                    log('session', `réponse provisoire ${code} ${response.message.reasonPhrase ?? ''}`);
                     const hasSdp = !!response.message.body;
                     if (code === 183 || hasSdp) {
                         softphone.status = 'early';
@@ -193,8 +351,10 @@ export async function call(input: string): Promise<void> {
                     }
                     attachRemoteAudio();
                 },
+                onAccept: (response) => log('session', `réponse ${response.message.statusCode} ${response.message.reasonPhrase ?? ''}`),
                 onReject: (response) => {
                     const { statusCode, reasonPhrase } = response.message;
+                    log('session', `refus ${statusCode} ${reasonPhrase ?? ''}`);
                     softphone.endReason = rejectLabel(statusCode ?? 0, reasonPhrase);
                 },
             },
@@ -203,6 +363,7 @@ export async function call(input: string): Promise<void> {
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         const denied = /NotAllowed|Permission/i.test(message);
+        log('erreur', e instanceof Error ? `${e.name} : ${e.message}` : message);
         softphone.error = denied ? 'Accès au micro refusé par le navigateur' : `Appel impossible : ${message}`;
         finish(softphone.error);
     }
@@ -219,6 +380,7 @@ function rejectLabel(code: number, reason?: string): string {
 
 /** Raccroche, annule ou refuse selon l'état de l'appel. */
 export function hangup(): void {
+    log('panel', 'clic raccrocher');
     const current = session;
     if (!current) {
         if (softphone.status === 'connecting') finish('Annulé');
@@ -235,6 +397,7 @@ export function hangup(): void {
 /** Touches pendant l'appel (menus vocaux) : DTMF RFC 4733. */
 export function sendDtmf(tone: string): void {
     const handler = session?.sessionDescriptionHandler as Web.SessionDescriptionHandler | undefined;
+    log('panel', `touche ${tone}`);
     handler?.sendDtmf(tone);
 }
 
@@ -242,6 +405,7 @@ export function setMuted(muted: boolean): void {
     const handler = session?.sessionDescriptionHandler as Web.SessionDescriptionHandler | undefined;
     handler?.localMediaStream.getAudioTracks().forEach((track) => (track.enabled = !muted));
     softphone.muted = muted;
+    log('panel', muted ? 'micro coupé' : 'micro réactivé');
 }
 
 export function setVolume(volume: number): void {

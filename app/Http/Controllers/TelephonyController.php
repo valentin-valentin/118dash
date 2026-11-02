@@ -67,6 +67,13 @@ class TelephonyController extends Controller
             // Appelants prioritaires : pas d'attente forcée
             'priority_min_duration' => 'sometimes|integer|between:1,3600',
             'priority_window_hours' => 'sometimes|integer|between:1,720',
+            // Attente forcée par opérateur de l'appelant (code calls.carrier) : {"SFR0": {"min": 60, "max": 90}, …},
+            // objet complet à chaque envoi, {} = aucune exception (attente de base pour tous)
+            'forced_wait_by_carrier' => ['sometimes', 'array', function ($attribute, $value, $fail) {
+                if ($error = self::carrierWaitError($value)) {
+                    $fail("Attente par opérateur : {$error}");
+                }
+            }],
             // Horaires d'ouverture : toujours la semaine entière, null = fermé toute la journée
             'opening_hours' => ['sometimes', 'array', function ($attribute, $value, $fail) {
                 if ($error = self::openingHoursError($value)) {
@@ -90,6 +97,41 @@ class TelephonyController extends Controller
             ->implode(', ');
 
         return $this->write('put', '/settings', $validated, "Réglages : {$summary}");
+    }
+
+    private static function carrierWaitError(array $value): ?string
+    {
+        if (count($value) > 50) {
+            return '50 opérateurs au plus.';
+        }
+        foreach ($value as $code => $wait) {
+            if (!is_string($code) || !preg_match('/^[A-Z0-9]{2,6}$/', $code)) {
+                return "code opérateur « {$code} » invalide (2 à 6 lettres majuscules ou chiffres).";
+            }
+            $min = $wait['min'] ?? null;
+            $max = $wait['max'] ?? null;
+            if (!is_int($min) || !is_int($max) || $min < 0 || $max > 600 || $min > $max) {
+                return "{$code} : durées entières entre 0 et 600 secondes, minimum inférieur ou égal au maximum.";
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Opérateurs des appelants vus sur 30 jours (codes de calls.carrier), pour proposer les codes dans la configuration.
+     */
+    public function carriers(): JsonResponse
+    {
+        $rows = DB::table('calls')
+            ->where('called_at', '>=', now()->subDays(30))
+            ->whereRaw("carrier REGEXP '^[A-Z0-9]{2,6}$'")
+            ->groupBy('carrier')
+            ->orderByRaw('COUNT(*) DESC')
+            ->selectRaw('carrier AS code, COUNT(*) AS calls')
+            ->get();
+
+        return response()->json($rows);
     }
 
     public const DAYS = [

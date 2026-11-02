@@ -76,6 +76,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/phonenumbers/{phonenumber}', [PhonenumberController::class, 'update'])->name('phonenumbers.update');
 
     Route::get('/sip-server', [SipServerController::class, 'index'])->name('sip-server.index');
+    Route::get('/softphone/history', [SoftphoneController::class, 'history'])->name('softphone.history');
     Route::get('/sip-server/settings', [SipServerController::class, 'settings'])->name('sip-server.settings');
     Route::get('/callcenter-performance', [CallcenterPerformanceController::class, 'index'])->name('callcenter-performance.index');
     Route::get('/callcenter-performance/report', [CallcenterPerformanceController::class, 'report'])->name('callcenter-performance.report');
@@ -152,6 +153,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/phonenumbers/{phonenumber}/rsva-status', [RsvaAuditController::class, 'check'])->withTrashed();
 
         Route::get('/softphone/credentials', [SoftphoneController::class, 'credentials']);
+        Route::get('/softphone/calls', [SoftphoneController::class, 'calls']);
+        Route::post('/softphone/calls/{id}/browser-log', [SoftphoneController::class, 'browserLog']);
+        Route::get('/softphone/calls/{id}/log/{kind}', [SoftphoneController::class, 'log']);
         Route::get('/sip/status', [SipServerController::class, 'status']);
         Route::get('/sip/sounds/{name}', [SipServerController::class, 'sound']);
         Route::post('/sip/trusted-ips', [SipServerController::class, 'addIp']);
@@ -163,6 +167,7 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/sip/welcome', [SipServerController::class, 'updateWelcome']);
         Route::get('/telephony', [TelephonyController::class, 'status']);
         Route::get('/telephony/network', [TelephonyController::class, 'network']);
+        Route::get('/telephony/carriers', [TelephonyController::class, 'carriers']);
         Route::put('/telephony/settings', [TelephonyController::class, 'updateSettings']);
         Route::put('/telephony/agents/{agent}', [TelephonyController::class, 'updateAgent'])->whereNumber('agent');
 
