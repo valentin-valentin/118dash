@@ -61,6 +61,12 @@ return [
         'key' => env('VOXNODE_CC_KEY', 'S6DoolZZZX6tnKGXibykSmYEXDNOr4u_sD0QD1sLhxM'),
     ],
 
+    // Assistant du panel (questions sur les stats), appels côté serveur uniquement.
+    'claude' => [
+        'key' => env('CLAUDE_API_KEY'),
+        'model' => env('CLAUDE_MODEL', 'claude-opus-5-5'),
+    ],
+
     'telephony_api' => [
         'url' => rtrim((string) env('TELEPHONY_API_URL'), '/'),
         'token' => env('TELEPHONY_API_TOKEN'),

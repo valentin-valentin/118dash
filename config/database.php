@@ -63,6 +63,22 @@ return [
             ]) : [],
         ],
 
+        // Assistant Claude : utilisateur MySQL en lecture seule (docs/assistant_readonly_user.sql)
+        'assistant' => [
+            'driver' => 'mysql',
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '3306'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_ASSISTANT_USERNAME', 'assistant_ro'),
+            'password' => env('DB_ASSISTANT_PASSWORD', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

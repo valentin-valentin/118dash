@@ -1,7 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
 import { onMounted, ref } from 'vue'
-import { Building2, ChartColumn, Clock, FileText, FlaskConical, Hash, Hourglass, LayoutGrid, Phone, PhoneOff, Server, ShieldAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
+import { Building2, ChartColumn, Clock, FileText, FlaskConical, Hash, Hourglass, LayoutGrid, MessagesSquare, Phone, PhoneOff, Server, ShieldAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
 import NavUser from '@/components/NavUser.vue'
 import {
@@ -51,6 +51,7 @@ onMounted(() => {
 // Ajouter les items de nav ici. Chaque item correspond à une page dans resources/js/pages/.
 const navItems = [
     { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
+    { title: 'Assistant', href: '/assistant', icon: MessagesSquare },
     { title: 'Appels', href: '/calls', icon: Phone },
     { title: 'Appels rejetés', href: '/rejected-calls', icon: PhoneOff },
     { title: 'Attente et pertes', href: '/wait-loss', icon: Hourglass },

@@ -20,6 +20,7 @@ use App\Http\Controllers\SoftphoneController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\TelephonyController;
 use App\Http\Controllers\SourcePaymentController;
+use App\Http\Controllers\AssistantController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -89,6 +90,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/rejected-calls', [RejectedCallController::class, 'index'])->name('rejected-calls.index');
     Route::get('/wait-loss', [WaitLossController::class, 'index'])->name('wait-loss.index');
+    Route::get('/assistant', [AssistantController::class, 'index'])->name('assistant.index');
 
     Route::get('/routing-logs', [RoutingLogController::class, 'index'])->name('routing-logs.index');
     Route::get('/routing-logs/{routingLog}', [RoutingLogController::class, 'show'])->name('routing-logs.show');
@@ -179,6 +181,10 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);
+        Route::get('/assistant/conversations', [AssistantController::class, 'conversations']);
+        Route::get('/assistant/conversations/{id}', [AssistantController::class, 'show'])->whereNumber('id');
+        Route::post('/assistant/ask', [AssistantController::class, 'ask']);
+        Route::get('/assistant/runs/{runId}', [AssistantController::class, 'run'])->whereUuid('runId');
         Route::get('/rejected-calls/details', [RejectedCallController::class, 'details']);
 
         Route::get('/routing-logs/stats', [RoutingLogController::class, 'stats']);
