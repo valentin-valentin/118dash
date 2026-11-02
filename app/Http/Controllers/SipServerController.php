@@ -14,6 +14,8 @@ use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Throwable;
 
+use function Illuminate\Support\defer;
+
 /**
  * Page « Serveur SIP » : état du serveur Asterisk (sip.118.ae) via son API de contrôle,
  * et gestion de ce qui se fait à la main : IP des providers, sons et playlist du service interne.
@@ -147,24 +149,10 @@ class SipServerController extends Controller
 
     // ─── Sons et playlist du service interne ─────────────────────────────────────
 
-    public function uploadSound(Request $request): JsonResponse
-    {
-        $request->validate([
-            'file' => 'required|file|max:51200',
-            // Facultatif : le serveur SIP le nettoie et ajoute un suffixe unique (le nom final est dans sa réponse)
-            'name' => 'nullable|string|max:100',
-        ], [
-            'file.max' => 'Fichier trop gros (50 Mo maximum).',
-        ]);
-        abort_unless($this->configured(), 404);
-
-        $file = $request->file('file');
-
-        return $this->sendSound($file->getRealPath(), $file->getClientOriginalName(), $request->input('name'));
-    }
-
-    // Envoi d'un son en morceaux : le serveur web du panel peut refuser les requêtes de plus d'1 Mo (413).
-    // Le navigateur envoie des morceaux de 512 Ko, assemblés ici puis transmis d'un bloc au serveur SIP.
+    // Envoi d'un son, toujours en morceaux : le serveur web du panel refuse les requêtes de plus d'1 Mo (413).
+    // Le navigateur envoie des morceaux de 512 Ko. Au dernier, la réponse part tout de suite ; l'assemblage et
+    // l'envoi au serveur SIP (conversion comprise) se font ensuite, hors délai de nginx. Le navigateur suit le
+    // résultat avec uploadSoundStatus().
     private const CHUNK_DIR = 'tmp/sound-uploads';
 
     private const SOUND_MAX_BYTES = 50 * 1024 * 1024;
@@ -206,14 +194,60 @@ class SipServerController extends Controller
             return response()->json(['received' => count($parts), 'total' => $validated['total']]);
         }
 
-        // Assemblage dans l'ordre, puis envoi au serveur SIP comme un envoi direct
+        Cache::put(self::uploadKey($validated['upload_id']), ['status' => 'sending'], 3600);
+        $uploadId = $validated['upload_id'];
+        $filename = $validated['filename'];
+        $name = $validated['name'] ?? null;
+        $total = $validated['total'];
+        defer(function () use ($dir, $uploadId, $filename, $name, $total) {
+            ignore_user_abort(true);
+            set_time_limit(0);
+            try {
+                $response = $this->assembleAndSend($dir, $total, $filename, $name);
+                $result = ['status' => 'done', 'code' => $response->getStatusCode(), 'body' => $response->getData(true)];
+            } catch (Throwable $e) {
+                report($e);
+                $result = ['status' => 'done', 'code' => 500, 'body' => ['message' => 'Envoi du son impossible : ' . $e->getMessage()]];
+            } finally {
+                $this->removeDir($dir);
+            }
+            Cache::put(self::uploadKey($uploadId), $result, 3600);
+        });
+
+        // Longueur explicite : le navigateur a la réponse sans attendre la fin de l'envoi au serveur SIP
+        $body = json_encode(['status' => 'sending']);
+
+        return response()->json(['status' => 'sending'], 202)->header('Content-Length', (string) strlen($body));
+    }
+
+    /**
+     * Résultat de l'envoi au serveur SIP d'un son reçu en morceaux : en cours, puis la réponse du serveur SIP.
+     */
+    public function uploadSoundStatus(string $uploadId): JsonResponse
+    {
+        abort_unless(preg_match('/^[A-Za-z0-9-]{8,64}$/', $uploadId), 404);
+        $state = Cache::get(self::uploadKey($uploadId));
+        abort_unless($state, 404, 'Envoi inconnu ou expiré.');
+
+        return $state['status'] === 'done'
+            ? response()->json($state['body'], $state['code'])
+            : response()->json(['status' => 'sending'], 202);
+    }
+
+    private static function uploadKey(string $uploadId): string
+    {
+        return "sound-upload:{$uploadId}";
+    }
+
+    /** Assemble les morceaux dans l'ordre, puis transmet le fichier entier au serveur SIP. */
+    private function assembleAndSend(string $dir, int $total, string $filename, ?string $name): JsonResponse
+    {
         $assembled = $dir . '/assembled';
         $out = fopen($assembled, 'wb');
-        for ($i = 0; $i < $validated['total']; $i++) {
+        for ($i = 0; $i < $total; $i++) {
             $part = sprintf('%s/%04d', $dir, $i);
             if (!is_file($part)) {
                 fclose($out);
-                $this->removeDir($dir);
 
                 return response()->json(['message' => "Morceau {$i} manquant : renvoyer le fichier."], 422);
             }
@@ -223,17 +257,13 @@ class SipServerController extends Controller
         }
         fclose($out);
 
-        try {
-            return $this->sendSound($assembled, $validated['filename'], $validated['name'] ?? null);
-        } finally {
-            $this->removeDir($dir);
-        }
+        return $this->sendSound($assembled, $filename, $name);
     }
 
     private function sendSound(string $path, string $originalName, ?string $name): JsonResponse
     {
         try {
-            $response = $this->client()->timeout(120)
+            $response = $this->client()->timeout(600)
                 ->attach('file', fopen($path, 'r'), $originalName)
                 ->post('/sounds', array_filter(['name' => $name]));
         } catch (Throwable $e) {

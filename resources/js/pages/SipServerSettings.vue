@@ -417,8 +417,9 @@ function onFile(e) {
     soundFile.value = e.target.files[0] ?? null
 }
 const canAddSound = computed(() => (soundSource.value === 'upload' ? !!soundFile.value : !!existingName.value))
-// Envoi en morceaux de 512 Ko : le serveur web du panel refuse les requêtes trop grosses (413).
-// Le panel les assemble au dernier morceau, puis transmet le fichier entier au serveur SIP.
+// Seul envoi de fichier du panel, en morceaux de 512 Ko : le serveur web refuse les requêtes de plus d'1 Mo (413).
+// Après le dernier morceau, le panel assemble et transmet le fichier au serveur SIP en arrière-plan ;
+// on suit le résultat chaque seconde (pas de requête longue, donc pas de coupure par nginx).
 const CHUNK_SIZE = 512 * 1024
 const MAX_SOUND_BYTES = 50 * 1024 * 1024
 const uploadProgress = ref(null) // 0 à 1 pendant l'envoi
@@ -427,7 +428,6 @@ async function uploadSoundInChunks(file, name) {
     if (file.size > MAX_SOUND_BYTES) throw new Error('Fichier trop gros (50 Mo maximum).')
     const uploadId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     const total = Math.max(1, Math.ceil(file.size / CHUNK_SIZE))
-    let last = null
     for (let index = 0; index < total; index++) {
         const form = new FormData()
         form.append('upload_id', uploadId)
@@ -439,14 +439,21 @@ async function uploadSoundInChunks(file, name) {
         // Le dernier morceau attend aussi la conversion sur le serveur SIP
         if (index === total - 1) uploadProgress.value = 1
         try {
-            last = await send('POST', '/data/sip/sounds/chunk', form)
+            await send('POST', '/data/sip/sounds/chunk', form)
         } catch (e) {
             throw new Error(`Envoi interrompu (morceau ${index + 1} sur ${total}) : ${e.message}`)
         }
         if (index < total - 1) uploadProgress.value = (index + 1) / total
     }
-    // Réponse du dernier morceau = réponse du serveur SIP (nom final du son)
-    return last
+    // Le serveur SIP répond une fois le son converti : sa réponse donne le nom final du son
+    for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const res = await fetch(`/data/sip/sounds/chunk/${uploadId}`, { headers: { Accept: 'application/json' } })
+        if (res.status === 202) continue
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.message || json.error || `Erreur HTTP ${res.status}`)
+        return json
+    }
 }
 
 async function addSound() {
@@ -529,7 +536,7 @@ const carrierRows = ref([])
 const carrierEdited = ref(false)
 const savedCarrierRows = () =>
     Object.entries(telSettings.value?.forced_wait_by_carrier ?? {})
-        .map(([code, w]) => ({ code, min: w.min, max: w.max }))
+        .map(([code, w]) => ({ code, min: w.min, max: w.max, custom: !(code in CARRIERS) && !seenCarriers.value.some((c) => c.code === code) }))
         .sort((a, b) => a.code.localeCompare(b.code))
 const carrierPayload = () =>
     Object.fromEntries(
@@ -549,7 +556,8 @@ const carrierError = computed(() => {
     const seen = new Set()
     for (const r of carrierRows.value) {
         const code = r.code.trim().toUpperCase()
-        if (!/^[A-Z0-9]{2,6}$/.test(code)) return `Code opérateur « ${r.code || '…'} » : 2 à 6 lettres ou chiffres.`
+        if (!code) return 'Choisir un opérateur pour chaque ligne.'
+        if (!/^[A-Z0-9]{2,6}$/.test(code)) return `Code opérateur « ${r.code} » : 2 à 6 lettres ou chiffres.`
         if (seen.has(code)) return `${code} apparaît deux fois.`
         seen.add(code)
         const min = Number(r.min)
@@ -571,11 +579,18 @@ const carrierOptions = computed(() => {
     const codes = [...seenCarriers.value.map((c) => c.code), ...Object.keys(CARRIERS).filter((c) => !(c in counts))]
     return codes.map((code) => ({
         code,
-        label: [carrierLabel(code), counts[code] ? `${counts[code].toLocaleString('fr-FR')} appels sur 30 jours` : null].filter(Boolean).join(' · '),
+        label: [carrierLabel(code) ? `${carrierLabel(code)} (${code})` : code, counts[code] ? `${counts[code].toLocaleString('fr-FR')} appels / 30 j` : null]
+            .filter(Boolean)
+            .join(' · '),
     }))
 })
 function addCarrierRow() {
-    carrierRows.value.push({ code: '', min: waitMin.value ?? 0, max: waitMax.value ?? 0 })
+    carrierRows.value.push({ code: '', min: waitMin.value ?? 0, max: waitMax.value ?? 0, custom: false })
+}
+// Liste : un opérateur connu, ou « Autre code… » pour saisir un code libre
+function selectCarrier(row, value) {
+    row.custom = value === '__other'
+    row.code = row.custom ? '' : value
 }
 function removeCarrierRow(index) {
     carrierRows.value.splice(index, 1)
@@ -1007,9 +1022,9 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <li class="relative border-l border-gray-200 pb-6 pl-6 pt-1">
                                     <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">2</span>
                                     <h3 class="text-sm font-semibold text-gray-900">Attente forcée</h3>
-                                    <p class="mt-0.5 text-sm text-gray-500">Durée tirée au hasard à chaque appel. Les appelants prioritaires (ci-dessous) ne la font pas.</p>
+                                    <p class="mt-0.5 text-sm text-gray-500">Avant d'arriver dans la file, chaque appelant écoute l'audio d'attente pendant une durée tirée au hasard entre le minimum et le maximum. Les appelants prioritaires (blacklist, ou appel récent) n'ont pas d'attente forcée.</p>
                                     <form class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-100 px-4 py-3 text-sm text-gray-700" @submit.prevent="saveWait">
-                                        Entre
+                                        Pour tous les appelants : entre
                                         <Input v-model.number="waitMin" type="number" min="0" max="1800" class="h-8 w-20 text-right tabular-nums" aria-label="Minimum en secondes" />
                                         et
                                         <Input v-model.number="waitMax" type="number" min="0" max="1800" class="h-8 w-20 text-right tabular-nums" aria-label="Maximum en secondes" />
@@ -1023,52 +1038,41 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
                                     <!-- Exceptions par opérateur de l'appelant -->
                                     <div v-if="carrierWaitAvailable" class="mt-3 rounded-lg border border-gray-100 px-4 py-3 text-sm text-gray-700">
-                                        <div class="flex flex-wrap items-baseline justify-between gap-2">
-                                            <div>
-                                                <h4 class="font-medium text-gray-900">Par opérateur de l'appelant</h4>
-                                                <p class="text-xs text-gray-500">Remplace l'attente ci-dessus pour ces opérateurs ; 0 et 0 = pas d'attente forcée. Les autres opérateurs gardent l'attente de base.</p>
-                                            </div>
-                                            <Button type="button" variant="outline" size="sm" :disabled="busy || carrierRows.length >= 50" @click="addCarrierRow">
-                                                <Plus class="h-3.5 w-3.5" /> Ajouter un opérateur
-                                            </Button>
-                                        </div>
-                                        <table v-if="carrierRows.length" class="mt-3 w-full text-sm">
-                                            <thead class="text-left text-xs text-gray-500">
-                                                <tr>
-                                                    <th class="pb-1.5 font-medium">Opérateur</th>
-                                                    <th class="pb-1.5 font-medium">Attente forcée</th>
-                                                    <th class="w-8 pb-1.5" />
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <tr v-for="(row, index) in carrierRows" :key="index" class="border-t border-gray-100">
-                                                    <td class="py-1.5 pr-3">
-                                                        <div class="flex items-center gap-2">
-                                                            <Input v-model="row.code" list="carrier-codes" placeholder="Code" class="h-8 w-24 font-mono uppercase" aria-label="Code opérateur" />
-                                                            <span class="text-xs text-gray-500">{{ carrierLabel(row.code.trim().toUpperCase()) ?? '' }}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td class="py-1.5 pr-3 whitespace-nowrap">
-                                                        Entre
-                                                        <Input v-model.number="row.min" type="number" min="0" max="600" class="mx-1 inline-flex h-8 w-20 text-right tabular-nums" aria-label="Minimum en secondes" />
-                                                        et
-                                                        <Input v-model.number="row.max" type="number" min="0" max="600" class="mx-1 inline-flex h-8 w-20 text-right tabular-nums" aria-label="Maximum en secondes" />
-                                                        s
-                                                        <span v-if="Number(row.min) === 0 && Number(row.max) === 0 && !isEmpty(row.min) && !isEmpty(row.max)" class="ml-1 text-xs text-gray-500">pas d'attente</span>
-                                                        <span v-else class="ml-1 text-xs text-gray-400">{{ minutes(row.min) }} à {{ minutes(row.max) }}</span>
-                                                    </td>
-                                                    <td class="py-1.5 text-right">
-                                                        <button type="button" class="text-gray-400 hover:text-red-600" :title="`Retirer ${row.code || 'cette ligne'}`" @click="removeCarrierRow(index)">
-                                                            <Trash2 class="h-4 w-4" />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                        <p v-else class="mt-2 text-xs text-gray-500">Aucune exception : tous les appelants ont l'attente de base.</p>
-                                        <datalist id="carrier-codes">
-                                            <option v-for="c in carrierOptions" :key="c.code" :value="c.code">{{ c.label }}</option>
-                                        </datalist>
+                                        <h4 class="font-medium text-gray-900">Selon l'opérateur de l'appelant</h4>
+                                        <p class="mt-0.5 text-xs text-gray-500">Remplace la durée de base pour les appelants de ces opérateurs. Les autres gardent la durée de base. 0 et 0 = pas d'attente forcée.</p>
+
+                                        <ul v-if="carrierRows.length" class="mt-3 divide-y divide-gray-100">
+                                            <li v-for="(row, index) in carrierRows" :key="index" class="flex flex-wrap items-center gap-2 py-1.5 lg:grid lg:grid-cols-[minmax(0,1fr)_5.5rem_auto_auto]">
+                                                <select
+                                                    :value="row.custom ? '__other' : row.code"
+                                                    class="h-8 w-72 max-w-full rounded-md border border-gray-200 bg-white px-2 text-sm focus:border-gray-400 focus:outline-none lg:w-full"
+                                                    aria-label="Opérateur"
+                                                    @change="selectCarrier(row, $event.target.value)"
+                                                >
+                                                    <option value="" disabled>Choisir un opérateur</option>
+                                                    <option v-for="c in carrierOptions" :key="c.code" :value="c.code">{{ c.label }}</option>
+                                                    <option value="__other">Autre code…</option>
+                                                </select>
+                                                <Input v-if="row.custom" v-model="row.code" placeholder="Code" class="h-8 w-24 font-mono uppercase lg:w-full" aria-label="Code opérateur" />
+                                                <span v-else class="hidden lg:block" />
+                                                <span class="whitespace-nowrap">
+                                                    entre
+                                                    <Input v-model.number="row.min" type="number" min="0" max="600" class="mx-1 inline-flex h-8 w-20 text-right tabular-nums" aria-label="Minimum en secondes" />
+                                                    et
+                                                    <Input v-model.number="row.max" type="number" min="0" max="600" class="mx-1 inline-flex h-8 w-20 text-right tabular-nums" aria-label="Maximum en secondes" />
+                                                    secondes
+                                                </span>
+                                                <Button type="button" variant="outline" size="sm" class="ml-auto" @click="removeCarrierRow(index)">
+                                                    <Trash2 class="h-3.5 w-3.5" /> Retirer
+                                                </Button>
+                                            </li>
+                                        </ul>
+                                        <p v-else class="mt-3 text-xs text-gray-500">Aucun opérateur réglé : tout le monde a la durée de base.</p>
+
+                                        <Button type="button" variant="outline" size="sm" class="mt-2" :disabled="busy || carrierRows.length >= 50" @click="addCarrierRow">
+                                            <Plus class="h-3.5 w-3.5" /> Ajouter un opérateur
+                                        </Button>
+
                                         <div v-if="carrierDirty || carrierError" class="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
                                             <span v-if="carrierError" class="text-xs text-red-600">{{ carrierError }}</span>
                                             <span v-if="carrierDirty" class="ml-auto flex gap-2">
@@ -1076,6 +1080,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                                 <Button type="button" size="sm" :disabled="busy || !!carrierError" @click="saveCarrierWait">Enregistrer</Button>
                                             </span>
                                         </div>
+
+                                        <p class="mt-3 text-xs text-gray-400">L'opérateur est connu dès le 2e appel d'un numéro, ou recherché au moment de l'appel (1 s max) ; s'il est inconnu, la durée de base s'applique.</p>
                                     </div>
                                 </li>
                                 <li class="relative pb-6 pl-6 pt-1" :class="hasTransferAnnouncement && 'border-l border-gray-200'">
