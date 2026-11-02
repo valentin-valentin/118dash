@@ -167,7 +167,9 @@ function diskLow(prefix, min) {
     return (total && d[`${prefix}_used`] / total > 0.9) || (d[`${prefix}_free`] != null && d[`${prefix}_free`] < min)
 }
 
-// Un agent sans plateforme quelques secondes est en train de basculer : signalé seulement au-delà de 30 s
+// Un agent sans plateforme quelques secondes est en train de basculer : signalé seulement au-delà de 30 s.
+// En pause, le softphone se déconnecte volontairement du SIP : pas d'alerte (on_break absent avant le
+// déploiement de voxnode118 : comportement d'avant).
 const NO_PLATFORM_DELAY = 30 * 1000
 const noPlatformSince = new Map()
 const lostAgents = ref([])
@@ -175,7 +177,7 @@ watch(telAgents, (list) => {
     const now = Date.now()
     const current = new Set()
     for (const a of list ?? []) {
-        if (!a.online || a.current_platform) continue
+        if (!a.online || a.current_platform || a.on_break === true) continue
         current.add(a.id)
         if (!noPlatformSince.has(a.id)) noPlatformSince.set(a.id, now)
     }
@@ -216,25 +218,47 @@ function channelAgent(channel) {
     return name && agentNames.value.has(name) ? name : null
 }
 
-// Étape d'un appel, commune aux deux plateformes :
-// welcome = accueil / attente forcée, queue = vraie attente (faute d'agent libre), waiting = attente sans détail (Voxnode, ancien format)
-function callStatus(first, agent) {
-    if (first.context === 'internal-service' || first.context === 'transfer') return { key: 'transfer', label: 'Transfert service interne' }
-    if (first.context === 'panel-dial' || first.context === 'panel-out') return { key: 'panel', label: 'Softphone du panel' }
-    if (agent) return { key: 'talking', label: 'En conversation' }
-    if (first.context === 'from-providers') return first.app === 'Queue' ? { key: 'queue', label: 'Vraie attente' } : { key: 'welcome', label: 'Accueil / attente forcée' }
-    return { key: 'other', label: first.context }
-}
-const VOXNODE_STAGES = {
-    ivr: { key: 'welcome', label: 'Accueil' },
-    forced: { key: 'welcome', label: 'Attente forcée' },
-    queue: { key: 'queue', label: 'Vraie attente' },
-    waiting: { key: 'waiting', label: 'En attente (étape non précisée)' },
-    agent: { key: 'talking', label: 'En conversation' },
+// Étape d'un appel : mêmes libellés pour les deux plateformes. Plusieurs étapes partagent une clé
+// (key) pour le tri et les chiffres du haut : les trois transferts, accueil et attente forcée à part.
+const STAGES = {
+    welcome: { key: 'welcome', label: 'Accueil' },
+    forced: { key: 'forced', label: 'Attente forcée' },
+    queue: { key: 'queue', label: "En attente d'un agent" },
+    // Voxnode, ancien statut « queue » : accueil, attente forcée et file mélangés
+    waiting: { key: 'waiting', label: 'En attente' },
+    agent: { key: 'agent', label: 'Avec un agent' },
+    ai: { key: 'ai', label: "Avec l'agent IA" },
+    brand: { key: 'transfer', label: 'Transféré à la marque' },
+    internal: { key: 'transfer', label: 'Transféré au service interne' },
     transferred: { key: 'transfer', label: 'Transféré' },
+    // Voxnode tant qu'il n'envoie pas le statut « agent » : « transferred » couvre les deux
+    agent_or_transferred: { key: 'agent_or_transfer', label: 'Avec un agent ou transféré' },
+    panel: { key: 'panel', label: 'Softphone du panel' },
+}
+
+// Chez nous, d'après le canal du client (contexte et application Asterisk en cours)
+function callStatus(client, agentInCall) {
+    switch (client.context) {
+        case 'from-providers':
+            if (client.app === 'Queue') return agentInCall ? STAGES.agent : STAGES.queue
+            if (client.app === 'MusicOnHold') return STAGES.forced
+            if (client.app === 'Dial') return STAGES.ai
+            return STAGES.welcome
+        case 'transfer-announce':
+            return STAGES.transferred
+        case 'internal-service':
+            return STAGES.internal
+        case 'transfer':
+            return STAGES.brand
+        case 'panel-dial':
+        case 'panel-out':
+            return STAGES.panel
+        default:
+            return { key: 'other', label: client.context }
+    }
 }
 // Ordre d'affichage : les clients qui attendent un agent d'abord
-const STAGE_ORDER = { queue: 0, waiting: 1, welcome: 2, talking: 3, transfer: 4, panel: 5, other: 6 }
+const STAGE_ORDER = { queue: 0, waiting: 1, forced: 2, welcome: 3, agent: 4, ai: 5, agent_or_transfer: 6, transfer: 7, panel: 8, other: 9 }
 
 const calls = computed(() => {
     const channels = data.value?.calls?.data?.calls ?? []
@@ -242,15 +266,19 @@ const calls = computed(() => {
     for (const c of channels) (groups[c.linkedid || c.uniqueid] ??= []).push(c)
     return Object.values(groups)
         .map((chs) => {
+            // Canal du client : celui qui a ouvert l'appel (uniqueid = linkedid)
             const first = chs.find((c) => c.uniqueid === c.linkedid) ?? chs[0]
-            const agent = chs.map((c) => channelAgent(c.channel)).find(Boolean) ?? null
+            // Agent décroché : son canal est relié à l'appel par la file (AppQueue) et en ligne (Up)
+            // (pendant la sonnerie, state = Ringing : le client est encore en attente et l'agent pas affiché)
+            const agentChannel = chs.find((c) => channelAgent(c.channel) && c.app === 'AppQueue' && c.state === 'Up')
+            const agent = agentChannel ? channelAgent(agentChannel.channel) : null
             return {
                 id: first.linkedid || first.uniqueid,
                 platform: 'selfhosted',
                 caller: first.caller,
                 // « s » = extension interne d'Asterisk, pas un numéro
                 exten: first.exten === 's' ? null : first.exten,
-                status: callStatus(first, agent),
+                status: callStatus(first, !!agentChannel),
                 agent,
                 seconds: Math.max(...chs.map((c) => toSeconds(c.duration))),
             }
@@ -266,7 +294,7 @@ const voxnodeCalls = computed(() =>
         platform: 'voxnode',
         caller: c.caller,
         exten: c.called,
-        status: VOXNODE_STAGES[c.stage] ?? VOXNODE_STAGES.waiting,
+        status: STAGES[c.stage] ?? STAGES.waiting,
         agent: c.agent,
         seconds: c.started_at ? Math.max(0, Math.round(Date.now() / 1000 - c.started_at)) : 0,
     })),
@@ -297,7 +325,11 @@ const onlineAgents = computed(() => {
 })
 const byName = (a, b) => a.username.localeCompare(b.username)
 const busyAgents = computed(() => onlineAgents.value.filter((a) => a.in_call).sort(byName))
-const freeAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call).sort(byName))
+const freeAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call && a.on_break !== true).sort(byName))
+const pausedAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call && a.on_break === true).sort(byName))
+const BREAK_TYPES = { pause: 'Pause', lunch: 'Déjeuner', manager: 'Manager' }
+const breakLabel = (a) => (a.break_type ? (BREAK_TYPES[a.break_type] ?? a.break_type) : 'Pause')
+const breakSince = (a) => (a.break_since ? new Date(a.break_since).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null)
 // Durée de l'appel en cours, connue pour les agents en conversation sur notre serveur
 const callSeconds = computed(() => Object.fromEntries(liveCalls.value.filter((c) => c.agent).map((c) => [c.agent, c.seconds])))
 const moving = (a) => !!a.current_platform && !!a.wanted_platform && a.current_platform !== a.wanted_platform
@@ -309,21 +341,21 @@ const split = (list) => (tel.value ? { ours: countOn(list, 'selfhosted'), theirs
 
 const callFigures = computed(() => {
     const queue = byStage('queue')
-    const welcome = byStage('welcome')
+    const welcome = [...byStage('welcome'), ...byStage('forced')]
     // Le client qui attend un agent depuis le plus longtemps (durée depuis le début de son appel)
     const longest = queue.reduce((a, b) => (!a || b.seconds > a.seconds ? b : a), null)
     return [
-        { label: 'En conversation', value: busyAgents.value.length, split: split(busyAgents.value) },
-        { label: 'Accueil + attente forcée', value: welcome.length, split: splitCalls(welcome) },
-        { label: 'Vraie attente', value: queue.length, split: splitCalls(queue) },
-        { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : 'personne n\'attend un agent', title: 'Client en vraie attente depuis le plus longtemps' },
+        { label: 'Avec un agent', value: busyAgents.value.length, split: split(busyAgents.value) },
+        { label: 'Accueil et attente forcée', value: welcome.length, split: splitCalls(welcome) },
+        { label: "En attente d'un agent", value: queue.length, split: splitCalls(queue) },
+        { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : "personne n'attend un agent", title: "Client en attente d'un agent depuis le plus longtemps" },
     ]
 })
 // Note du groupe Appels : Voxnode non branché, ou attentes sans détail d'étape
 const callsNote = computed(() => {
     if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Voxnode non branché (VOXNODE_CC_KEY)' : `Voxnode indisponible : ${voxnode.value.error}`
     const legacy = byStage('waiting').length
-    return legacy ? `+ ${legacy} chez Voxnode en attente, étape non précisée` : ''
+    return legacy ? `+ ${legacy} chez Voxnode « En attente », sans détail` : ''
 })
 
 // Part des nouveaux numéros envoyée chez nous : un pourcentage court, la raison en dessous
@@ -590,6 +622,18 @@ const sinceLastRun = computed(() => {
                                             <ArrowRightLeft v-if="moving(a)" class="h-3 w-3 text-amber-500" />
                                         </span>
                                     </div>
+                                </div>
+                                <!-- En pause : déconnectés du SIP volontairement, ni libres ni en alerte -->
+                                <div v-if="pausedAgents.length" class="border-t border-gray-100 px-4 py-3">
+                                    <p class="mb-1.5 text-xs text-gray-500">En pause · {{ pausedAgents.length }}</p>
+                                    <ul class="space-y-1">
+                                        <li v-for="a in pausedAgents" :key="a.username" class="flex items-center justify-between gap-2">
+                                            <span class="truncate text-gray-700" :title="a.name">{{ a.username }}</span>
+                                            <span class="shrink-0 text-xs text-gray-500">
+                                                {{ breakLabel(a) }}<template v-if="breakSince(a)">, depuis {{ breakSince(a) }}</template>
+                                            </span>
+                                        </li>
+                                    </ul>
                                 </div>
                                 <p v-if="tel" class="flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-100 px-4 py-2 text-xs text-gray-400">
                                     <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-900" />Notre serveur</span>

@@ -86,18 +86,21 @@ class SipServerController extends Controller
         }
 
         $stages = [
-            'ivr' => 'ivr',
+            'ivr' => 'welcome',
             'queue-artificial' => 'forced',
             'queue-natural' => 'queue',
             'queue' => 'waiting',
             'agent' => 'agent',
             'transferred' => 'transferred',
         ];
-        $calls = collect($response->json('calls') ?? [])->map(function ($c) use ($stages) {
+        $raw = collect($response->json('calls') ?? []);
+        // Tant que Voxnode n'envoie pas « agent », « transferred » regroupe les appels avec un agent et les transférés
+        $agentStatusSent = $raw->contains(fn ($c) => ($c['status'] ?? null) === 'agent');
+        $calls = $raw->map(function ($c) use ($stages, $agentStatusSent) {
             $agent = ($c['agentExtension'] ?? '') ?: null;
             $stage = $stages[$c['status'] ?? ''] ?? 'waiting';
-            if ($stage === 'transferred' && $agent) {
-                $stage = 'agent';
+            if ($stage === 'transferred' && !$agentStatusSent) {
+                $stage = 'agent_or_transferred';
             }
 
             return [
