@@ -159,11 +159,106 @@ class SipServerController extends Controller
         abort_unless($this->configured(), 404);
 
         $file = $request->file('file');
-        $response = $this->client()->timeout(120)
-            ->attach('file', fopen($file->getRealPath(), 'r'), $file->getClientOriginalName())
-            ->post('/sounds', array_filter(['name' => $request->input('name')]));
 
-        return $this->afterWrite($response, 'Ajout du son '.($request->input('name') ?: $file->getClientOriginalName()));
+        return $this->sendSound($file->getRealPath(), $file->getClientOriginalName(), $request->input('name'));
+    }
+
+    // Envoi d'un son en morceaux : le serveur web du panel peut refuser les requêtes de plus d'1 Mo (413).
+    // Le navigateur envoie des morceaux de 512 Ko, assemblés ici puis transmis d'un bloc au serveur SIP.
+    private const CHUNK_DIR = 'tmp/sound-uploads';
+
+    private const SOUND_MAX_BYTES = 50 * 1024 * 1024;
+
+    public function uploadSoundChunk(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/'],
+            'index' => 'required|integer|min:0',
+            'total' => 'required|integer|min:1|max:120',
+            'chunk' => 'required|file|max:1024',
+            'filename' => 'required|string|max:255',
+            // Facultatif : le serveur SIP le nettoie et ajoute un suffixe unique (le nom final est dans sa réponse)
+            'name' => 'nullable|string|max:100',
+        ], [
+            'chunk.max' => 'Morceau trop gros (1 Mo maximum).',
+            'total.max' => 'Fichier trop gros (50 Mo maximum).',
+        ]);
+        abort_unless($this->configured(), 404);
+        abort_if($validated['index'] >= $validated['total'], 422, 'Morceau hors du fichier.');
+
+        $this->purgeOldChunks();
+        $dir = storage_path('app/' . self::CHUNK_DIR . '/' . $validated['upload_id']);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+        $request->file('chunk')->move($dir, sprintf('%04d', $validated['index']));
+
+        // Taille cumulée : même limite qu'un envoi direct
+        $parts = glob($dir . '/[0-9][0-9][0-9][0-9]');
+        if (array_sum(array_map('filesize', $parts)) > self::SOUND_MAX_BYTES) {
+            $this->removeDir($dir);
+
+            return response()->json(['message' => 'Fichier trop gros (50 Mo maximum).'], 422);
+        }
+
+        // Tant que tous les morceaux ne sont pas arrivés, on attend la suite
+        if (count($parts) < $validated['total']) {
+            return response()->json(['received' => count($parts), 'total' => $validated['total']]);
+        }
+
+        // Assemblage dans l'ordre, puis envoi au serveur SIP comme un envoi direct
+        $assembled = $dir . '/assembled';
+        $out = fopen($assembled, 'wb');
+        for ($i = 0; $i < $validated['total']; $i++) {
+            $part = sprintf('%s/%04d', $dir, $i);
+            if (!is_file($part)) {
+                fclose($out);
+                $this->removeDir($dir);
+
+                return response()->json(['message' => "Morceau {$i} manquant : renvoyer le fichier."], 422);
+            }
+            $in = fopen($part, 'rb');
+            stream_copy_to_stream($in, $out);
+            fclose($in);
+        }
+        fclose($out);
+
+        try {
+            return $this->sendSound($assembled, $validated['filename'], $validated['name'] ?? null);
+        } finally {
+            $this->removeDir($dir);
+        }
+    }
+
+    private function sendSound(string $path, string $originalName, ?string $name): JsonResponse
+    {
+        try {
+            $response = $this->client()->timeout(120)
+                ->attach('file', fopen($path, 'r'), $originalName)
+                ->post('/sounds', array_filter(['name' => $name]));
+        } catch (Throwable $e) {
+            return response()->json(['message' => 'Serveur SIP injoignable pendant l\'envoi du son.'], 502);
+        }
+
+        return $this->afterWrite($response, 'Ajout du son ' . ($name ?: $originalName));
+    }
+
+    // Morceaux abandonnés (onglet fermé en cours d'envoi) : supprimés au bout d'une heure
+    private function purgeOldChunks(): void
+    {
+        foreach (glob(storage_path('app/' . self::CHUNK_DIR . '/*'), GLOB_ONLYDIR) ?: [] as $dir) {
+            if (filemtime($dir) < time() - 3600) {
+                $this->removeDir($dir);
+            }
+        }
+    }
+
+    private function removeDir(string $dir): void
+    {
+        foreach (glob($dir . '/*') ?: [] as $file) {
+            @unlink($file);
+        }
+        @rmdir($dir);
     }
 
     public function deleteSound(string $name): JsonResponse

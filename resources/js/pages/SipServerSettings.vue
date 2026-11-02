@@ -417,16 +417,50 @@ function onFile(e) {
     soundFile.value = e.target.files[0] ?? null
 }
 const canAddSound = computed(() => (soundSource.value === 'upload' ? !!soundFile.value : !!existingName.value))
+// Envoi en morceaux de 512 Ko : le serveur web du panel refuse les requêtes trop grosses (413).
+// Le panel les assemble au dernier morceau, puis transmet le fichier entier au serveur SIP.
+const CHUNK_SIZE = 512 * 1024
+const MAX_SOUND_BYTES = 50 * 1024 * 1024
+const uploadProgress = ref(null) // 0 à 1 pendant l'envoi
+
+async function uploadSoundInChunks(file, name) {
+    if (file.size > MAX_SOUND_BYTES) throw new Error('Fichier trop gros (50 Mo maximum).')
+    const uploadId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    const total = Math.max(1, Math.ceil(file.size / CHUNK_SIZE))
+    let last = null
+    for (let index = 0; index < total; index++) {
+        const form = new FormData()
+        form.append('upload_id', uploadId)
+        form.append('index', index)
+        form.append('total', total)
+        form.append('filename', file.name)
+        if (name) form.append('name', name)
+        form.append('chunk', file.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE), file.name)
+        // Le dernier morceau attend aussi la conversion sur le serveur SIP
+        if (index === total - 1) uploadProgress.value = 1
+        try {
+            last = await send('POST', '/data/sip/sounds/chunk', form)
+        } catch (e) {
+            throw new Error(`Envoi interrompu (morceau ${index + 1} sur ${total}) : ${e.message}`)
+        }
+        if (index < total - 1) uploadProgress.value = (index + 1) / total
+    }
+    // Réponse du dernier morceau = réponse du serveur SIP (nom final du son)
+    return last
+}
+
 async function addSound() {
     const target = soundTarget.value
     let name = existingName.value
     const ok = await run(async () => {
         if (soundSource.value === 'upload') {
-            const form = new FormData()
-            form.append('file', soundFile.value)
-            if (soundName.value) form.append('name', soundName.value)
-            // Le serveur SIP choisit le nom final (nettoyé + suffixe unique) : on reprend celui de sa réponse
-            name = (await send('POST', '/data/sip/sounds', form)).sound.name
+            uploadProgress.value = 0
+            try {
+                // Le serveur SIP choisit le nom final (nettoyé + suffixe unique) : on reprend celui de sa réponse
+                name = (await uploadSoundInChunks(soundFile.value, soundName.value)).sound.name
+            } finally {
+                uploadProgress.value = null
+            }
         }
         await sequenceRequest(target, [...sequences.value[target], name])
     }, `Son ajouté ${SEQUENCE_LABELS[target]}`)
@@ -1149,6 +1183,15 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                             <Label for="sound-file">Fichier audio</Label>
                             <Input id="sound-file" type="file" accept="audio/*" @change="onFile" />
                             <p class="text-xs text-gray-500">mp3, wav, ogg… (50 Mo maximum), converti automatiquement au format téléphone.</p>
+                        </div>
+                        <!-- Progression de l'envoi, puis conversion sur le serveur SIP -->
+                        <div v-if="uploadProgress !== null" class="space-y-1">
+                            <div class="h-1.5 overflow-hidden rounded-full bg-gray-100">
+                                <div class="h-full rounded-full bg-gray-900 transition-all" :style="{ width: `${Math.round(uploadProgress * 100)}%` }" />
+                            </div>
+                            <p class="text-xs text-gray-500">
+                                {{ uploadProgress < 1 ? `Envoi : ${Math.round(uploadProgress * 100)} %` : 'Conversion sur le serveur SIP…' }}
+                            </p>
                         </div>
                         <div class="space-y-2">
                             <Label for="sound-name">Nom (facultatif, nettoyé automatiquement)</Label>

@@ -155,6 +155,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/sip/trusted-ips', [SipServerController::class, 'addIp']);
         Route::delete('/sip/trusted-ips/{ip}', [SipServerController::class, 'deleteIp'])->where('ip', '.*');
         Route::post('/sip/sounds', [SipServerController::class, 'uploadSound']);
+        Route::post('/sip/sounds/chunk', [SipServerController::class, 'uploadSoundChunk']);
         Route::delete('/sip/sounds/{name}', [SipServerController::class, 'deleteSound']);
         Route::put('/sip/playlist', [SipServerController::class, 'updatePlaylist']);
         Route::put('/sip/welcome', [SipServerController::class, 'updateWelcome']);
