@@ -114,6 +114,19 @@ class Phonenumber extends Model
             default => null,
         };
 
+        // Plateforme où le numéro est routé en ce moment (current_endpoint), ou bascule en cours
+        if ($filled('platform')) {
+            $endpoints = config('services.sip_endpoints');
+            match ($filters['platform']) {
+                'selfhosted', 'voxnode' => $query->where('current_endpoint', $endpoints[$filters['platform']])
+                    ->where(fn ($q) => $q->whereNot(fn ($q) => self::switchingConstraint($q))),
+                'free' => $query->where('current_endpoint', $endpoints['free']),
+                'unknown' => $query->whereNull('current_endpoint'),
+                'switching' => self::switchingConstraint($query),
+                default => null,
+            };
+        }
+
         match ($filters['routing_status'] ?? null) {
             'error' => $query->whereNotNull('routing_error'),
             'no_error' => $query->whereNull('routing_error'),
@@ -121,6 +134,44 @@ class Phonenumber extends Model
         };
 
         return $query;
+    }
+
+    /**
+     * Numéro attribué (source et expiration réelle à venir) dont la plateforme voulue (target, Voxnode par défaut)
+     * n'est pas celle où il est routé : le job de routage le bascule, quelques secondes en principe.
+     */
+    private static function switchingConstraint($query)
+    {
+        $endpoints = config('services.sip_endpoints');
+
+        return $query->whereNotNull('source_id')
+            ->where('real_expires_at', '>', now())
+            ->where(fn ($q) => $q
+                ->where(fn ($q) => $q->where('target', 'selfhosted')->where('current_endpoint', $endpoints['voxnode']))
+                ->orWhere(fn ($q) => $q->where(fn ($q) => $q->whereNull('target')->orWhere('target', 'voxnode'))
+                    ->where('current_endpoint', $endpoints['selfhosted'])));
+    }
+
+    /**
+     * Plateforme du numéro pour l'affichage : où il est routé, et vers où il bascule le cas échéant.
+     *
+     * @return array{current: string, switching_to: ?string}
+     */
+    public function platformState(): array
+    {
+        $endpoints = config('services.sip_endpoints');
+        $current = match ($this->current_endpoint) {
+            null => 'unknown',
+            $endpoints['selfhosted'] => 'selfhosted',
+            $endpoints['voxnode'] => 'voxnode',
+            $endpoints['free'] => 'free',
+            default => 'other',
+        };
+        $assigned = $this->source_id !== null && $this->real_expires_at && $this->real_expires_at->isFuture();
+        $wanted = $this->target === 'selfhosted' ? 'selfhosted' : 'voxnode';
+        $switching = $assigned && in_array($current, ['selfhosted', 'voxnode'], true) && $current !== $wanted;
+
+        return ['current' => $current, 'switching_to' => $switching ? $wanted : null];
     }
 
     // Scope pour les numéros actifs (non supprimés)

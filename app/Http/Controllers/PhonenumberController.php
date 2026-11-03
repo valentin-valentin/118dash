@@ -105,7 +105,7 @@ class PhonenumberController extends Controller
         $paginator = $query->orderBy($sort, $dir)->paginate($perPage);
 
         return response()->json([
-            'items' => $paginator->items(),
+            'items' => collect($paginator->items())->map(fn ($p) => [...$p->toArray(), 'platform_state' => $p->platformState()]),
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),

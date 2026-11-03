@@ -50,6 +50,7 @@ const { filters, reset } = useFilters(
         only_deleted: '',
         assigned_status: '',
         routing_status: '',
+        platform: '',
         sort: 'id',
         dir: 'desc',
         per_page: 50,
@@ -67,7 +68,8 @@ const hasFilters = computed(() =>
     !!filters.include_deleted ||
     !!filters.only_deleted ||
     !!filters.assigned_status ||
-    !!filters.routing_status
+    !!filters.routing_status ||
+    !!filters.platform
 )
 
 function toggleSort(key) {
@@ -79,6 +81,21 @@ function toggleSort(key) {
     }
 }
 
+// Plateforme où le numéro est routé en ce moment (current_endpoint) ; bascule = plateforme voulue différente
+const PLATFORM_STATES = {
+    selfhosted: { label: 'Notre serveur', dot: 'bg-gray-900' },
+    voxnode: { label: 'Voxnode', dot: 'bg-gray-400' },
+    free: { label: 'Libre', dot: 'bg-gray-200' },
+    unknown: { label: 'Inconnu / jamais routé', dot: 'bg-gray-200' },
+}
+const PLATFORM_FILTERS = [
+    { value: 'selfhosted', label: 'Notre serveur' },
+    { value: 'voxnode', label: 'Voxnode' },
+    { value: 'free', label: 'Libres' },
+    { value: 'switching', label: 'En cours de bascule' },
+    { value: 'unknown', label: 'Inconnu / jamais routé' },
+]
+
 const columns = [
     { key: 'select', label: '' },
     { key: 'id', label: 'ID', sortable: true },
@@ -88,6 +105,7 @@ const columns = [
     { key: 'only_source', label: 'Source dédiée' },
     { key: 'source', label: 'Source actuelle' },
     { key: 'assigned_status', label: 'Assignation' },
+    { key: 'platform', label: 'Plateforme' },
     { key: 'routing', label: 'Routing' },
     { key: 'stats', label: 'Statistiques' },
 ]
@@ -120,7 +138,7 @@ function isSelected(id) {
 }
 
 // Reset selections when page or filters change
-watch(() => [filters.page, filters.search, filters.company_id, filters.provider_id, filters.only_source_id, filters.source_id, filters.include_deleted, filters.only_deleted, filters.assigned_status, filters.routing_status], () => {
+watch(() => [filters.page, filters.search, filters.company_id, filters.provider_id, filters.only_source_id, filters.source_id, filters.include_deleted, filters.only_deleted, filters.assigned_status, filters.routing_status, filters.platform], () => {
     selectedIds.value = []
 })
 
@@ -561,6 +579,14 @@ onUnmounted(() => {
                         :searchable="false"
                     />
 
+                    <!-- Plateforme où le numéro est routé -->
+                    <FilterSelect
+                        v-model="filters.platform"
+                        :options="PLATFORM_FILTERS"
+                        placeholder="Toutes les plateformes"
+                        :searchable="false"
+                    />
+
                     <!-- Routing status -->
                     <FilterSelect
                         v-model="filters.routing_status"
@@ -710,6 +736,18 @@ onUnmounted(() => {
                                     {{ getTooltipText(row.display_expires_at, row.real_expires_at) }}
                                     <div class="absolute left-4 top-full -mt-1 h-2 w-2 rotate-45 bg-gray-900"></div>
                                 </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template #platform="{ row }">
+                        <div class="space-y-0.5 text-xs whitespace-nowrap">
+                            <div class="flex items-center gap-1.5">
+                                <span class="h-2 w-2 shrink-0 rounded-full" :class="PLATFORM_STATES[row.platform_state?.current]?.dot ?? 'bg-gray-300'" />
+                                <span class="text-gray-800">{{ PLATFORM_STATES[row.platform_state?.current]?.label ?? row.current_endpoint }}</span>
+                            </div>
+                            <div v-if="row.platform_state?.switching_to" class="text-[11px] text-amber-700">
+                                En cours de bascule → {{ PLATFORM_STATES[row.platform_state.switching_to].label }}
                             </div>
                         </div>
                     </template>

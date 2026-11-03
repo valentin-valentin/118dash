@@ -67,6 +67,13 @@ return [
         'model' => env('CLAUDE_MODEL', 'claude-opus-5-5'),
     ],
 
+    // Où un numéro est routé (phonenumbers.current_endpoint), mêmes valeurs que la config voxnode.sip de voxnode118
+    'sip_endpoints' => [
+        'selfhosted' => '54.36.250.193',
+        'voxnode' => '13.36.113.246',
+        'free' => 'scr.sip.twilio.com',
+    ],
+
     'telephony_api' => [
         'url' => rtrim((string) env('TELEPHONY_API_URL'), '/'),
         'token' => env('TELEPHONY_API_TOKEN'),
