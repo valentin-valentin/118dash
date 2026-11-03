@@ -257,8 +257,6 @@ function callStatus(client, agentInCall) {
             return { key: 'other', label: client.context }
     }
 }
-// Ordre d'affichage : les clients qui attendent un agent d'abord
-const STAGE_ORDER = { queue: 0, waiting: 1, forced: 2, welcome: 3, agent: 4, ai: 5, agent_or_transfer: 6, transfer: 7, panel: 8, other: 9 }
 
 const calls = computed(() => {
     const channels = data.value?.calls?.data?.calls ?? []
@@ -300,10 +298,33 @@ const voxnodeCalls = computed(() =>
     })),
 )
 
-// Les deux plateformes ensemble
-const liveCalls = computed(() =>
-    [...calls.value, ...voxnodeCalls.value].sort((a, b) => (STAGE_ORDER[a.status.key] ?? 9) - (STAGE_ORDER[b.status.key] ?? 9) || b.seconds - a.seconds),
-)
+// Les deux plateformes ensemble, du plus ancien au plus récent : une ligne ne change pas de place quand son étape change
+const liveCalls = computed(() => [...calls.value, ...voxnodeCalls.value].sort((a, b) => b.seconds - a.seconds))
+
+// Appels terminés : gardés 2 min dans le tableau, grisés, pour ne pas perdre de vue un appel qui vient de finir.
+// Uniquement dans ce navigateur (rien n'est enregistré) : ils disparaissent si on recharge la page.
+const ENDED_KEEP_MS = 2 * 60 * 1000
+const endedCalls = ref([])
+let seenCalls = new Map()
+watch(liveCalls, (list) => {
+    const now = Date.now()
+    // Une plateforme dont la liste n'a pas pu être lue : ses appels ne sont pas considérés comme terminés
+    const readable = { selfhosted: data.value?.calls?.ok !== false, voxnode: !!voxnode.value?.ok }
+    const current = new Map(list.map((c) => [c.id, { ...c, startedAt: now - c.seconds * 1000 }]))
+    const ended = endedCalls.value.filter((c) => now - c.endedAt < ENDED_KEEP_MS && !current.has(c.id))
+    for (const [id, previous] of seenCalls) {
+        if (current.has(id)) continue
+        if (!readable[previous.platform]) {
+            current.set(id, previous)
+            continue
+        }
+        ended.push({ ...previous, lastStatus: previous.status, status: { key: 'ended', label: 'Terminé' }, endedAt: now })
+    }
+    seenCalls = current
+    endedCalls.value = ended
+})
+const startedAt = (c) => c.startedAt ?? Date.now() - c.seconds * 1000
+const tableCalls = computed(() => [...liveCalls.value, ...endedCalls.value].sort((a, b) => startedAt(a) - startedAt(b)))
 const byStage = (key) => liveCalls.value.filter((c) => c.status.key === key)
 const splitCalls = (list) => ({ ours: list.filter((c) => c.platform === 'selfhosted').length, theirs: list.filter((c) => c.platform === 'voxnode').length })
 
@@ -564,7 +585,8 @@ const sinceLastRun = computed(() => {
                         <div class="rounded-lg border border-gray-100 bg-white">
                             <DataTable
                                 :columns="callColumns"
-                                :rows="liveCalls"
+                                :rows="tableCalls"
+                                :row-class="(row) => (row.status.key === 'ended' ? 'opacity-50' : '')"
                                 :loading="loading"
                                 :empty-message="data?.calls?.ok === false ? `Liste indisponible : ${data.calls.error}` : 'Aucun appel en cours'"
                             >
@@ -576,8 +598,9 @@ const sinceLastRun = computed(() => {
                                 </template>
                                 <template #caller="{ value }"><span class="font-mono text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #exten="{ value }"><span class="font-mono text-sm text-gray-700">{{ value || '—' }}</span></template>
-                                <template #status="{ value }">
-                                    <span class="whitespace-nowrap text-sm" :class="value.key === 'queue' ? 'font-medium text-amber-700' : 'text-gray-700'">{{ value.label }}</span>
+                                <template #status="{ value, row }">
+                                    <span v-if="value.key === 'ended'" class="whitespace-nowrap text-sm text-gray-500">Terminé <span class="text-gray-400">· {{ row.lastStatus.label }}</span></span>
+                                    <span v-else class="whitespace-nowrap text-sm" :class="value.key === 'queue' ? 'font-medium text-amber-700' : 'text-gray-700'">{{ value.label }}</span>
                                 </template>
                                 <template #agent="{ value }"><span class="text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #seconds="{ value }"><span class="text-sm tabular-nums text-gray-900">{{ wait(value) }}</span></template>
