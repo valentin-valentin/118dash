@@ -1,7 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
 import { onMounted, ref } from 'vue'
-import { Building2, ChartColumn, Clock, FileText, FlaskConical, Hash, Hourglass, LayoutGrid, MessagesSquare, Phone, PhoneOff, Server, ShieldAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
+import { BadgeAlert, Building2, ChartColumn, Clock, FileText, FlaskConical, Hash, Hourglass, LayoutGrid, MessagesSquare, Phone, PhoneOff, Server, ShieldAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
 import NavUser from '@/components/NavUser.vue'
 import {
@@ -56,6 +56,7 @@ const navItems = [
     { title: 'Appels rejetés', href: '/rejected-calls', icon: PhoneOff },
     { title: 'Attente et pertes', href: '/wait-loss', icon: Hourglass },
     { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
+    { title: 'Marques à vérifier', href: '/brand-checks', icon: BadgeAlert },
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
     { title: 'Sources', href: '/sources', icon: Workflow },
