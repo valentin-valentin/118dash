@@ -15,7 +15,7 @@ use Throwable;
  * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu,
  * signe d'un numéro qui ne marche plus (non attribué, fermé, répondeur).
  *
- * Une seule mesure : la médiane de la durée réelle des transferts de la marque sur 7 ou 30 jours (au moins 5 mesurés).
+ * Une seule mesure : la médiane de la durée réelle des transferts de la marque sur 7 ou 30 jours (au moins N mesurés, 5 par défaut).
  * Seules les marques sous le seuil choisi (60 s par défaut) sont affichées, la plus basse en premier.
  * Une marque marquée vérifiée ne compte plus que ses transferts postérieurs à la vérification.
  *
@@ -37,6 +37,7 @@ class BrandCheckController extends Controller
 
     private const MP3_BYTES_PER_SECOND = 32000 / 8;
 
+    // Nombre minimal de transferts mesurés pour qu'une marque soit listée (réglable sur la page)
     private const MIN_MEASURED = 5;
 
     private const LAST_TRANSFERS = 10;
@@ -111,7 +112,12 @@ class BrandCheckController extends Controller
     public function data(Request $request): JsonResponse
     {
         [$from, $to, $days] = $this->period($request);
-        $threshold = (int) ($request->validate(['threshold' => 'nullable|integer|min:1|max:3600'])['threshold'] ?? 60);
+        $params = $request->validate([
+            'threshold' => 'nullable|integer|min:1|max:3600',
+            'min' => 'nullable|integer|min:1|max:100',
+        ]);
+        $threshold = (int) ($params['threshold'] ?? 60);
+        $minMeasured = (int) ($params['min'] ?? self::MIN_MEASURED);
 
         // Fiches des marques (nom + 9 derniers chiffres du numéro) : lien de modification et date de vérification
         $known = DB::table('brands')->whereNotNull('phonenumber')->where('phonenumber', '!=', '')
@@ -119,7 +125,7 @@ class BrandCheckController extends Controller
         $byKey = $known->keyBy(fn ($b) => $b->name . '|' . $this->lastDigits($b->phonenumber));
 
         $rows = $this->transfers($from, $to)
-            ->selectRaw('id, called_at, UNIX_TIMESTAMP(called_at) AS ts, duration_transfer, transfer_real_duration, platform, record_transfer, brand_name, brand_phonenumber')
+            ->selectRaw('id, called_at, UNIX_TIMESTAMP(called_at) AS ts, caller, agent_name, duration_agent, duration_transfer, transfer_real_duration, platform, record_transfer, brand_name, brand_phonenumber')
             ->orderByDesc('called_at')
             ->get();
 
@@ -138,14 +144,23 @@ class BrandCheckController extends Controller
             $brands[$key] ??= ['name' => $r->brand_name, 'phonenumber' => $r->brand_phonenumber, 'durations' => [], 'last' => []];
             $brands[$key]['durations'][] = $real;
             if (count($brands[$key]['last']) < self::LAST_TRANSFERS) {
-                $brands[$key]['last'][] = ['id' => $r->id, 'called_at' => $r->called_at, 'seconds' => $real, 'record_transfer' => $r->record_transfer ?: null];
+                $brands[$key]['last'][] = [
+                    'id' => $r->id,
+                    'called_at' => $r->called_at,
+                    'seconds' => $real,
+                    'record_transfer' => $r->record_transfer ?: null,
+                    'caller' => $r->caller,
+                    'agent_name' => $r->agent_name,
+                    'duration_agent' => (int) $r->duration_agent,
+                    'platform' => $r->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
+                ];
             }
         }
 
         $result = [];
         foreach ($brands as $key => $b) {
             $median = $this->median($b['durations']);
-            if (count($b['durations']) < self::MIN_MEASURED || $median >= $threshold) {
+            if (count($b['durations']) < $minMeasured || $median >= $threshold) {
                 continue;
             }
             $result[] = [
@@ -161,7 +176,7 @@ class BrandCheckController extends Controller
         }
         usort($result, fn ($a, $b) => $a['median'] <=> $b['median']);
 
-        return response()->json(['days' => $days, 'threshold' => $threshold, 'brands' => $result]);
+        return response()->json(['days' => $days, 'threshold' => $threshold, 'min' => $minMeasured, 'brands' => $result]);
     }
 
     private function lastDigits(?string $number): string
