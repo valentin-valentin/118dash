@@ -116,6 +116,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/calls/filter-options', [CallController::class, 'filterOptions']);
         Route::post('/calls/clear-filter-cache', [CallController::class, 'clearFilterCache']);
         Route::get('/calls', [CallController::class, 'data']);
+        Route::get('/calls/summary', [CallController::class, 'summary']);
+        Route::get('/calls/{call}/detail', [CallController::class, 'detail'])->whereNumber('call');
 
         Route::get('/providers/stats', [ProviderController::class, 'stats']);
         Route::get('/providers', [ProviderController::class, 'data']);

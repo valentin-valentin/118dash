@@ -1,204 +1,292 @@
 <script setup>
-import { formatQuality, qualityClass } from '@/lib/quality'
-import { computed, onMounted, ref } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { Head } from '@inertiajs/vue3'
+import { ChevronDown, ChevronUp, Download, FileText, LoaderCircle, Pause, Play, Search, SlidersHorizontal, X } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
+import CallDetailPanel from '@/components/CallDetailPanel.vue'
 import ColorBadge from '@/components/ColorBadge.vue'
-import DataTable from '@/components/DataTable.vue'
-import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import StatCard from '@/components/StatCard.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { useApi } from '@/composables/useApi'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
-import { User, PhoneForwarded, Download } from 'lucide-vue-next'
+import { formatQuality, qualityClass } from '@/lib/quality'
+import {
+    agentLabel,
+    carrierName,
+    centerOf,
+    durationParts,
+    formatDay,
+    formatDuration,
+    formatEuros,
+    formatInt,
+    formatPhone,
+    outcome,
+    percent,
+} from '@/lib/calls'
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
-const stats = useApi('/data/calls/stats')
+/**
+ * Appels : retrouver un appel, l'écouter, comprendre ce qui s'est passé.
+ *   1. Recherche d'un numéro, période, résultat (décroché / perdu / transféré), centre, plateforme
+ *   2. Résumé de la sélection : volumes, durées, argent
+ *   3. Liste : ▶ écoute l'enregistrement dans le lecteur en bas de page ; un clic sur la ligne ouvre la fiche
+ *   4. Fiche de l'appel (panneau) : enregistrements, déroulé, appelant et ses autres appels, argent, qualité…
+ * Dates et heures en heure de Paris.
+ */
+const props = defineProps({
+    centers: { type: Array, default: () => [] },
+})
 
-// ─── Filter Options ───────────────────────────────────────────────────────────
-const {
-    options: filterOptions,
-    isLoading: isLoadingOptions,
-    isClearing: isClearingCache,
-    load: loadFilterOptions,
-    clearCache: clearFilterCache,
-} = useFilterOptions('/data/calls/filter-options', {
+// ─── Filtres (gardés dans l'adresse de la page) ─────────────────────────────────
+const PERIODS = [
+    { key: 'today', label: "Aujourd'hui" },
+    { key: 'yesterday', label: 'Hier' },
+    { key: '7d', label: '7 jours' },
+    { key: '30d', label: '30 jours' },
+    { key: 'month', label: 'Ce mois' },
+    { key: 'custom', label: 'Dates' },
+]
+const OUTCOMES = [
+    { key: '', label: 'Tous' },
+    { key: 'answered', label: 'Décrochés' },
+    { key: 'lost', label: 'Perdus' },
+    { key: 'transferred', label: 'Transférés' },
+]
+const DEFAULTS = {
+    q: '',
+    period: 'today',
+    from: '',
+    to: '',
+    outcome: '',
+    center: '',
+    platform: '',
+    has_recording: '',
+    source_id: [],
+    company_id: [],
+    provider_id: [],
+    brand_name: [],
+    agent_name: [],
+    carrier: [],
+    duration_min: '',
+    duration_max: '',
+    audio_quality: '',
+    blacklist_id: '',
+    phone_agent_hangup: '',
+    phone_reported_by_agent: '',
+    phone_cant_provide_service: '',
+    sort: 'called_at',
+    dir: 'desc',
+    per_page: 50,
+    page: 1,
+}
+const ADVANCED = ['source_id', 'company_id', 'provider_id', 'brand_name', 'agent_name', 'carrier', 'duration_min', 'duration_max', 'audio_quality', 'blacklist_id', 'phone_agent_hangup', 'phone_reported_by_agent', 'phone_cant_provide_service']
+const isSet = (v) => (Array.isArray(v) ? v.length > 0 : v !== '' && v !== null && v !== undefined)
+
+const { filters, reset } = useFilters(DEFAULTS)
+const advancedCount = computed(() => ADVANCED.filter((k) => isSet(filters[k])).length)
+const showAdvanced = ref(advancedCount.value > 0)
+const hasFilters = computed(() =>
+    Object.keys(DEFAULTS).some((k) => !['sort', 'dir', 'per_page', 'page'].includes(k) && isSet(filters[k]) && filters[k] !== DEFAULTS[k]),
+)
+
+// Jour au format AAAA-MM-JJ en heure de Paris
+const parisDay = (date) => date.toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' })
+const shift = (days) => {
+    const d = new Date()
+    d.setDate(d.getDate() + days)
+    return d
+}
+const range = computed(() => {
+    const today = parisDay(new Date())
+    switch (filters.period) {
+        case 'yesterday':
+            return { from: parisDay(shift(-1)), to: parisDay(shift(-1)) }
+        case '7d':
+            return { from: parisDay(shift(-6)), to: today }
+        case '30d':
+            return { from: parisDay(shift(-29)), to: today }
+        case 'month':
+            return { from: `${today.slice(0, 8)}01`, to: today }
+        case 'custom':
+            return { from: filters.from || today, to: filters.to || today }
+        default:
+            return { from: today, to: today }
+    }
+})
+function choosePeriod(key) {
+    if (key === 'custom' && !filters.from) {
+        filters.from = range.value.from
+        filters.to = range.value.to
+    }
+    filters.period = key
+}
+
+// Paramètres envoyés au serveur
+const params = computed(() => {
+    const p = { date_from: range.value.from, date_to: range.value.to }
+    for (const key of ['q', 'outcome', 'center', 'platform', 'has_recording', ...ADVANCED]) {
+        const v = filters[key]
+        if (isSet(v)) p[key] = Array.isArray(v) ? v.join(',') : v
+    }
+    return p
+})
+const query = (extra = {}) => new URLSearchParams({ ...params.value, ...extra }).toString()
+
+// ─── Données ───────────────────────────────────────────────────────────────────
+const { options: filterOptions, load: loadFilterOptions } = useFilterOptions('/data/calls/filter-options', {
     brands: [],
     agents: [],
-    callcenters: [],
     carriers: [],
     providers: [],
     companies: [],
     sources: [],
-    ratings_reviewers: [],
     blacklists: [],
 })
 
-// ─── Table + Filtres ──────────────────────────────────────────────────────────
-const table = useApi('/data/calls')
+const list = reactive({ items: [], total: null, page: 1, lastPage: 1, loading: false, error: null })
+const summary = reactive({ data: null, loading: false })
+let listRequest = 0
+let summaryRequest = 0
 
-const { filters, reset } = useFilters(
-    {
-        caller: '',
-        called: '',
-        provider_id: [],
-        company_id: [],
-        source_id: [],
-        brand_name: [],
-        agent_name: [],
-        callcenter_id: [],
-        date_from: '',
-        date_to: '',
-        duration_min: '',
-        duration_max: '',
-        carrier: [],
-        phone_agent_hangup: '',
-        phone_reported_by_agent: '',
-        phone_cant_provide_service: '',
-        blacklist_id: '',
-        platform: '',
-        audio_quality: '',
-        sort: 'called_at',
-        dir: 'desc',
-        per_page: 50,
-        page: 1,
-    },
-    (f) => table.load(f),
-)
-
-const hasFilters = computed(() =>
-    !!filters.caller ||
-    !!filters.called ||
-    (Array.isArray(filters.provider_id) && filters.provider_id.length > 0) ||
-    (Array.isArray(filters.company_id) && filters.company_id.length > 0) ||
-    (Array.isArray(filters.source_id) && filters.source_id.length > 0) ||
-    (Array.isArray(filters.brand_name) && filters.brand_name.length > 0) ||
-    (Array.isArray(filters.agent_name) && filters.agent_name.length > 0) ||
-    (Array.isArray(filters.callcenter_id) && filters.callcenter_id.length > 0) ||
-    !!filters.date_from ||
-    !!filters.date_to ||
-    !!filters.duration_min ||
-    !!filters.duration_max ||
-    (Array.isArray(filters.carrier) && filters.carrier.length > 0) ||
-    !!filters.phone_agent_hangup ||
-    !!filters.phone_reported_by_agent ||
-    !!filters.phone_cant_provide_service ||
-    !!filters.blacklist_id ||
-    !!filters.platform ||
-    !!filters.audio_quality
-)
-
-function toggleSort(key) {
-    if (filters.sort === key) {
-        filters.dir = filters.dir === 'asc' ? 'desc' : 'asc'
-    } else {
-        filters.sort = key
-        filters.dir = 'asc'
+async function loadList() {
+    const id = ++listRequest
+    list.loading = true
+    list.error = null
+    try {
+        const res = await fetch(`/data/calls?${query({ sort: filters.sort, dir: filters.dir, per_page: filters.per_page, page: filters.page })}`, { headers: { Accept: 'application/json' } })
+        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
+        const data = await res.json()
+        if (id !== listRequest) return
+        Object.assign(list, { items: data.items, total: data.total, page: data.current_page, lastPage: data.last_page ?? data.current_page })
+    } catch (e) {
+        if (id === listRequest) list.error = e.message
+    } finally {
+        if (id === listRequest) list.loading = false
+    }
+}
+async function loadSummary() {
+    const id = ++summaryRequest
+    summary.loading = true
+    try {
+        const res = await fetch(`/data/calls/summary?${query()}`, { headers: { Accept: 'application/json' } })
+        if (res.ok && id === summaryRequest) summary.data = await res.json()
+    } finally {
+        if (id === summaryRequest) summary.loading = false
     }
 }
 
-const columns = [
-    { key: 'called_at', label: 'Date', sortable: true },
-    { key: 'caller', label: 'Appelant' },
-    { key: 'called', label: 'Appelé' },
-    { key: 'provider', label: 'Provider' },
-    { key: 'company', label: 'Company' },
-    { key: 'source', label: 'Source' },
-    { key: 'brand_name', label: 'Marque', sortable: true },
-    { key: 'agent_name', label: 'Agent', sortable: true },
-    { key: 'carrier', label: 'Opé.', sortable: true },
-    { key: 'duration', label: 'Durée', sortable: true },
-    { key: 'payout', label: 'Payout', sortable: true },
-    { key: 'audio_quality', label: 'Qualité', sortable: true },
-]
+// Un changement de filtre recharge le résumé et revient à la première page ; tri et page ne rechargent que la liste
+let timer = null
+watch(params, () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+        if (filters.page !== 1) filters.page = 1
+        else loadList()
+        loadSummary()
+    }, 350)
+}, { deep: true })
+watch(() => [filters.sort, filters.dir, filters.per_page, filters.page], loadList)
 
-function formatDate(dateString) {
-    if (!dateString) return '-'
-    const date = new Date(dateString)
-    return date.toLocaleString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+function toggleSort(key) {
+    if (filters.sort === key) filters.dir = filters.dir === 'asc' ? 'desc' : 'asc'
+    else Object.assign(filters, { sort: key, dir: 'desc' })
+}
+
+const summaryFigures = computed(() => {
+    const s = summary.data
+    if (!s) return []
+    return [
+        { label: 'Appels', value: formatInt(s.calls) },
+        { label: 'Décrochés', value: formatInt(s.answered), sub: percent(s.answered, s.calls) },
+        { label: 'Perdus', value: formatInt(s.lost), sub: percent(s.lost, s.calls), warn: s.calls && s.lost / s.calls > 0.3 },
+        { label: 'Transférés', value: formatInt(s.transferred), sub: percent(s.transferred, s.answered) + ' des décrochés' },
+        { label: 'Attente avant décroché', value: formatDuration(s.avg_wait_answered), sub: 'en moyenne' },
+        { label: 'Avec un agent', value: formatDuration(s.avg_agent), sub: 'en moyenne' },
+        { label: 'CA', value: formatEuros(s.payout, 0) },
+        { label: 'Bénéfice', value: formatEuros(s.payout - s.payout_source, 0), sub: `reverse ${formatEuros(s.payout_source, 0)}` },
+    ]
+})
+
+// ─── Fiche d'un appel (panneau) ────────────────────────────────────────────────
+const openId = ref(null)
+const sheetOpen = computed({
+    get: () => openId.value !== null,
+    set: (open) => !open && (openId.value = null),
+})
+
+// ─── Lecteur : un seul enregistrement à la fois, en bas de la page ──────────────
+const audio = typeof Audio !== 'undefined' ? new Audio() : null
+const player = reactive({ call: null, part: 'agent', playing: false, current: 0, duration: 0, rate: 1, loading: false, error: null })
+const RATES = [1, 1.25, 1.5, 2]
+
+if (audio) {
+    audio.preload = 'auto'
+    audio.addEventListener('timeupdate', () => (player.current = audio.currentTime))
+    audio.addEventListener('loadedmetadata', () => (player.duration = audio.duration))
+    audio.addEventListener('play', () => (player.playing = true))
+    audio.addEventListener('pause', () => (player.playing = false))
+    audio.addEventListener('waiting', () => (player.loading = true))
+    audio.addEventListener('playing', () => (player.loading = false))
+    audio.addEventListener('error', () => {
+        player.loading = false
+        player.error = "Impossible de lire l'enregistrement"
+    })
+    // Fin de la partie agent : le transfert suit, s'il est enregistré
+    audio.addEventListener('ended', () => {
+        if (player.part === 'agent' && player.call?.record_transfer) play(player.call, 'transfer')
     })
 }
 
-function formatNumber(value) {
-    if (value === null || value === undefined) return '-'
-    // Format personnalisé : espace pour milliers, pas de décimales
-    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
-    // Remplacer les virgules par des espaces
-    return formatted.replace(/,/g, ' ')
-}
-
-function formatCurrency(value) {
-    if (value === null || value === undefined) return '-'
-    // Format personnalisé : espace pour milliers, point pour décimales
-    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
-    // Remplacer les virgules par des espaces
-    return formatted.replace(/,/g, ' ')
-}
-
-function formatDuration(seconds) {
-    if (!seconds) return '-'
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-function getRowClass(row) {
-    return row.blacklist_id ? 'bg-red-50 hover:bg-red-100/80' : ''
-}
-
-// Mapping des carriers
-const carrierMapping = {
-    'BOUY': 'Bouygues',
-    'FREE': 'Free',
-    'FRMO': 'Free',
-    'FRTE': 'Orange',
-    'SFR0': 'SFR',
-}
-
-function getCarrierDisplayName(code) {
-    return carrierMapping[code] || code
-}
-
-function formatAgentName(agentName) {
-    if (!agentName) return '-'
-    // Si format +33118500999@68.183.243.180, extraire "118500"
-    const match = agentName.match(/^\+33(\d{6})\d*@/)
-    if (match) {
-        return match[1]
+function play(call, part = 'agent') {
+    if (!audio) return
+    const url = part === 'transfer' ? call.record_transfer : call.record_agent
+    if (!url) return
+    if (player.call?.id === call.id && player.part === part) {
+        audio.paused ? audio.play() : audio.pause()
+        return
     }
-    return agentName
+    Object.assign(player, { call, part, current: 0, duration: 0, error: null, loading: true })
+    audio.src = url
+    audio.playbackRate = player.rate
+    audio.play().catch(() => {})
+}
+function seek(e) {
+    if (audio && player.duration) audio.currentTime = Number(e.target.value)
+}
+function cycleRate() {
+    player.rate = RATES[(RATES.indexOf(player.rate) + 1) % RATES.length]
+    if (audio) audio.playbackRate = player.rate
+}
+function closePlayer() {
+    audio?.pause()
+    player.call = null
+}
+const isPlayingRow = (row) => player.call?.id === row.id && player.playing
+
+// Une seule source de son : un lecteur de la fiche qui démarre met en pause les autres
+function pauseOthers(e) {
+    if (e.target instanceof HTMLMediaElement) {
+        document.querySelectorAll('audio').forEach((a) => a !== e.target && a.pause())
+        if (audio && e.target !== audio) audio.pause()
+    }
 }
 
-// ─── Export CSV ───────────────────────────────────────────────────────────────
+// ─── Export CSV ────────────────────────────────────────────────────────────────
 const exportableColumns = [
+    { key: 'called_at', label: 'Date' },
+    { key: 'caller', label: 'Appelant' },
+    { key: 'called', label: 'Appelé' },
     { key: 'source', label: 'Source' },
     { key: 'provider', label: 'Provider' },
     { key: 'company', label: 'Company' },
     { key: 'voxnode_id', label: 'Voxnode ID' },
-    { key: 'caller', label: 'Appelant' },
-    { key: 'called', label: 'Appelé' },
     { key: 'total_duration', label: 'Durée totale (s)' },
     { key: 'duration_agent', label: 'Durée agent (s)' },
     { key: 'duration_transfer', label: 'Durée transfert (s)' },
-    { key: 'called_at', label: 'Date' },
     { key: 'who_hangup', label: 'Qui a raccroché' },
     { key: 'agent_name', label: 'Agent' },
     { key: 'brand_name', label: 'Marque' },
@@ -206,505 +294,364 @@ const exportableColumns = [
     { key: 'carrier', label: 'Opérateur' },
     { key: 'record_agent', label: 'Enregistrement agent' },
     { key: 'record_transfer', label: 'Enregistrement transfert' },
-    { key: 'callcenter', label: 'Call center' },
     { key: 'blacklist', label: 'Blacklist' },
     { key: 'platform', label: 'Plateforme' },
     { key: 'audio_quality', label: 'Qualité audio (score)' },
 ]
-
 const exportOpen = ref(false)
-const exportColumns = ref(exportableColumns.map(c => c.key))
-const exportDateFrom = ref('')
-const exportDateTo = ref('')
-
-function openExportDialog() {
-    // Plage pré-remplie depuis les filtres actifs, sinon les 30 derniers jours
-    const today = new Date().toISOString().slice(0, 10)
-    const monthAgo = new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10)
-    exportDateFrom.value = filters.date_from || monthAgo
-    exportDateTo.value = filters.date_to || today
-    exportOpen.value = true
-}
-
+const exportColumns = ref(exportableColumns.map((c) => c.key))
 function toggleExportColumn(key) {
-    const idx = exportColumns.value.indexOf(key)
-    if (idx === -1) {
-        exportColumns.value.push(key)
-    } else {
-        exportColumns.value.splice(idx, 1)
-    }
+    exportColumns.value = exportColumns.value.includes(key) ? exportColumns.value.filter((k) => k !== key) : [...exportColumns.value, key]
 }
-
-function toggleAllExportColumns() {
-    exportColumns.value = exportColumns.value.length === exportableColumns.length
-        ? []
-        : exportableColumns.map(c => c.key)
-}
-
-const canExport = computed(() =>
-    exportColumns.value.length > 0 && !!exportDateFrom.value && !!exportDateTo.value
-)
-
 function downloadExport() {
-    const params = new URLSearchParams()
-
-    // Reprendre les filtres actifs (hors tri/pagination)
-    const skip = ['sort', 'dir', 'per_page', 'page', 'date_from', 'date_to']
-    for (const [key, value] of Object.entries(filters)) {
-        if (skip.includes(key)) continue
-        if (Array.isArray(value)) {
-            if (value.length) params.set(key, value.join(','))
-        } else if (value !== '' && value !== null && value !== undefined) {
-            params.set(key, value)
-        }
-    }
-
-    params.set('date_from', exportDateFrom.value)
-    params.set('date_to', exportDateTo.value)
-    // Conserver l'ordre d'affichage des colonnes
-    params.set('columns', exportableColumns.map(c => c.key).filter(k => exportColumns.value.includes(k)).join(','))
-
-    window.location.href = `/calls/export?${params.toString()}`
+    const columns = exportableColumns.map((c) => c.key).filter((k) => exportColumns.value.includes(k)).join(',')
+    window.location.href = `/calls/export?${query({ columns })}`
     exportOpen.value = false
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
 onMounted(() => {
-    stats.load()
     loadFilterOptions()
-    table.load(filters)
+    loadList()
+    loadSummary()
+    document.addEventListener('play', pauseOthers, true)
 })
+onUnmounted(() => {
+    audio?.pause()
+    document.removeEventListener('play', pauseOthers, true)
+})
+
+const COLUMNS = [
+    { key: 'play', label: '', class: 'w-10' },
+    { key: 'called_at', label: 'Date', sortable: true },
+    { key: 'caller', label: 'Appelant' },
+    { key: 'called', label: 'Numéro appelé' },
+    { key: 'outcome', label: 'Résultat' },
+    { key: 'brand', label: 'Marque' },
+    { key: 'total_duration', label: 'Durée', sortable: true },
+    { key: 'payout', label: 'Bénéfice', sortable: true, class: 'text-right' },
+    { key: 'audio_quality', label: 'Qualité', sortable: true, class: 'text-right' },
+]
 </script>
 
 <template>
     <Head title="Appels" />
 
     <AppLayout>
-        <div class="space-y-6 p-6">
-            <!-- En-tête -->
-            <PageHeader
-                :breadcrumbs="[
-                    { title: 'Dashboard', href: '/' },
-                    { title: 'Appels' }
-                ]"
-            />
+        <div class="space-y-4 p-6" :class="player.call && 'pb-28'">
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Appels' }]">
+                <template #actions>
+                    <Button variant="outline" size="sm" @click="exportOpen = true"><Download class="h-4 w-4" /> Exporter CSV</Button>
+                </template>
+            </PageHeader>
 
-            <!-- KPI -->
-            <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <StatCard label="Aujourd'hui" :value="stats.data?.today" :loading="stats.loading" />
-                <StatCard label="Cette semaine" :value="stats.data?.this_week" :loading="stats.loading" />
-                <StatCard label="Ce mois" :value="stats.data?.this_month" :loading="stats.loading" />
-                <StatCard
-                    label="Durée moy. mois"
-                    :value="stats.data?.avg_duration_month ? formatDuration(stats.data.avg_duration_month) : '-'"
-                    :loading="stats.loading"
-                />
-            </div>
+            <!-- Recherche et filtres -->
+            <div class="space-y-3 rounded-lg border border-gray-100 bg-white p-4">
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="relative w-full sm:w-72">
+                        <Search class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-gray-400" />
+                        <Input v-model="filters.q" type="search" placeholder="Numéro appelant ou appelé" class="h-9 pl-8" />
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1">
+                        <button
+                            v-for="p in PERIODS"
+                            :key="p.key"
+                            type="button"
+                            class="h-9 rounded-md px-3 text-xs font-medium"
+                            :class="filters.period === p.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
+                            @click="choosePeriod(p.key)"
+                        >
+                            {{ p.label }}
+                        </button>
+                    </div>
+                    <template v-if="filters.period === 'custom'">
+                        <Input v-model="filters.from" type="date" class="h-9 w-40" />
+                        <span class="text-xs text-gray-400">→</span>
+                        <Input v-model="filters.to" type="date" class="h-9 w-40" />
+                    </template>
+                </div>
 
-            <!-- Filtres -->
-            <FilterBar
-                title="Filtres"
-                :has-active-filters="hasFilters"
-                :is-loading="isLoadingOptions"
-                :is-clearing="isClearingCache"
-                :show-clear-cache="true"
-                :result-count="table.data?.total"
-                :loading-results="table.loading"
-                @reset="reset"
-                @clear-cache="() => clearFilterCache('/data/calls/clear-filter-cache')"
-            >
-                <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                    <!-- Appelant (input libre) -->
-                    <Input
-                        v-model="filters.caller"
-                        type="text"
-                        placeholder="N° Appelant..."
-                        class="h-8"
-                    />
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex rounded-md border border-gray-200 p-0.5">
+                        <button
+                            v-for="o in OUTCOMES"
+                            :key="o.key"
+                            type="button"
+                            class="h-7 rounded px-2.5 text-xs font-medium"
+                            :class="filters.outcome === o.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                            @click="filters.outcome = o.key"
+                        >
+                            {{ o.label }}
+                        </button>
+                    </div>
+                    <div class="w-44">
+                        <FilterSelect
+                            v-model="filters.center"
+                            :options="[...centers.map((c) => ({ value: c.key, label: c.label })), { value: 'none', label: 'Sans centre (perdus, IA…)' }]"
+                            placeholder="Tous les centres"
+                            :searchable="false"
+                        />
+                    </div>
+                    <div class="w-40">
+                        <FilterSelect
+                            v-model="filters.platform"
+                            :options="[{ value: 'voxnode', label: 'Voxnode' }, { value: 'selfhosted', label: 'Notre serveur' }]"
+                            placeholder="Les 2 plateformes"
+                            :searchable="false"
+                        />
+                    </div>
+                    <label class="flex h-9 cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 text-xs text-gray-700 hover:bg-gray-50">
+                        <Checkbox :model-value="filters.has_recording === 'yes'" @update:model-value="(v) => (filters.has_recording = v ? 'yes' : '')" />
+                        Avec enregistrement
+                    </label>
+                    <button
+                        type="button"
+                        class="flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium"
+                        :class="advancedCount ? 'border-gray-900 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                        @click="showAdvanced = !showAdvanced"
+                    >
+                        <SlidersHorizontal class="size-3.5" />
+                        Plus de filtres{{ advancedCount ? ` · ${advancedCount}` : '' }}
+                        <ChevronUp v-if="showAdvanced" class="size-3.5" />
+                        <ChevronDown v-else class="size-3.5" />
+                    </button>
+                    <button v-if="hasFilters" type="button" class="ml-auto text-xs text-gray-500 underline hover:text-gray-900" @click="reset">Réinitialiser</button>
+                </div>
 
-                    <!-- Appelé (input libre) -->
-                    <Input
-                        v-model="filters.called"
-                        type="text"
-                        placeholder="N° Appelé..."
-                        class="h-8"
-                    />
-
-                    <!-- Source -->
-                    <FilterSelect
-                        v-model="filters.source_id"
-                        :options="filterOptions.sources"
-                        placeholder="Toutes les sources"
-                        searchable
-                        multiple
-                    />
-
-                    <!-- Provider -->
-                    <FilterSelect
-                        v-model="filters.provider_id"
-                        :options="filterOptions.providers"
-                        placeholder="Tous les providers"
-                        searchable
-                        multiple
-                    />
-
-                    <!-- Company -->
-                    <FilterSelect
-                        v-model="filters.company_id"
-                        :options="filterOptions.companies"
-                        placeholder="Toutes les companies"
-                        searchable
-                        multiple
-                    />
-
-                    <!-- Marque (select avec recherche) -->
-                    <FilterSelect
-                        v-model="filters.brand_name"
-                        :options="filterOptions.brands"
-                        placeholder="Toutes les marques"
-                        searchable
-                        multiple
-                    />
-
-                    <!-- Agent (select avec recherche) -->
-                    <FilterSelect
-                        v-model="filters.agent_name"
-                        :options="filterOptions.agents"
-                        placeholder="Tous les agents"
-                        searchable
-                        multiple
-                    />
-
-                    <!-- Call Center -->
-                    <FilterSelect
-                        v-model="filters.callcenter_id"
-                        :options="filterOptions.callcenters"
-                        placeholder="Tous les centres"
-                        multiple
-                    />
-
-                    <!-- Opérateur -->
-                    <FilterSelect
-                        v-model="filters.carrier"
-                        :options="filterOptions.carriers"
-                        placeholder="Tous les opérateurs"
-                        multiple
-                    />
-
-                    <!-- Date début -->
-                    <Input
-                        v-model="filters.date_from"
-                        type="date"
-                        class="h-8"
-                    />
-
-                    <!-- Date fin -->
-                    <Input
-                        v-model="filters.date_to"
-                        type="date"
-                        class="h-8"
-                    />
-
-                    <!-- Durée min -->
-                    <Input
-                        v-model="filters.duration_min"
-                        type="number"
-                        placeholder="Durée min (s)"
-                        class="h-8"
-                    />
-
-                    <!-- Durée max -->
-                    <Input
-                        v-model="filters.duration_max"
-                        type="number"
-                        placeholder="Durée max (s)"
-                        class="h-8"
-                    />
-
-                    <!-- Agent a raccroché -->
-                    <FilterSelect
-                        v-model="filters.phone_agent_hangup"
-                        :options="[
-                            { value: 'yes', label: 'Agent a raccroché' },
-                            { value: 'no', label: 'Agent n\'a pas raccroché' },
-                        ]"
-                        placeholder="Agent raccroche"
-                        :searchable="false"
-                    />
-
-                    <!-- Signalé par agent -->
-                    <FilterSelect
-                        v-model="filters.phone_reported_by_agent"
-                        :options="[
-                            { value: 'yes', label: 'Signalé par agent' },
-                            { value: 'no', label: 'Non signalé' },
-                        ]"
-                        placeholder="Signalé"
-                        :searchable="false"
-                    />
-
-                    <!-- Service non fourni -->
-                    <FilterSelect
-                        v-model="filters.phone_cant_provide_service"
-                        :options="[
-                            { value: 'yes', label: 'Service non fourni' },
-                            { value: 'no', label: 'Service fourni' },
-                        ]"
-                        placeholder="Service"
-                        :searchable="false"
-                    />
-
-                    <!-- Plateforme -->
-                    <FilterSelect
-                        v-model="filters.platform"
-                        :options="[
-                            { value: 'voxnode', label: 'Voxnode' },
-                            { value: 'selfhosted', label: 'Notre serveur' },
-                        ]"
-                        placeholder="Plateforme"
-                        :searchable="false"
-                    />
-
-                    <!-- Qualité audio -->
+                <div v-if="showAdvanced" class="grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                    <FilterSelect v-model="filters.source_id" :options="filterOptions.sources" placeholder="Toutes les sources" searchable multiple />
+                    <FilterSelect v-model="filters.company_id" :options="filterOptions.companies" placeholder="Toutes les companies" searchable multiple />
+                    <FilterSelect v-model="filters.provider_id" :options="filterOptions.providers" placeholder="Tous les providers" searchable multiple />
+                    <FilterSelect v-model="filters.brand_name" :options="filterOptions.brands" placeholder="Toutes les marques" searchable multiple />
+                    <FilterSelect v-model="filters.agent_name" :options="filterOptions.agents" placeholder="Tous les agents" searchable multiple />
+                    <FilterSelect v-model="filters.carrier" :options="filterOptions.carriers" placeholder="Tous les opérateurs" multiple />
+                    <div class="flex items-center gap-1.5">
+                        <Input v-model="filters.duration_min" type="number" min="0" placeholder="Durée min (s)" class="h-8" />
+                        <Input v-model="filters.duration_max" type="number" min="0" placeholder="max (s)" class="h-8" />
+                    </div>
                     <FilterSelect
                         v-model="filters.audio_quality"
-                        :options="[
-                            { value: 'degraded', label: 'Dégradés (score < 3,1)' },
-                            { value: 'measured', label: 'Qualité mesurée' },
-                            { value: 'unmeasured', label: 'Qualité non mesurée' },
-                        ]"
+                        :options="[{ value: 'degraded', label: 'Audio dégradé (< 3,1)' }, { value: 'measured', label: 'Qualité mesurée' }, { value: 'unmeasured', label: 'Qualité non mesurée' }]"
                         placeholder="Qualité audio"
                         :searchable="false"
                     />
-
-                    <!-- Blacklist -->
                     <FilterSelect
                         v-model="filters.blacklist_id"
-                        :options="[
-                            { value: 'any', label: 'Avec blacklist' },
-                            { value: 'none', label: 'Sans blacklist' },
-                            ...filterOptions.blacklists.map(b => ({ value: b.id, label: b.phonenumber }))
-                        ]"
+                        :options="[{ value: 'any', label: 'Appelants blacklistés' }, { value: 'none', label: 'Hors blacklist' }, ...filterOptions.blacklists.map((b) => ({ value: b.id, label: b.phonenumber }))]"
                         placeholder="Blacklist"
                         searchable
                     />
+                    <FilterSelect
+                        v-model="filters.phone_agent_hangup"
+                        :options="[{ value: 'yes', label: 'L’agent a raccroché' }, { value: 'no', label: 'L’agent n’a pas raccroché' }]"
+                        placeholder="Raccroché par l’agent"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="filters.phone_reported_by_agent"
+                        :options="[{ value: 'yes', label: 'Signalés par l’agent' }, { value: 'no', label: 'Non signalés' }]"
+                        placeholder="Signalés par l’agent"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="filters.phone_cant_provide_service"
+                        :options="[{ value: 'yes', label: 'Service impossible' }, { value: 'no', label: 'Service rendu' }]"
+                        placeholder="Service rendu"
+                        :searchable="false"
+                    />
                 </div>
-            </FilterBar>
-
-            <!-- Export CSV -->
-            <div class="flex justify-end">
-                <Button variant="outline" size="sm" @click="openExportDialog">
-                    <Download class="h-4 w-4" />
-                    Exporter CSV
-                </Button>
             </div>
 
-            <Dialog v-model:open="exportOpen">
-                <DialogContent class="sm:max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle>Exporter les appels en CSV</DialogTitle>
-                        <DialogDescription>
-                            Les filtres actifs de la page sont appliqués à l'export.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div class="space-y-4">
-                        <!-- Plage de dates -->
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="space-y-1">
-                                <label class="text-xs font-medium text-gray-600">Du</label>
-                                <Input v-model="exportDateFrom" type="date" class="h-8" />
-                            </div>
-                            <div class="space-y-1">
-                                <label class="text-xs font-medium text-gray-600">Au</label>
-                                <Input v-model="exportDateTo" type="date" class="h-8" />
-                            </div>
-                        </div>
-
-                        <!-- Colonnes -->
-                        <div>
-                            <div class="mb-2 flex items-center justify-between">
-                                <span class="text-xs font-medium text-gray-600">
-                                    Colonnes ({{ exportColumns.length }}/{{ exportableColumns.length }})
-                                </span>
-                                <button
-                                    type="button"
-                                    class="text-xs font-medium text-blue-600 hover:text-blue-700"
-                                    @click="toggleAllExportColumns"
-                                >
-                                    {{ exportColumns.length === exportableColumns.length ? 'Tout décocher' : 'Tout cocher' }}
-                                </button>
-                            </div>
-                            <div class="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-                                <label
-                                    v-for="col in exportableColumns"
-                                    :key="col.key"
-                                    class="flex cursor-pointer items-center gap-2 text-sm text-gray-700"
-                                >
-                                    <Checkbox
-                                        :model-value="exportColumns.includes(col.key)"
-                                        @update:model-value="toggleExportColumn(col.key)"
-                                    />
-                                    {{ col.label }}
-                                </label>
-                            </div>
-                        </div>
+            <!-- Résumé de la sélection -->
+            <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-100 bg-gray-100 sm:grid-cols-4 xl:grid-cols-8" :class="summary.loading && 'opacity-60'">
+                <template v-if="summaryFigures.length">
+                    <div v-for="f in summaryFigures" :key="f.label" class="bg-white px-4 py-3">
+                        <div class="text-xs text-gray-500">{{ f.label }}</div>
+                        <div class="text-lg font-semibold tabular-nums" :class="f.warn ? 'text-red-700' : 'text-gray-900'">{{ f.value }}</div>
+                        <div v-if="f.sub" class="truncate text-xs text-gray-400">{{ f.sub }}</div>
                     </div>
+                </template>
+                <div v-else class="col-span-full h-[4.6rem] animate-pulse bg-white" />
+            </div>
 
-                    <DialogFooter>
-                        <Button variant="outline" @click="exportOpen = false">Annuler</Button>
-                        <Button :disabled="!canExport" @click="downloadExport">
-                            <Download class="h-4 w-4" />
-                            Exporter
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            <!-- Table -->
-            <div class="rounded-lg border border-gray-100 bg-white">
-                <DataTable
-                    :columns="columns"
-                    :rows="table.data?.items ?? []"
-                    :loading="table.loading"
-                    :sort-key="filters.sort"
-                    :sort-dir="filters.dir"
-                    :row-class="getRowClass"
-                    @sort="toggleSort"
-                >
-                    <template #called_at="{ value, row }">
-                        <Link
-                            :href="`/calls/${row.id}`"
-                            class="text-sm text-blue-600 hover:underline"
-                        >
-                            {{ formatDate(value) }}
-                        </Link>
-                    </template>
-                    <template #duration="{ row }">
-                        <div class="flex items-center gap-2 text-sm">
-                            <span class="text-gray-700">{{ formatDuration(row.total_duration) }}</span>
-                            <div class="flex items-center gap-2 text-xs text-gray-500">
-                                <div class="flex items-center gap-0.5">
-                                    <User class="h-3 w-3" />
-                                    <span>{{ formatDuration(row.duration_agent) }}</span>
-                                </div>
-                                <div class="flex items-center gap-0.5">
-                                    <PhoneForwarded class="h-3 w-3" />
-                                    <span>{{ formatDuration(row.duration_transfer) }}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </template>
-                    <template #audio_quality="{ row }">
-                        <div class="whitespace-nowrap text-sm">
-                            <span :class="qualityClass(row.audio_quality === null ? null : Number(row.audio_quality)) || 'text-gray-700'">
-                                {{ row.audio_quality === null || row.audio_quality === undefined ? '—' : formatQuality(Number(row.audio_quality), 1) }}
-                            </span>
-                            <div class="text-xs text-gray-400">{{ row.platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode' }}</div>
-                        </div>
-                    </template>
-
-                    <template #payout="{ row }">
-                        <div v-if="row.payout !== null && row.payout !== undefined" class="text-sm">
-                            <span class="text-gray-500 text-xs">{{ formatCurrency(parseFloat(row.payout)) }} - {{ formatCurrency(parseFloat(row.payout_source || 0)) }} = </span>
-                            <span class="">{{ formatCurrency(parseFloat(row.payout) - parseFloat(row.payout_source || 0)) }}</span>
-                        </div>
-                        <span v-else class="text-sm text-gray-400">-</span>
-                    </template>
-                    <template #caller="{ value }">
-                        <span class="text-sm text-gray-700">{{ value || '-' }}</span>
-                    </template>
-                    <template #called="{ value }">
-                        <span class="text-sm text-gray-700">{{ value || '-' }}</span>
-                    </template>
-                    <template #provider="{ row }">
-                        <ColorBadge
-                            v-if="row.phonenumber?.provider"
-                            :color="row.phonenumber.provider.color"
-                            :label="row.phonenumber.provider.name"
-                        />
-                        <span v-else class="text-xs text-gray-400">-</span>
-                    </template>
-                    <template #company="{ row }">
-                        <ColorBadge
-                            v-if="row.phonenumber?.company"
-                            :color="row.phonenumber.company.color"
-                            :label="row.phonenumber.company.name"
-                        />
-                        <span v-else class="text-xs text-gray-400">-</span>
-                    </template>
-                    <template #source="{ row }">
-                        <ColorBadge
-                            v-if="row.source"
-                            :color="row.source.color"
-                            :label="row.source.name"
-                        />
-                        <ColorBadge
-                            v-else-if="row.phonenumber?.source"
-                            :color="row.phonenumber.source.color"
-                            :label="row.phonenumber.source.name"
-                        />
-                        <span v-else class="text-xs text-gray-400">-</span>
-                    </template>
-                    <template #brand_name="{ value }">
-                        <span class="text-sm text-gray-900">{{ value || '-' }}</span>
-                    </template>
-                    <template #agent_name="{ value }">
-                        <span class="text-xs text-gray-900">{{ formatAgentName(value) }}</span>
-                    </template>
-                    <template #carrier="{ value }">
-                        <span class="text-xs text-gray-900">{{ getCarrierDisplayName(value) }}</span>
-                    </template>
-                </DataTable>
-
-                <div
-                    v-if="table.data?.items?.length"
-                    class="flex items-center justify-between border-t border-gray-50 px-4 py-3"
-                >
-                    <div class="flex items-center gap-4">
-                        <div class="text-sm text-gray-500">
-                            <template v-if="table.data.last_page">
-                                Page {{ table.data.current_page }} sur {{ table.data.last_page }}
-                            </template>
-                            <template v-else>
-                                Page {{ table.data.current_page }}
-                            </template>
-                            <template v-if="hasFilters && table.data.total">
-                                · {{ formatNumber(table.data.total) }} résultat{{ table.data.total !== 1 ? 's' : '' }}
-                            </template>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-sm text-gray-600">Résultats par page :</span>
-                            <select
-                                v-model.number="filters.per_page"
-                                class="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            <!-- Liste -->
+            <div class="overflow-hidden rounded-lg border border-gray-100 bg-white">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="border-b border-gray-100 text-xs text-gray-400">
+                            <tr>
+                                <th
+                                    v-for="col in COLUMNS"
+                                    :key="col.key"
+                                    class="px-2 py-2 text-left font-medium whitespace-nowrap uppercase tracking-wide first:pl-3"
+                                    :class="[col.class, col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
+                                    @click="col.sortable && toggleSort(col.key)"
+                                >
+                                    {{ col.label }}
+                                    <template v-if="filters.sort === col.key">{{ filters.dir === 'asc' ? '↑' : '↓' }}</template>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody :class="list.loading && 'opacity-50'">
+                            <tr v-if="list.loading && !list.items.length">
+                                <td :colspan="COLUMNS.length" class="py-12 text-center text-gray-400"><LoaderCircle class="mx-auto size-5 animate-spin" /></td>
+                            </tr>
+                            <tr v-else-if="list.error">
+                                <td :colspan="COLUMNS.length" class="py-12 text-center text-red-600">{{ list.error }}</td>
+                            </tr>
+                            <tr v-else-if="!list.items.length">
+                                <td :colspan="COLUMNS.length" class="py-12 text-center text-gray-400">Aucun appel</td>
+                            </tr>
+                            <tr
+                                v-for="row in list.items"
+                                :key="row.id"
+                                class="cursor-pointer border-t border-gray-50 hover:bg-gray-50"
+                                :class="[openId === row.id && 'bg-gray-50', player.call?.id === row.id && 'bg-amber-50/60 hover:bg-amber-50', row.blacklist_id && 'shadow-[inset_3px_0_0_#dc2626]']"
+                                @click="openId = row.id"
                             >
-                                <option :value="50">50</option>
-                                <option :value="100">100</option>
-                                <option :value="250">250</option>
-                                <option :value="500">500</option>
-                                <option :value="1000">1000</option>
-                            </select>
-                        </div>
+                                <!-- Écoute -->
+                                <td class="py-1.5 pl-3">
+                                    <button
+                                        v-if="row.record_agent"
+                                        type="button"
+                                        class="flex size-7 items-center justify-center rounded-full border transition-colors"
+                                        :class="isPlayingRow(row) ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900'"
+                                        :title="isPlayingRow(row) ? 'Pause' : 'Écouter'"
+                                        @click.stop="play(row)"
+                                    >
+                                        <Pause v-if="isPlayingRow(row)" class="size-3.5" />
+                                        <Play v-else class="ml-0.5 size-3.5" />
+                                    </button>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="tabular-nums text-gray-900">{{ new Date(row.called_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }) }}</div>
+                                    <div class="text-xs text-gray-400">{{ formatDay(row.called_at) }}</div>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="font-mono text-gray-900">{{ formatPhone(row.caller) }}</div>
+                                    <div class="text-xs text-gray-400">{{ carrierName(row.carrier) ?? '—' }}<template v-if="row.blacklist_id"> · <span class="text-red-600">blacklist</span></template></div>
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="font-mono text-gray-700">{{ formatPhone(row.called) }}</div>
+                                    <ColorBadge v-if="row.source ?? row.phonenumber?.source" :color="(row.source ?? row.phonenumber.source).color" :label="(row.source ?? row.phonenumber.source).name" />
+                                </td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="outcome(row).tone">{{ outcome(row).label }}</span>
+                                    <div class="mt-0.5 text-xs text-gray-500">
+                                        {{ agentLabel(row.agent_name) ?? '—' }}<template v-if="centerOf(row.agent_name, centers)"> · {{ centerOf(row.agent_name, centers).label }}</template>
+                                    </div>
+                                </td>
+                                <td class="max-w-[12rem] truncate px-2 py-1.5 text-gray-700" :title="row.brand_name">{{ row.brand_name || '—' }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap">
+                                    <div class="tabular-nums text-gray-900">{{ formatDuration(row.total_duration) }}</div>
+                                    <!-- Attente, agent, transfert -->
+                                    <div v-if="durationParts(row).total" class="mt-1 flex h-1.5 w-20 overflow-hidden rounded-full bg-gray-100" :title="`Attente ${formatDuration(durationParts(row).wait)} · agent ${formatDuration(durationParts(row).agent)} · transfert ${formatDuration(durationParts(row).transfer)}`">
+                                        <div class="bg-amber-300" :style="{ width: `${(durationParts(row).wait / durationParts(row).total) * 100}%` }" />
+                                        <div class="bg-gray-900" :style="{ width: `${(durationParts(row).agent / durationParts(row).total) * 100}%` }" />
+                                        <div class="bg-blue-400" :style="{ width: `${(durationParts(row).transfer / durationParts(row).total) * 100}%` }" />
+                                    </div>
+                                </td>
+                                <td class="px-2 py-1.5 text-right whitespace-nowrap">
+                                    <template v-if="row.payout !== null && row.payout !== undefined">
+                                        <div class="tabular-nums text-gray-900">{{ formatEuros(Number(row.payout) - Number(row.payout_source || 0)) }}</div>
+                                        <div class="text-xs text-gray-400 tabular-nums">CA {{ formatEuros(row.payout) }}</div>
+                                    </template>
+                                    <span v-else class="text-gray-400">—</span>
+                                </td>
+                                <td class="px-2 py-1.5 pr-3 text-right whitespace-nowrap">
+                                    <div :class="qualityClass(row.audio_quality === null ? null : Number(row.audio_quality)) || 'text-gray-400'">
+                                        {{ row.audio_quality === null || row.audio_quality === undefined ? '—' : formatQuality(Number(row.audio_quality), 1) }}
+                                    </div>
+                                    <div class="text-xs text-gray-400">{{ row.platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode' }}</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-if="list.items.length" class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-500">
+                    <div class="flex items-center gap-3">
+                        <span>Page {{ list.page }} sur {{ list.lastPage }}<template v-if="list.total !== null"> · {{ formatInt(list.total) }} appel{{ list.total > 1 ? 's' : '' }}</template></span>
+                        <select v-model.number="filters.per_page" class="rounded-md border border-gray-200 px-2 py-1 text-sm">
+                            <option v-for="n in [50, 100, 250, 500]" :key="n" :value="n">{{ n }} par page</option>
+                        </select>
                     </div>
                     <div class="flex gap-2">
-                        <button
-                            v-if="table.data.current_page > 1"
-                            @click="filters.page = (filters.page || 1) - 1"
-                            class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
-                        >
-                            Précédent
-                        </button>
-                        <button
-                            v-if="table.data.last_page ? table.data.current_page < table.data.last_page : table.data.has_more_pages"
-                            @click="filters.page = (filters.page || 1) + 1"
-                            class="cursor-pointer rounded border px-3 py-1 text-sm hover:bg-gray-50"
-                        >
-                            Suivant
-                        </button>
+                        <Button variant="outline" size="sm" :disabled="list.page <= 1" @click="filters.page = list.page - 1">Précédent</Button>
+                        <Button variant="outline" size="sm" :disabled="list.page >= list.lastPage" @click="filters.page = list.page + 1">Suivant</Button>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Lecteur -->
+        <div v-if="player.call" class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64">
+            <div class="flex items-center gap-3 py-2.5 pr-20 pl-4">
+                <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800" :title="player.playing ? 'Pause' : 'Lecture'" @click="play(player.call, player.part)">
+                    <LoaderCircle v-if="player.loading" class="size-4 animate-spin" />
+                    <Pause v-else-if="player.playing" class="size-4" />
+                    <Play v-else class="ml-0.5 size-4" />
+                </button>
+                <div class="w-56 min-w-0 shrink-0">
+                    <div class="truncate text-sm font-medium text-gray-900">
+                        {{ formatPhone(player.call.caller) }} · {{ agentLabel(player.call.agent_name) ?? '—' }}
+                    </div>
+                    <div class="truncate text-xs text-gray-500">
+                        {{ formatDay(player.call.called_at) }}, {{ new Date(player.call.called_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }) }}
+                        · {{ player.part === 'transfer' ? 'transfert' : 'conversation agent' }}
+                    </div>
+                </div>
+                <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
+                <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
+                <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
+                <p v-if="player.error" class="shrink-0 text-xs text-red-600">{{ player.error }}</p>
+                <div class="flex shrink-0 items-center gap-1.5">
+                    <button
+                        v-if="player.call.record_transfer"
+                        type="button"
+                        class="h-7 rounded-md border px-2 text-xs"
+                        :class="player.part === 'transfer' ? 'border-gray-900 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                        @click="play(player.call, player.part === 'transfer' ? 'agent' : 'transfer')"
+                    >
+                        {{ player.part === 'transfer' ? 'Partie agent' : 'Partie transfert' }}
+                    </button>
+                    <button type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
+                    <button type="button" class="flex h-7 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-700 hover:bg-gray-50" @click="openId = player.call.id"><FileText class="size-3.5" /> Fiche</button>
+                    <button type="button" class="flex size-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Fermer le lecteur" @click="closePlayer"><X class="size-4" /></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fiche d'un appel -->
+        <Sheet v-model:open="sheetOpen">
+            <SheetContent class="w-full overflow-y-auto sm:max-w-xl">
+                <SheetHeader class="sr-only">
+                    <SheetTitle>Fiche de l'appel</SheetTitle>
+                    <SheetDescription>Enregistrements et détail de l'appel</SheetDescription>
+                </SheetHeader>
+                <div class="px-6 pt-6 pb-10">
+                    <CallDetailPanel v-if="openId" :call-id="openId" :centers="centers" in-panel @open="(id) => (openId = id)" />
+                </div>
+            </SheetContent>
+        </Sheet>
+
+        <!-- Export CSV -->
+        <Dialog v-model:open="exportOpen">
+            <DialogContent class="sm:max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>Exporter les appels en CSV</DialogTitle>
+                    <DialogDescription>Mêmes appels que la liste : période {{ range.from === range.to ? `du ${range.from}` : `du ${range.from} au ${range.to}` }} et filtres actifs.</DialogDescription>
+                </DialogHeader>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                    <label v-for="col in exportableColumns" :key="col.key" class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                        <Checkbox :model-value="exportColumns.includes(col.key)" @update:model-value="toggleExportColumn(col.key)" />
+                        {{ col.label }}
+                    </label>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" @click="exportOpen = false">Annuler</Button>
+                    <Button :disabled="!exportColumns.length" @click="downloadExport"><Download class="h-4 w-4" /> Exporter</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </AppLayout>
 </template>

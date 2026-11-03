@@ -11,18 +11,137 @@ use Inertia\Response;
 
 class CallController extends Controller
 {
+    private const TZ = 'Europe/Paris';
+
     public function index(): Response
     {
-        return Inertia::render('Calls');
+        return Inertia::render('Calls', ['centers' => $this->centersForDisplay()]);
     }
 
     public function show(Call $call): Response
     {
-        $call->load(['agent', 'callcenter', 'individualSearch', 'packageTracking']);
+        return Inertia::render('CallDetails', ['callId' => $call->id, 'centers' => $this->centersForDisplay()]);
+    }
 
-        return Inertia::render('CallDetails', [
-            'call' => $call,
+    /**
+     * Centres d'appels (config/callcenters.php) : la page déduit le centre d'un appel du nom de l'agent.
+     */
+    private function centersForDisplay(): array
+    {
+        return collect(config('callcenters'))
+            ->map(fn ($c, $key) => [
+                'key' => $key,
+                'label' => $c['label'],
+                'color' => $c['color'] ?? null,
+                'agents' => $c['agents'] ?? [],
+                'prefixes' => $c['prefixes'] ?? [],
+                'optional' => (bool) ($c['optional'] ?? false),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Fiche complète d'un appel : liens (numéro, source…), détail réseau, autres appels du même numéro.
+     */
+    public function detail(Call $call): JsonResponse
+    {
+        $call->load([
+            'blacklist:id,phonenumber,note,source',
+            'source:id,name,color',
+            'phonenumber' => fn ($q) => $q->withTrashed()->select('id', 'phonenumber', 'provider_id', 'company_id', 'source_id'),
+            'phonenumber.provider:id,name,color',
+            'phonenumber.company:id,name,color',
+            'phonenumber.source:id,name,color',
         ]);
+
+        $quality = \DB::table('call_quality')->where('call_id', $call->id)->first();
+        $callerCalls = $call->caller
+            ? Call::where('caller', $call->caller)->where('id', '!=', $call->id)
+                ->orderByDesc('called_at')->limit(15)
+                ->get(['id', 'called_at', 'called', 'total_duration', 'duration_agent', 'duration_transfer', 'agent_name', 'brand_name', 'record_agent'])
+            : collect();
+        $callerTotal = $call->caller ? Call::where('caller', $call->caller)->count() : 0;
+
+        return response()->json([
+            'call' => $call,
+            'quality' => $quality,
+            'caller_calls' => $callerCalls,
+            'caller_total' => $callerTotal,
+        ]);
+    }
+
+    /**
+     * Résumé des appels filtrés : volumes, résultat, durées et argent.
+     */
+    public function summary(Request $request): JsonResponse
+    {
+        $query = Call::query();
+        $this->applyFilters($request, $query);
+
+        $row = $query->toBase()->selectRaw('
+            COUNT(*) AS calls,
+            SUM(COALESCE(duration_agent, 0) > 0) AS answered,
+            SUM(COALESCE(duration_agent, 0) = 0) AS lost,
+            SUM(COALESCE(duration_transfer, 0) > 0) AS transferred,
+            AVG(total_duration) AS avg_total,
+            AVG(CASE WHEN duration_agent > 0 THEN duration_agent END) AS avg_agent,
+            AVG(CASE WHEN duration_agent > 0 THEN GREATEST(0, total_duration - duration_agent - COALESCE(duration_transfer, 0)) END) AS avg_wait_answered,
+            COALESCE(SUM(payout), 0) AS payout,
+            COALESCE(SUM(payout_source), 0) AS payout_source,
+            SUM(record_agent IS NOT NULL AND record_agent <> \'\') AS recorded
+        ')->first();
+
+        return response()->json([
+            'calls' => (int) $row->calls,
+            'answered' => (int) $row->answered,
+            'lost' => (int) $row->lost,
+            'transferred' => (int) $row->transferred,
+            'avg_total' => $row->avg_total !== null ? (int) round($row->avg_total) : null,
+            'avg_agent' => $row->avg_agent !== null ? (int) round($row->avg_agent) : null,
+            'avg_wait_answered' => $row->avg_wait_answered !== null ? (int) round($row->avg_wait_answered) : null,
+            'payout' => round((float) $row->payout, 2),
+            'payout_source' => round((float) $row->payout_source, 2),
+            'recorded' => (int) $row->recorded,
+        ]);
+    }
+
+    /**
+     * Appels d'un centre, d'après le nom de l'agent (règles de config/callcenters.php) ; 'none' = aucun centre.
+     */
+    private function applyCenter($query, string $key): void
+    {
+        $centers = config('callcenters');
+        $exact = collect($centers)->flatMap(fn ($c) => $c['agents'] ?? [])->all();
+        $matchesCenter = function ($q, array $c, string $k) use ($centers) {
+            $q->where(function ($q) use ($c, $k, $centers) {
+                if (!empty($c['agents'])) {
+                    $q->orWhereIn('agent_name', $c['agents']);
+                }
+                foreach ($c['prefixes'] ?? [] as $prefix) {
+                    // Les noms exacts des autres centres (non optionnels) ne comptent pas dans le préfixe
+                    $others = collect($centers)->except($k)->reject(fn ($o) => $o['optional'] ?? false)->flatMap(fn ($o) => $o['agents'] ?? [])->all();
+                    $q->orWhere(fn ($q) => $q->where('agent_name', 'like', addcslashes($prefix, '%_\\') . '%')->whereNotIn('agent_name', $others));
+                }
+            });
+        };
+
+        if ($key === 'none') {
+            $query->where(function ($q) use ($centers, $exact) {
+                $q->whereNull('agent_name')->orWhere(function ($q) use ($centers, $exact) {
+                    $q->whereNotIn('agent_name', $exact);
+                    foreach ($centers as $c) {
+                        foreach ($c['prefixes'] ?? [] as $prefix) {
+                            $q->where('agent_name', 'not like', addcslashes($prefix, '%_\\') . '%');
+                        }
+                    }
+                });
+            });
+
+            return;
+        }
+        abort_unless(isset($centers[$key]), 422, 'Centre inconnu');
+        $matchesCenter($query, $centers[$key], $key);
     }
 
     /**
@@ -50,6 +169,34 @@ class CallController extends Controller
         $hasFilters = false;
 
         // Filtres
+        // Recherche d'un numéro, appelant ou appelé : « 06 12 34 », « 0612… » ou « +33612… »
+        if ($request->filled('q')) {
+            $hasFilters = true;
+            $digits = preg_replace('/[^\d+]/', '', $request->q);
+            $normalized = preg_replace('/^(\+33|0033|0)/', '', $digits);
+            $query->where(fn ($q) => $q->where('caller', 'like', "%{$normalized}%")->orWhere('called', 'like', "%{$normalized}%"));
+        }
+
+        if ($request->filled('outcome')) {
+            $hasFilters = true;
+            match ($request->outcome) {
+                'answered' => $query->where('duration_agent', '>', 0),
+                'lost' => $query->where(fn ($q) => $q->whereNull('duration_agent')->orWhere('duration_agent', '<=', 0)),
+                'transferred' => $query->where('duration_transfer', '>', 0),
+                default => null,
+            };
+        }
+
+        if ($request->filled('center')) {
+            $hasFilters = true;
+            $this->applyCenter($query, $request->center);
+        }
+
+        if ($request->input('has_recording') === 'yes') {
+            $hasFilters = true;
+            $query->whereNotNull('record_agent')->where('record_agent', '!=', '');
+        }
+
         if ($request->filled('caller')) {
             $hasFilters = true;
             $query->where('caller', 'like', "%{$request->caller}%");
@@ -126,14 +273,15 @@ class CallController extends Controller
             });
         }
 
+        // Jours en heure de Paris
         if ($request->filled('date_from')) {
             $hasFilters = true;
-            $query->whereDate('called_at', '>=', $request->date_from);
+            $query->where('called_at', '>=', \Carbon\Carbon::parse($request->date_from, self::TZ)->startOfDay()->utc());
         }
 
         if ($request->filled('date_to')) {
             $hasFilters = true;
-            $query->whereDate('called_at', '<=', $request->date_to);
+            $query->where('called_at', '<=', \Carbon\Carbon::parse($request->date_to, self::TZ)->endOfDay()->utc());
         }
 
         if ($request->filled('duration_min')) {
@@ -249,7 +397,7 @@ class CallController extends Controller
         $hasFilters = $this->applyFilters($request, $query);
 
         // Tri
-        $sortable = ['id', 'called_at', 'total_duration', 'duration_agent', 'payout', 'brand_name', 'agent_name', 'audio_quality'];
+        $sortable = ['id', 'called_at', 'total_duration', 'duration_agent', 'payout', 'brand_name', 'agent_name', 'audio_quality', 'caller'];
         $sort = in_array($request->sort, $sortable) ? $request->sort : 'called_at';
         $dir = $request->dir === 'asc' ? 'asc' : 'desc';
 
