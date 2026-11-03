@@ -8,6 +8,7 @@ export function formatDateTime(value, withSeconds = false) {
         timeZone: TZ,
         day: '2-digit',
         month: '2-digit',
+        year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
         ...(withSeconds ? { second: '2-digit' } : {}),
@@ -53,13 +54,6 @@ export function durationParts(call) {
     const agent = Number(call.duration_agent) || 0
     const transfer = Number(call.duration_transfer) || 0
     return { total, agent, transfer, wait: Math.max(0, total - agent - transfer) }
-}
-
-// Résultat : décroché (un agent a été en ligne), transféré, ou perdu (raccroché avant un agent)
-export function outcome(call) {
-    if ((Number(call.duration_agent) || 0) <= 0) return { key: 'lost', label: 'Perdu', tone: 'bg-red-50 text-red-700' }
-    if ((Number(call.duration_transfer) || 0) > 0) return { key: 'transferred', label: 'Transféré', tone: 'bg-blue-50 text-blue-700' }
-    return { key: 'answered', label: 'Décroché', tone: 'bg-green-50 text-green-700' }
 }
 
 // Centre d'appels d'après le nom de l'agent (config/callcenters.php) : noms exacts d'abord, puis préfixe le plus long.

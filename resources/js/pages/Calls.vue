@@ -1,10 +1,11 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Head } from '@inertiajs/vue3'
-import { ChevronDown, ChevronUp, Download, FileText, LoaderCircle, Pause, Play, Search, SlidersHorizontal, X } from 'lucide-vue-next'
+import { Download, FileText, LoaderCircle, Pause, PhoneForwarded, Play, User, X } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
 import CallDetailPanel from '@/components/CallDetailPanel.vue'
 import ColorBadge from '@/components/ColorBadge.vue'
+import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -19,21 +20,21 @@ import {
     agentLabel,
     carrierName,
     centerOf,
-    durationParts,
+    formatDateTime,
     formatDay,
     formatDuration,
     formatEuros,
     formatInt,
     formatPhone,
-    outcome,
     percent,
 } from '@/lib/calls'
 
 /**
- * Appels : retrouver un appel, l'écouter, comprendre ce qui s'est passé.
- *   1. Recherche d'un numéro, période, résultat (décroché / perdu / transféré), centre, plateforme
+ * Appels : retrouver un appel, l'écouter, voir son détail.
+ *   1. Filtres (tous visibles, comme sur les autres pages) et période
  *   2. Résumé de la sélection : volumes, durées, argent
- *   3. Liste : ▶ écoute l'enregistrement dans le lecteur en bas de page ; un clic sur la ligne ouvre la fiche
+ *   3. Liste : ▶ dans la colonne Durée écoute la partie agent ou la partie transfert (lecteur en bas de page) ;
+ *      un clic sur la ligne ouvre la fiche
  *   4. Fiche de l'appel (panneau) : enregistrements, déroulé, appelant et ses autres appels, argent, qualité…
  * Dates et heures en heure de Paris.
  */
@@ -51,13 +52,13 @@ const PERIODS = [
     { key: 'custom', label: 'Dates' },
 ]
 const OUTCOMES = [
-    { key: '', label: 'Tous' },
-    { key: 'answered', label: 'Décrochés' },
-    { key: 'lost', label: 'Perdus' },
-    { key: 'transferred', label: 'Transférés' },
+    { value: 'answered', label: 'Décrochés par un agent' },
+    { value: 'lost', label: 'Non décrochés' },
+    { value: 'transferred', label: 'Transférés' },
 ]
 const DEFAULTS = {
-    q: '',
+    caller: '',
+    called: '',
     period: 'today',
     from: '',
     to: '',
@@ -83,12 +84,10 @@ const DEFAULTS = {
     per_page: 50,
     page: 1,
 }
-const ADVANCED = ['source_id', 'company_id', 'provider_id', 'brand_name', 'agent_name', 'carrier', 'duration_min', 'duration_max', 'audio_quality', 'blacklist_id', 'phone_agent_hangup', 'phone_reported_by_agent', 'phone_cant_provide_service']
+const FILTER_KEYS = ['caller', 'called', 'outcome', 'center', 'platform', 'has_recording', 'source_id', 'company_id', 'provider_id', 'brand_name', 'agent_name', 'carrier', 'duration_min', 'duration_max', 'audio_quality', 'blacklist_id', 'phone_agent_hangup', 'phone_reported_by_agent', 'phone_cant_provide_service']
 const isSet = (v) => (Array.isArray(v) ? v.length > 0 : v !== '' && v !== null && v !== undefined)
 
 const { filters, reset } = useFilters(DEFAULTS)
-const advancedCount = computed(() => ADVANCED.filter((k) => isSet(filters[k])).length)
-const showAdvanced = ref(advancedCount.value > 0)
 const hasFilters = computed(() =>
     Object.keys(DEFAULTS).some((k) => !['sort', 'dir', 'per_page', 'page'].includes(k) && isSet(filters[k]) && filters[k] !== DEFAULTS[k]),
 )
@@ -128,7 +127,7 @@ function choosePeriod(key) {
 // Paramètres envoyés au serveur
 const params = computed(() => {
     const p = { date_from: range.value.from, date_to: range.value.to }
-    for (const key of ['q', 'outcome', 'center', 'platform', 'has_recording', ...ADVANCED]) {
+    for (const key of FILTER_KEYS) {
         const v = filters[key]
         if (isSet(v)) p[key] = Array.isArray(v) ? v.join(',') : v
     }
@@ -137,7 +136,13 @@ const params = computed(() => {
 const query = (extra = {}) => new URLSearchParams({ ...params.value, ...extra }).toString()
 
 // ─── Données ───────────────────────────────────────────────────────────────────
-const { options: filterOptions, load: loadFilterOptions } = useFilterOptions('/data/calls/filter-options', {
+const {
+    options: filterOptions,
+    isLoading: isLoadingOptions,
+    isClearing: isClearingCache,
+    load: loadFilterOptions,
+    clearCache: clearFilterCache,
+} = useFilterOptions('/data/calls/filter-options', {
     brands: [],
     agents: [],
     carriers: [],
@@ -201,11 +206,11 @@ const summaryFigures = computed(() => {
     if (!s) return []
     return [
         { label: 'Appels', value: formatInt(s.calls) },
-        { label: 'Décrochés', value: formatInt(s.answered), sub: percent(s.answered, s.calls) },
-        { label: 'Perdus', value: formatInt(s.lost), sub: percent(s.lost, s.calls), warn: s.calls && s.lost / s.calls > 0.3 },
-        { label: 'Transférés', value: formatInt(s.transferred), sub: percent(s.transferred, s.answered) + ' des décrochés' },
-        { label: 'Attente avant décroché', value: formatDuration(s.avg_wait_answered), sub: 'en moyenne' },
-        { label: 'Avec un agent', value: formatDuration(s.avg_agent), sub: 'en moyenne' },
+        { label: 'Décrochés par un agent', value: formatInt(s.answered), sub: percent(s.answered, s.calls) },
+        { label: 'Non décrochés', value: formatInt(s.lost), sub: percent(s.lost, s.calls) },
+        { label: 'Transférés', value: formatInt(s.transferred), sub: `${percent(s.transferred, s.answered)} des décrochés` },
+        { label: 'Attente avant décroché', value: formatDuration(s.avg_wait_answered), sub: 'moyenne' },
+        { label: 'Durée agent', value: formatDuration(s.avg_agent), sub: 'moyenne des décrochés' },
         { label: 'CA', value: formatEuros(s.payout, 0) },
         { label: 'Bénéfice', value: formatEuros(s.payout - s.payout_source, 0), sub: `reverse ${formatEuros(s.payout_source, 0)}` },
     ]
@@ -265,7 +270,9 @@ function closePlayer() {
     audio?.pause()
     player.call = null
 }
-const isPlayingRow = (row) => player.call?.id === row.id && player.playing
+// Montant sans symbole, pour le détail « CA - reverse = » (le résultat porte le €)
+const amount = (v) => Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const isPlaying = (row, part) => player.call?.id === row.id && player.part === part && player.playing
 
 // Une seule source de son : un lecteur de la fiche qui démarre met en pause les autres
 function pauseOthers(e) {
@@ -321,15 +328,18 @@ onUnmounted(() => {
 })
 
 const COLUMNS = [
-    { key: 'play', label: '', class: 'w-10' },
     { key: 'called_at', label: 'Date', sortable: true },
     { key: 'caller', label: 'Appelant' },
-    { key: 'called', label: 'Numéro appelé' },
-    { key: 'outcome', label: 'Résultat' },
-    { key: 'brand', label: 'Marque' },
+    { key: 'called', label: 'Appelé' },
+    { key: 'provider', label: 'Provider' },
+    { key: 'company', label: 'Company' },
+    { key: 'source', label: 'Source' },
+    { key: 'brand_name', label: 'Marque', sortable: true },
+    { key: 'agent_name', label: 'Agent', sortable: true },
+    { key: 'carrier', label: 'Opé.' },
     { key: 'total_duration', label: 'Durée', sortable: true },
-    { key: 'payout', label: 'Bénéfice', sortable: true, class: 'text-right' },
-    { key: 'audio_quality', label: 'Qualité', sortable: true, class: 'text-right' },
+    { key: 'payout', label: 'Payout', sortable: true },
+    { key: 'audio_quality', label: 'Qualité', sortable: true },
 ]
 </script>
 
@@ -344,122 +354,99 @@ const COLUMNS = [
                 </template>
             </PageHeader>
 
-            <!-- Recherche et filtres -->
-            <div class="space-y-3 rounded-lg border border-gray-100 bg-white p-4">
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="relative w-full sm:w-72">
-                        <Search class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-gray-400" />
-                        <Input v-model="filters.q" type="search" placeholder="Numéro appelant ou appelé" class="h-9 pl-8" />
-                    </div>
-                    <div class="flex flex-wrap items-center gap-1">
-                        <button
-                            v-for="p in PERIODS"
-                            :key="p.key"
-                            type="button"
-                            class="h-9 rounded-md px-3 text-xs font-medium"
-                            :class="filters.period === p.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
-                            @click="choosePeriod(p.key)"
-                        >
-                            {{ p.label }}
-                        </button>
-                    </div>
+            <!-- Filtres -->
+            <FilterBar
+                title="Filtres"
+                :has-active-filters="hasFilters"
+                :is-loading="isLoadingOptions"
+                :is-clearing="isClearingCache"
+                :show-clear-cache="true"
+                :result-count="list.total"
+                :loading-results="list.loading"
+                @reset="reset"
+                @clear-cache="() => clearFilterCache('/data/calls/clear-filter-cache')"
+            >
+                <!-- Période -->
+                <div class="mb-3 flex flex-wrap items-center gap-1.5">
+                    <button
+                        v-for="p in PERIODS"
+                        :key="p.key"
+                        type="button"
+                        class="h-8 rounded-md px-3 text-xs font-medium"
+                        :class="filters.period === p.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
+                        @click="choosePeriod(p.key)"
+                    >
+                        {{ p.label }}
+                    </button>
                     <template v-if="filters.period === 'custom'">
-                        <Input v-model="filters.from" type="date" class="h-9 w-40" />
+                        <Input v-model="filters.from" type="date" class="ml-1.5 h-8 w-40" />
                         <span class="text-xs text-gray-400">→</span>
-                        <Input v-model="filters.to" type="date" class="h-9 w-40" />
+                        <Input v-model="filters.to" type="date" class="h-8 w-40" />
                     </template>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2">
-                    <div class="flex rounded-md border border-gray-200 p-0.5">
-                        <button
-                            v-for="o in OUTCOMES"
-                            :key="o.key"
-                            type="button"
-                            class="h-7 rounded px-2.5 text-xs font-medium"
-                            :class="filters.outcome === o.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                            @click="filters.outcome = o.key"
-                        >
-                            {{ o.label }}
-                        </button>
-                    </div>
-                    <div class="w-44">
-                        <FilterSelect
-                            v-model="filters.center"
-                            :options="[...centers.map((c) => ({ value: c.key, label: c.label })), { value: 'none', label: 'Sans centre (perdus, IA…)' }]"
-                            placeholder="Tous les centres"
-                            :searchable="false"
-                        />
-                    </div>
-                    <div class="w-40">
-                        <FilterSelect
-                            v-model="filters.platform"
-                            :options="[{ value: 'voxnode', label: 'Voxnode' }, { value: 'selfhosted', label: 'Notre serveur' }]"
-                            placeholder="Les 2 plateformes"
-                            :searchable="false"
-                        />
-                    </div>
-                    <label class="flex h-9 cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 text-xs text-gray-700 hover:bg-gray-50">
-                        <Checkbox :model-value="filters.has_recording === 'yes'" @update:model-value="(v) => (filters.has_recording = v ? 'yes' : '')" />
-                        Avec enregistrement
-                    </label>
-                    <button
-                        type="button"
-                        class="flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium"
-                        :class="advancedCount ? 'border-gray-900 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
-                        @click="showAdvanced = !showAdvanced"
-                    >
-                        <SlidersHorizontal class="size-3.5" />
-                        Plus de filtres{{ advancedCount ? ` · ${advancedCount}` : '' }}
-                        <ChevronUp v-if="showAdvanced" class="size-3.5" />
-                        <ChevronDown v-else class="size-3.5" />
-                    </button>
-                    <button v-if="hasFilters" type="button" class="ml-auto text-xs text-gray-500 underline hover:text-gray-900" @click="reset">Réinitialiser</button>
-                </div>
-
-                <div v-if="showAdvanced" class="grid grid-cols-1 gap-2 border-t border-gray-100 pt-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    <Input v-model="filters.caller" type="text" placeholder="N° appelant..." class="h-8" />
+                    <Input v-model="filters.called" type="text" placeholder="N° appelé..." class="h-8" />
                     <FilterSelect v-model="filters.source_id" :options="filterOptions.sources" placeholder="Toutes les sources" searchable multiple />
-                    <FilterSelect v-model="filters.company_id" :options="filterOptions.companies" placeholder="Toutes les companies" searchable multiple />
                     <FilterSelect v-model="filters.provider_id" :options="filterOptions.providers" placeholder="Tous les providers" searchable multiple />
+                    <FilterSelect v-model="filters.company_id" :options="filterOptions.companies" placeholder="Toutes les companies" searchable multiple />
                     <FilterSelect v-model="filters.brand_name" :options="filterOptions.brands" placeholder="Toutes les marques" searchable multiple />
                     <FilterSelect v-model="filters.agent_name" :options="filterOptions.agents" placeholder="Tous les agents" searchable multiple />
+                    <FilterSelect
+                        v-model="filters.center"
+                        :options="[...centers.map((c) => ({ value: c.key, label: c.label })), { value: 'none', label: 'Sans centre' }]"
+                        placeholder="Tous les centres"
+                        :searchable="false"
+                    />
                     <FilterSelect v-model="filters.carrier" :options="filterOptions.carriers" placeholder="Tous les opérateurs" multiple />
-                    <div class="flex items-center gap-1.5">
-                        <Input v-model="filters.duration_min" type="number" min="0" placeholder="Durée min (s)" class="h-8" />
-                        <Input v-model="filters.duration_max" type="number" min="0" placeholder="max (s)" class="h-8" />
-                    </div>
+                    <FilterSelect v-model="filters.outcome" :options="OUTCOMES" placeholder="Décroché ou non" :searchable="false" />
+                    <Input v-model="filters.duration_min" type="number" min="0" placeholder="Durée min (s)" class="h-8" />
+                    <Input v-model="filters.duration_max" type="number" min="0" placeholder="Durée max (s)" class="h-8" />
+                    <FilterSelect
+                        v-model="filters.has_recording"
+                        :options="[{ value: 'yes', label: 'Avec enregistrement' }]"
+                        placeholder="Enregistrement"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="filters.phone_agent_hangup"
+                        :options="[{ value: 'yes', label: 'Agent a raccroché' }, { value: 'no', label: 'Agent n’a pas raccroché' }]"
+                        placeholder="Agent raccroche"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="filters.phone_reported_by_agent"
+                        :options="[{ value: 'yes', label: 'Signalé par agent' }, { value: 'no', label: 'Non signalé' }]"
+                        placeholder="Signalé"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="filters.phone_cant_provide_service"
+                        :options="[{ value: 'yes', label: 'Service non fourni' }, { value: 'no', label: 'Service fourni' }]"
+                        placeholder="Service"
+                        :searchable="false"
+                    />
+                    <FilterSelect
+                        v-model="filters.platform"
+                        :options="[{ value: 'voxnode', label: 'Voxnode' }, { value: 'selfhosted', label: 'Notre serveur' }]"
+                        placeholder="Plateforme"
+                        :searchable="false"
+                    />
                     <FilterSelect
                         v-model="filters.audio_quality"
-                        :options="[{ value: 'degraded', label: 'Audio dégradé (< 3,1)' }, { value: 'measured', label: 'Qualité mesurée' }, { value: 'unmeasured', label: 'Qualité non mesurée' }]"
+                        :options="[{ value: 'degraded', label: 'Dégradés (score < 3,1)' }, { value: 'measured', label: 'Qualité mesurée' }, { value: 'unmeasured', label: 'Qualité non mesurée' }]"
                         placeholder="Qualité audio"
                         :searchable="false"
                     />
                     <FilterSelect
                         v-model="filters.blacklist_id"
-                        :options="[{ value: 'any', label: 'Appelants blacklistés' }, { value: 'none', label: 'Hors blacklist' }, ...filterOptions.blacklists.map((b) => ({ value: b.id, label: b.phonenumber }))]"
+                        :options="[{ value: 'any', label: 'Avec blacklist' }, { value: 'none', label: 'Sans blacklist' }, ...filterOptions.blacklists.map((b) => ({ value: b.id, label: b.phonenumber }))]"
                         placeholder="Blacklist"
                         searchable
                     />
-                    <FilterSelect
-                        v-model="filters.phone_agent_hangup"
-                        :options="[{ value: 'yes', label: 'L’agent a raccroché' }, { value: 'no', label: 'L’agent n’a pas raccroché' }]"
-                        placeholder="Raccroché par l’agent"
-                        :searchable="false"
-                    />
-                    <FilterSelect
-                        v-model="filters.phone_reported_by_agent"
-                        :options="[{ value: 'yes', label: 'Signalés par l’agent' }, { value: 'no', label: 'Non signalés' }]"
-                        placeholder="Signalés par l’agent"
-                        :searchable="false"
-                    />
-                    <FilterSelect
-                        v-model="filters.phone_cant_provide_service"
-                        :options="[{ value: 'yes', label: 'Service impossible' }, { value: 'no', label: 'Service rendu' }]"
-                        placeholder="Service rendu"
-                        :searchable="false"
-                    />
                 </div>
-            </div>
+            </FilterBar>
 
             <!-- Résumé de la sélection -->
             <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-100 bg-gray-100 sm:grid-cols-4 xl:grid-cols-8" :class="summary.loading && 'opacity-60'">
@@ -476,13 +463,13 @@ const COLUMNS = [
             <!-- Liste -->
             <div class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <table class="w-full text-[0.8125rem]">
                         <thead class="border-b border-gray-100 text-xs text-gray-400">
                             <tr>
                                 <th
                                     v-for="col in COLUMNS"
                                     :key="col.key"
-                                    class="px-2 py-2 text-left font-medium whitespace-nowrap uppercase tracking-wide first:pl-3"
+                                    class="px-1.5 py-2 text-left font-medium whitespace-nowrap uppercase tracking-wide first:pl-3"
                                     :class="[col.class, col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
                                     @click="col.sortable && toggleSort(col.key)"
                                 >
@@ -505,62 +492,73 @@ const COLUMNS = [
                                 v-for="row in list.items"
                                 :key="row.id"
                                 class="cursor-pointer border-t border-gray-50 hover:bg-gray-50"
-                                :class="[openId === row.id && 'bg-gray-50', player.call?.id === row.id && 'bg-amber-50/60 hover:bg-amber-50', row.blacklist_id && 'shadow-[inset_3px_0_0_#dc2626]']"
+                                :class="[openId === row.id && 'bg-gray-50', player.call?.id === row.id && 'bg-amber-50/60 hover:bg-amber-50', row.blacklist_id && 'bg-red-50 hover:bg-red-100/80']"
                                 @click="openId = row.id"
                             >
-                                <!-- Écoute -->
-                                <td class="py-1.5 pl-3">
-                                    <button
-                                        v-if="row.record_agent"
-                                        type="button"
-                                        class="flex size-7 items-center justify-center rounded-full border transition-colors"
-                                        :class="isPlayingRow(row) ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:border-gray-900 hover:text-gray-900'"
-                                        :title="isPlayingRow(row) ? 'Pause' : 'Écouter'"
-                                        @click.stop="play(row)"
-                                    >
-                                        <Pause v-if="isPlayingRow(row)" class="size-3.5" />
-                                        <Play v-else class="ml-0.5 size-3.5" />
-                                    </button>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap first:pl-3">
+                                    <div class="tabular-nums text-gray-900">{{ formatDateTime(row.called_at) }}</div>
                                 </td>
-                                <td class="px-2 py-1.5 whitespace-nowrap">
-                                    <div class="tabular-nums text-gray-900">{{ new Date(row.called_at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }) }}</div>
-                                    <div class="text-xs text-gray-400">{{ formatDay(row.called_at) }}</div>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap text-gray-700 tabular-nums">{{ row.caller || '-' }}</td>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap text-gray-700 tabular-nums">{{ row.called || '-' }}</td>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap">
+                                    <ColorBadge v-if="row.phonenumber?.provider" :color="row.phonenumber.provider.color" :label="row.phonenumber.provider.name" />
+                                    <span v-else class="text-xs text-gray-400">-</span>
                                 </td>
-                                <td class="px-2 py-1.5 whitespace-nowrap">
-                                    <div class="font-mono text-gray-900">{{ formatPhone(row.caller) }}</div>
-                                    <div class="text-xs text-gray-400">{{ carrierName(row.carrier) ?? '—' }}<template v-if="row.blacklist_id"> · <span class="text-red-600">blacklist</span></template></div>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap">
+                                    <ColorBadge v-if="row.phonenumber?.company" :color="row.phonenumber.company.color" :label="row.phonenumber.company.name" />
+                                    <span v-else class="text-xs text-gray-400">-</span>
                                 </td>
-                                <td class="px-2 py-1.5 whitespace-nowrap">
-                                    <div class="font-mono text-gray-700">{{ formatPhone(row.called) }}</div>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap">
                                     <ColorBadge v-if="row.source ?? row.phonenumber?.source" :color="(row.source ?? row.phonenumber.source).color" :label="(row.source ?? row.phonenumber.source).name" />
+                                    <span v-else class="text-xs text-gray-400">-</span>
                                 </td>
-                                <td class="px-2 py-1.5 whitespace-nowrap">
-                                    <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="outcome(row).tone">{{ outcome(row).label }}</span>
-                                    <div class="mt-0.5 text-xs text-gray-500">
-                                        {{ agentLabel(row.agent_name) ?? '—' }}<template v-if="centerOf(row.agent_name, centers)"> · {{ centerOf(row.agent_name, centers).label }}</template>
+                                <td class="px-1.5 py-1.5 text-gray-900">{{ row.brand_name || '-' }}</td>
+                                <td class="px-1.5 py-1.5 whitespace-nowrap">
+                                    <div class="text-xs text-gray-900">{{ agentLabel(row.agent_name) ?? '-' }}</div>
+                                    <div v-if="centerOf(row.agent_name, centers)" class="text-xs text-gray-400">{{ centerOf(row.agent_name, centers).label }}</div>
+                                </td>
+                                <td class="px-1.5 py-1.5 text-xs whitespace-nowrap text-gray-900">{{ carrierName(row.carrier) ?? '-' }}</td>
+                                <!-- Durée totale, partie agent et partie transfert, chacune avec son écoute -->
+                                <td class="px-1.5 py-1.5 whitespace-nowrap">
+                                    <div class="flex items-center gap-1">
+                                        <span class="w-10 tabular-nums text-gray-700">{{ formatDuration(row.total_duration) }}</span>
+                                        <component
+                                            :is="row.record_agent ? 'button' : 'span'"
+                                            class="flex items-center gap-1 rounded px-1 py-0.5 text-xs tabular-nums"
+                                            :class="row.record_agent ? (isPlaying(row, 'agent') ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-200') : 'text-gray-400'"
+                                            :title="row.record_agent ? (isPlaying(row, 'agent') ? 'Pause' : 'Écouter la partie agent') : 'Durée agent'"
+                                            @click.stop="row.record_agent && play(row, 'agent')"
+                                        >
+                                            <Pause v-if="isPlaying(row, 'agent')" class="size-3" />
+                                            <Play v-else-if="row.record_agent" class="size-3" />
+                                            <User v-else class="size-3" />
+                                            {{ formatDuration(row.duration_agent) }}
+                                        </component>
+                                        <component
+                                            :is="row.record_transfer ? 'button' : 'span'"
+                                            class="flex items-center gap-1 rounded px-1 py-0.5 text-xs tabular-nums"
+                                            :class="row.record_transfer ? (isPlaying(row, 'transfer') ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-200') : 'text-gray-400'"
+                                            :title="row.record_transfer ? (isPlaying(row, 'transfer') ? 'Pause' : 'Écouter la partie transfert') : 'Durée transfert'"
+                                            @click.stop="row.record_transfer && play(row, 'transfer')"
+                                        >
+                                            <Pause v-if="isPlaying(row, 'transfer')" class="size-3" />
+                                            <Play v-else-if="row.record_transfer" class="size-3" />
+                                            <PhoneForwarded v-else class="size-3" />
+                                            {{ formatDuration(row.duration_transfer) }}
+                                        </component>
                                     </div>
                                 </td>
-                                <td class="max-w-[12rem] truncate px-2 py-1.5 text-gray-700" :title="row.brand_name">{{ row.brand_name || '—' }}</td>
-                                <td class="px-2 py-1.5 whitespace-nowrap">
-                                    <div class="tabular-nums text-gray-900">{{ formatDuration(row.total_duration) }}</div>
-                                    <!-- Attente, agent, transfert -->
-                                    <div v-if="durationParts(row).total" class="mt-1 flex h-1.5 w-20 overflow-hidden rounded-full bg-gray-100" :title="`Attente ${formatDuration(durationParts(row).wait)} · agent ${formatDuration(durationParts(row).agent)} · transfert ${formatDuration(durationParts(row).transfer)}`">
-                                        <div class="bg-amber-300" :style="{ width: `${(durationParts(row).wait / durationParts(row).total) * 100}%` }" />
-                                        <div class="bg-gray-900" :style="{ width: `${(durationParts(row).agent / durationParts(row).total) * 100}%` }" />
-                                        <div class="bg-blue-400" :style="{ width: `${(durationParts(row).transfer / durationParts(row).total) * 100}%` }" />
+                                <td class="px-1.5 py-1.5 whitespace-nowrap">
+                                    <div v-if="row.payout !== null && row.payout !== undefined" >
+                                        <span class="text-xs text-gray-500">{{ amount(row.payout) }} - {{ amount(row.payout_source || 0) }} = </span>
+                                        <span class="tabular-nums">{{ formatEuros(Number(row.payout) - Number(row.payout_source || 0)) }}</span>
                                     </div>
+                                    <span v-else class="text-sm text-gray-400">-</span>
                                 </td>
-                                <td class="px-2 py-1.5 text-right whitespace-nowrap">
-                                    <template v-if="row.payout !== null && row.payout !== undefined">
-                                        <div class="tabular-nums text-gray-900">{{ formatEuros(Number(row.payout) - Number(row.payout_source || 0)) }}</div>
-                                        <div class="text-xs text-gray-400 tabular-nums">CA {{ formatEuros(row.payout) }}</div>
-                                    </template>
-                                    <span v-else class="text-gray-400">—</span>
-                                </td>
-                                <td class="px-2 py-1.5 pr-3 text-right whitespace-nowrap">
-                                    <div :class="qualityClass(row.audio_quality === null ? null : Number(row.audio_quality)) || 'text-gray-400'">
+                                <td class="px-1.5 py-1.5 pr-3 whitespace-nowrap">
+                                    <span  :class="qualityClass(row.audio_quality === null ? null : Number(row.audio_quality)) || 'text-gray-700'">
                                         {{ row.audio_quality === null || row.audio_quality === undefined ? '—' : formatQuality(Number(row.audio_quality), 1) }}
-                                    </div>
+                                    </span>
                                     <div class="text-xs text-gray-400">{{ row.platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode' }}</div>
                                 </td>
                             </tr>

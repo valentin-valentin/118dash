@@ -14,7 +14,6 @@ import {
     formatDuration,
     formatEuros,
     formatPhone,
-    outcome,
     platformLabel,
 } from '@/lib/calls'
 
@@ -55,7 +54,6 @@ watch(() => props.callId, (id) => id && load(id), { immediate: true })
 
 const call = computed(() => detail.value?.call ?? null)
 const parts = computed(() => (call.value ? durationParts(call.value) : null))
-const result = computed(() => (call.value ? outcome(call.value) : null))
 const center = computed(() => (call.value ? centerOf(call.value.agent_name, props.centers) : null))
 const source = computed(() => call.value?.source ?? call.value?.phonenumber?.source ?? null)
 const quality = computed(() => detail.value?.quality ?? null)
@@ -152,7 +150,6 @@ function fullDate(value) {
             <!-- En-tête -->
             <header>
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="result.tone">{{ result.label }}</span>
                     <span class="text-xs text-gray-500">{{ platformLabel(call.platform) }}</span>
                     <span v-if="call.blacklist_id" class="rounded bg-red-600 px-1.5 py-0.5 text-xs font-medium text-white">Blacklist</span>
                 </div>
@@ -180,7 +177,7 @@ function fullDate(value) {
                         <audio :key="r.url" :src="r.url" controls preload="none" class="h-9 w-full" />
                     </div>
                 </div>
-                <p v-else class="text-gray-500">Pas d'enregistrement : {{ result.key === 'lost' ? "aucun agent n'a décroché" : "aucun fichier pour cet appel" }}.</p>
+                <p v-else class="text-gray-500">Pas d'enregistrement{{ parts.agent ? '' : " : aucun agent n'a décroché" }}.</p>
             </section>
 
             <!-- Déroulé -->
@@ -327,9 +324,8 @@ function fullDate(value) {
                             class="flex w-full items-center gap-3 px-3 py-1.5 text-left text-xs hover:bg-gray-50"
                             @click="inPanel && emit('open', o.id)"
                         >
-                            <span class="w-24 shrink-0 tabular-nums text-gray-700">{{ formatDateTime(o.called_at) }}</span>
-                            <span class="w-16 shrink-0"><span class="rounded px-1 py-0.5" :class="outcome(o).tone">{{ outcome(o).label }}</span></span>
-                            <span class="min-w-0 flex-1 truncate text-gray-600">{{ [agentLabel(o.agent_name), o.brand_name].filter(Boolean).join(' · ') || '—' }}</span>
+                            <span class="w-32 shrink-0 tabular-nums text-gray-700">{{ formatDateTime(o.called_at) }}</span>
+                            <span class="min-w-0 flex-1 truncate text-gray-600">{{ [agentLabel(o.agent_name) ?? 'Sans agent', o.brand_name].filter(Boolean).join(' · ') }}</span>
                             <Play v-if="o.record_agent" class="size-3 shrink-0 text-gray-400" />
                             <span class="w-10 shrink-0 text-right tabular-nums text-gray-700">{{ formatDuration(o.total_duration) }}</span>
                         </component>
