@@ -64,7 +64,7 @@ class BrandCheckController extends Controller
 
     private function period(Request $request): array
     {
-        $days = (int) ($request->validate(['days' => 'nullable|integer|in:7,30'])['days'] ?? 7);
+        $days = (int) ($request->validate(['days' => 'nullable|integer|in:7,30'])['days'] ?? 30);
         $to = now(self::TZ)->endOfDay();
 
         return [$to->copy()->subDays($days - 1)->startOfDay(), $to, $days];

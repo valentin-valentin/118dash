@@ -12,13 +12,13 @@ import { agentLabel, formatDateTime, formatDuration, formatPhone, platformLabel 
 
 /**
  * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu.
- * Une seule mesure : la médiane de la durée réelle des transferts, sur 7 ou 30 jours (au moins 5 transferts mesurés).
+ * Une seule mesure : la médiane de la durée réelle des transferts, sur 30 jours par défaut, ou 7 (au moins 5 transferts mesurés).
  * Seules les marques sous le seuil sont listées, la plus basse en premier ; les 10 derniers transferts s'écoutent en un clic.
  * À l'ouverture, la page mesure d'abord les transferts pas encore mesurés (taille de chaque enregistrement).
  */
 const xsrf = () => decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '')
 
-const days = ref(7)
+const days = ref(30)
 const threshold = ref(60)
 const THRESHOLDS = [30, 60, 120]
 // Nombre minimal de transferts mesurés pour qu'une marque soit listée
@@ -86,7 +86,7 @@ watch([threshold, minMeasured], () => {
 onMounted(load)
 
 function resetFilters() {
-    days.value = 7
+    days.value = 30
     threshold.value = 60
     minMeasured.value = 3
 }
@@ -130,7 +130,7 @@ async function markChecked(b) {
         <div class="space-y-5 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Vérifier les transferts' }]" />
 
-            <FilterBar title="Filtres" :has-active-filters="days !== 7 || threshold !== 60 || minMeasured !== 3" @reset="resetFilters">
+            <FilterBar title="Filtres" :has-active-filters="days !== 30 || threshold !== 60 || minMeasured !== 3" @reset="resetFilters">
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                     <div class="flex items-center gap-1.5">
                         <button
