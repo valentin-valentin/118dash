@@ -61,28 +61,60 @@ class SipServerController extends Controller
             ...$live,
             ...$slow,
             // Appels en cours chez Voxnode (relus toutes les 10 s au plus)
-            'voxnode' => config('services.voxnode_cc.key')
-                ? Cache::remember('voxnode-cc:ongoing', 10, fn () => $this->voxnodeOngoingCalls())
-                : ['ok' => false, 'configured' => false, 'error' => 'VOXNODE_CC_KEY non renseignée'],
+            'voxnode' => Cache::remember('voxnode-cc:ongoing', 10, fn () => $this->voxnodeOngoingCalls()),
         ]);
     }
 
     /**
-     * Appels en cours chez Voxnode, appelant au format +33.
-     * stage : ivr (accueil) | forced (attente forcée) | queue (vraie attente) | waiting (attente, étape
-     * non précisée : ancien format « queue ») | agent | transferred.
-     * Un appel « transferred » avec un agent est compté avec un agent (Voxnode ne renvoie pas toujours « agent »).
+     * Appels bruts de Voxnode. Voxnode limite le nombre de requêtes : on passe par voxnode118, qui les relit
+     * une seule fois toutes les 10 s pour toute l'application (régulateur compris). Appel direct à Voxnode
+     * seulement si cette route n'existe pas encore (voxnode118 pas déployé) ou si l'API téléphonie n'est pas branchée.
      */
-    private function voxnodeOngoingCalls(): array
+    private function voxnodeRawCalls(): array
     {
+        $url = config('services.telephony_api.url');
+        $token = config('services.telephony_api.token');
+        if ($url && $token) {
+            try {
+                $response = Http::withToken($token)->acceptJson()->timeout(5)->get($url . '/voxnode-calls');
+                if ($response->status() !== 404) {
+                    return $response->successful() && is_array($response->json('calls'))
+                        ? ['ok' => true, 'calls' => $response->json('calls')]
+                        : ['ok' => false, 'error' => $response->json('error') ?? "Erreur HTTP {$response->status()}"];
+                }
+            } catch (Throwable) {
+                return ['ok' => false, 'error' => 'API téléphonie injoignable'];
+            }
+        }
+
+        // Secours : appel direct (Voxnode répond parfois {"error": …} en HTTP 200, limite de requêtes atteinte)
         try {
             $response = Http::withHeaders(['API-KEY' => config('services.voxnode_cc.key')])
                 ->acceptJson()->timeout(5)->get(config('services.voxnode_cc.url'));
-        } catch (Throwable $e) {
+        } catch (Throwable) {
             return ['ok' => false, 'error' => 'API Voxnode injoignable'];
         }
         if (!$response->successful()) {
             return ['ok' => false, 'error' => "Erreur HTTP {$response->status()}"];
+        }
+        if ($response->json('error') || !is_array($response->json('calls'))) {
+            return ['ok' => false, 'error' => $response->json('error') ?? 'Réponse Voxnode inattendue'];
+        }
+
+        return ['ok' => true, 'calls' => $response->json('calls')];
+    }
+
+    /**
+     * Appels en cours chez Voxnode, appelant au format +33.
+     * stage : welcome (accueil) | forced (attente forcée) | queue (en attente d'un agent) | waiting (attente sans
+     * détail : ancien format « queue ») | agent | transferred | agent_or_transferred (tant que Voxnode n'envoie
+     * jamais « agent », « transferred » couvre les appels avec un agent et les transférés).
+     */
+    private function voxnodeOngoingCalls(): array
+    {
+        $raw = $this->voxnodeRawCalls();
+        if (!$raw['ok']) {
+            return $raw;
         }
 
         $stages = [
@@ -93,7 +125,7 @@ class SipServerController extends Controller
             'agent' => 'agent',
             'transferred' => 'transferred',
         ];
-        $raw = collect($response->json('calls') ?? []);
+        $raw = collect($raw['calls']);
         // Tant que Voxnode n'envoie pas « agent », « transferred » regroupe les appels avec un agent et les transférés
         $agentStatusSent = $raw->contains(fn ($c) => ($c['status'] ?? null) === 'agent');
         $calls = $raw->map(function ($c) use ($stages, $agentStatusSent) {
