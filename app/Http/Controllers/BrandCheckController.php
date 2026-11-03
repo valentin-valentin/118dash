@@ -23,7 +23,8 @@ use Throwable;
  *   - Voxnode : duration_transfer comprend une attente avant la mise en relation ; la vraie durée est celle de
  *     l'enregistrement record_transfer, un mp3 à débit constant de 32 kbit/s : durée = Content-Length × 8 / 32000.
  *     Mesurée par une requête HEAD, à l'ouverture de la page, pour les transferts de la période pas encore mesurés.
- *     65535 = enregistrement introuvable ou illisible (pas remesuré).
+ *     Pas d'enregistrement (adresse vide, ou fichier absent : 403/404) = aucun son de mise en relation = 0 s.
+ *     65535 = fichier présent mais taille inconnue (ignoré, pas remesuré).
  *   - Notre serveur : duration_transfer, qui part du décroché de la marque.
  * Le service interne (+33184131572) n'est pas une marque : exclu. Jours en heure de Paris.
  */
@@ -64,7 +65,7 @@ class BrandCheckController extends Controller
 
     private function period(Request $request): array
     {
-        $days = (int) ($request->validate(['days' => 'nullable|integer|in:7,30'])['days'] ?? 30);
+        $days = (int) ($request->validate(['days' => 'nullable|integer|in:7,30,90'])['days'] ?? 30);
         $to = now(self::TZ)->endOfDay();
 
         return [$to->copy()->subDays($days - 1)->startOfDay(), $to, $days];
@@ -94,8 +95,16 @@ class BrandCheckController extends Controller
             foreach ($batch->chunk(150, true) as $chunk) {
                 $responses = Http::pool(fn (Pool $pool) => $chunk->map(fn ($url, $id) => $pool->as((string) $id)->timeout(10)->head($url))->all());
                 foreach ($responses as $id => $response) {
-                    $length = $response instanceof Throwable || !$response->successful() ? null : (int) $response->header('Content-Length');
-                    $sizes[$id] = $length ? min(self::UNREADABLE - 1, (int) round($length / self::MP3_BYTES_PER_SECOND)) : self::UNREADABLE;
+                    if ($response instanceof Throwable || $response->serverError()) {
+                        continue; // erreur passagère (délai, serveur) : remesuré à la prochaine ouverture
+                    }
+                    if (in_array($response->status(), [403, 404], true)) {
+                        $sizes[$id] = 0; // fichier jamais créé : aucun son de mise en relation
+                    } elseif ($response->successful() && $response->hasHeader('Content-Length')) {
+                        $sizes[$id] = min(self::UNREADABLE - 1, (int) round((int) $response->header('Content-Length') / self::MP3_BYTES_PER_SECOND));
+                    } else {
+                        $sizes[$id] = self::UNREADABLE;
+                    }
                 }
             }
             foreach ($sizes as $id => $seconds) {
@@ -115,6 +124,7 @@ class BrandCheckController extends Controller
         $params = $request->validate([
             'threshold' => 'nullable|integer|min:1|max:3600',
             'min' => 'nullable|integer|min:1|max:100',
+            'hangup' => 'nullable|in:caller,callee,undefined',
         ]);
         $threshold = (int) ($params['threshold'] ?? 60);
         $minMeasured = (int) ($params['min'] ?? self::MIN_MEASURED);
@@ -125,7 +135,8 @@ class BrandCheckController extends Controller
         $byKey = $known->keyBy(fn ($b) => $b->name . '|' . $this->lastDigits($b->phonenumber));
 
         $rows = $this->transfers($from, $to)
-            ->selectRaw('id, called_at, UNIX_TIMESTAMP(called_at) AS ts, caller, agent_name, duration_agent, duration_transfer, transfer_real_duration, platform, record_transfer, brand_name, brand_phonenumber')
+            ->when($params['hangup'] ?? null, fn ($q, $hangup) => $q->where('who_hangup', $hangup))
+            ->selectRaw('id, called_at, UNIX_TIMESTAMP(called_at) AS ts, caller, agent_name, duration_agent, who_hangup, duration_transfer, transfer_real_duration, platform, record_transfer, brand_name, brand_phonenumber')
             ->orderByDesc('called_at')
             ->get();
 
@@ -148,11 +159,13 @@ class BrandCheckController extends Controller
                     'id' => $r->id,
                     'called_at' => $r->called_at,
                     'seconds' => $real,
-                    'record_transfer' => $r->record_transfer ?: null,
+                    // Fichier Voxnode absent (mesuré 0 s) : rien à écouter
+                    'record_transfer' => $r->record_transfer && !($real === 0 && $r->platform !== 'selfhosted') ? $r->record_transfer : null,
                     'caller' => $r->caller,
                     'agent_name' => $r->agent_name,
                     'duration_agent' => (int) $r->duration_agent,
                     'platform' => $r->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
+                    'who_hangup' => $r->who_hangup ?: null,
                 ];
             }
         }
@@ -205,6 +218,10 @@ class BrandCheckController extends Controller
     {
         if ($r->platform === 'selfhosted') {
             return (int) $r->duration_transfer;
+        }
+        // Transfert Voxnode sans enregistrement : aucun son de mise en relation, compté 0 s
+        if (($r->record_transfer ?? '') === '') {
+            return 0;
         }
         $real = $r->transfer_real_duration;
 

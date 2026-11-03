@@ -25,6 +25,15 @@ const THRESHOLDS = [30, 60, 120]
 // Nombre minimal de transferts mesurés pour qu'une marque soit listée
 const minMeasured = ref(3)
 const MINIMUMS = [1, 3, 5, 10]
+// Qui a raccroché (calls.who_hangup) : seuls les transferts correspondants sont comptés
+const hangup = ref('')
+const HANGUPS = [
+    { value: '', label: 'Tous' },
+    { value: 'caller', label: "L'appelant" },
+    { value: 'callee', label: "L'appelé" },
+    { value: 'undefined', label: 'Inconnu' },
+]
+const hangupLabel = (v) => HANGUPS.find((h) => h.value === v && v)?.label ?? '-'
 
 const data = ref(null)
 const loading = ref(false)
@@ -60,7 +69,8 @@ async function loadData() {
     const seconds = Number(threshold.value)
     const min = Number(minMeasured.value)
     if (!Number.isInteger(seconds) || seconds < 1 || !Number.isInteger(min) || min < 1) return
-    const res = await fetch(`/data/brand-checks?days=${days.value}&threshold=${seconds}&min=${min}`, { headers: { Accept: 'application/json' } })
+    const query = new URLSearchParams({ days: days.value, threshold: seconds, min, ...(hangup.value ? { hangup: hangup.value } : {}) })
+    const res = await fetch(`/data/brand-checks?${query}`, { headers: { Accept: 'application/json' } })
     if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
     const json = await res.json()
     if (id === requestId) data.value = json
@@ -80,7 +90,7 @@ async function load() {
 }
 watch(days, load)
 let thresholdTimer = null
-watch([threshold, minMeasured], () => {
+watch([threshold, minMeasured, hangup], () => {
     clearTimeout(thresholdTimer)
     thresholdTimer = setTimeout(() => loadData().catch((e) => (error.value = e.message)), 400)
 })
@@ -90,6 +100,7 @@ function resetFilters() {
     days.value = 30
     threshold.value = 60
     minMeasured.value = 3
+    hangup.value = ''
 }
 
 // Écoute : un seul enregistrement à la fois
@@ -147,11 +158,11 @@ async function markChecked(b) {
         <div class="space-y-5 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Vérifier les transferts' }]" />
 
-            <FilterBar title="Filtres" :has-active-filters="days !== 30 || threshold !== 60 || minMeasured !== 3" @reset="resetFilters">
+            <FilterBar title="Filtres" :has-active-filters="days !== 30 || threshold !== 60 || minMeasured !== 3 || hangup !== ''" @reset="resetFilters">
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                     <div class="flex items-center gap-1.5">
                         <button
-                            v-for="d in [7, 30]"
+                            v-for="d in [7, 30, 90]"
                             :key="d"
                             type="button"
                             class="h-8 rounded-md px-3 text-xs font-medium"
@@ -192,6 +203,19 @@ async function markChecked(b) {
                             {{ m }}
                         </button>
                     </div>
+                    <div class="flex items-center gap-1.5 text-xs text-gray-600">
+                        Raccroché par
+                        <button
+                            v-for="h in HANGUPS"
+                            :key="h.value"
+                            type="button"
+                            class="h-8 rounded-md px-2.5 font-medium"
+                            :class="hangup === h.value ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
+                            @click="hangup = h.value"
+                        >
+                            {{ h.label }}
+                        </button>
+                    </div>
                 </div>
             </FilterBar>
 
@@ -203,7 +227,7 @@ async function markChecked(b) {
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Voxnode :</dt>
-                    <dd class="ml-1 inline">durée de l'enregistrement audio du transfert.</dd>
+                    <dd class="ml-1 inline">durée de l'enregistrement audio du transfert ; 0 s quand il n'y a pas d'enregistrement.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Mise à jour :</dt>
@@ -256,7 +280,7 @@ async function markChecked(b) {
                             </tr>
                             <tr v-for="b in sortedBrands" :key="b.key" class="border-t border-gray-50 align-top">
                                 <td class="px-4 py-2.5">
-                                    <div class="font-medium text-gray-900">{{ b.name }}</div>
+                                    <div class="font-medium" :class="b.name ? 'text-gray-900' : 'text-gray-400'">{{ b.name || 'Sans nom de marque' }}</div>
                                     <div class="flex items-center text-xs text-gray-500 tabular-nums">
                                         <button
                                             v-if="callable(b.phonenumber)"
@@ -302,6 +326,7 @@ async function markChecked(b) {
                                                     <dt class="opacity-70">Appelant</dt><dd class="tabular-nums">{{ formatPhone(t.caller) }}</dd>
                                                     <dt class="opacity-70">Agent</dt><dd>{{ agentLabel(t.agent_name) ?? '-' }}<template v-if="t.duration_agent"> ({{ formatDuration(t.duration_agent) }})</template></dd>
                                                     <dt class="opacity-70">Transfert</dt><dd class="tabular-nums">{{ formatDuration(t.seconds) }}</dd>
+                                                    <dt class="opacity-70">Raccroché par</dt><dd>{{ hangupLabel(t.who_hangup) }}</dd>
                                                     <dt class="opacity-70">Plateforme</dt><dd>{{ platformLabel(t.platform) }}</dd>
                                                 </dl>
                                                 <p v-if="!t.record_transfer" class="mt-1 opacity-70">Pas d'enregistrement</p>
