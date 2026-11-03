@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, Link } from '@inertiajs/vue3'
 import { ChevronRight, LoaderCircle } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
 import FilterBar from '@/components/FilterBar.vue'
@@ -11,12 +11,12 @@ import { Input } from '@/components/ui/input'
 import { agentLabel, formatDateTime, formatDuration } from '@/lib/calls'
 
 /**
- * Marques à vérifier : marques dont le numéro de transfert ne répond peut-être plus normalement.
+ * Vérifier les transferts (page Marques) : marques dont le numéro de transfert ne répond peut-être plus normalement.
  * Pour chaque marque (nom + numéro de transfert), sur 7 ou 30 jours :
  *   - durée réelle des mises en relation (sans l'attente Voxnode avant la mise en relation) ;
- *   - part de mises en relation de moins de 15 s (message « numéro non attribué », répondeur « fermé », occupé…) ;
+ *   - part de mises en relation de moins d'une minute (anormalement courtes) ;
  *   - part sans enregistrement, part des clients qui rappellent dans l'heure ;
- *   - part de moins de 15 s sur les 7 derniers jours et les 7 jours d'avant (un numéro qui change se voit là).
+ *   - part de moins d'une minute sur les 7 derniers jours et les 7 jours d'avant (un numéro qui change se voit là).
  * À l'ouverture, la page mesure d'abord les transferts pas encore mesurés (taille de chaque enregistrement).
  */
 const xsrf = () => decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '')
@@ -153,25 +153,32 @@ function pauseOthers(e) {
     document.querySelectorAll('audio').forEach((a) => a !== e.target && a.pause())
 }
 
+const DEFINITIONS = [
+    { term: 'Durée réelle', text: "durée de la mise en relation avec la marque, sans l'attente qui la précède." },
+    { term: 'Moins d’1 min', text: 'part des transferts dont la durée réelle est inférieure à une minute.' },
+    { term: 'Sans enregistrement', text: 'part des transferts dont la durée réelle est inconnue, faute d’enregistrement de la mise en relation.' },
+    { term: 'Rappellent dans l’heure', text: 'part des transferts suivis d’un nouvel appel du même numéro dans l’heure.' },
+]
+
 const COLUMNS = [
     { key: 'name', label: 'Marque' },
     { key: 'transfers', label: 'Transferts', right: true },
     { key: 'median', label: 'Durée réelle médiane', right: true },
-    { key: 'short_pct', label: 'Moins de 15 s', right: true },
+    { key: 'short_pct', label: 'Moins d’1 min', right: true },
     { key: 'no_recording_pct', label: 'Sans enregistrement', right: true },
     { key: 'called_back_pct', label: "Rappellent dans l'heure", right: true },
-    { key: 'week_short_pct', label: '< 15 s, 7 derniers jours', right: true },
-    { key: 'prev_short_pct', label: '< 15 s, 7 jours d’avant', right: true },
+    { key: 'week_short_pct', label: '< 1 min, 7 derniers jours', right: true },
+    { key: 'prev_short_pct', label: '< 1 min, 7 jours d’avant', right: true },
     { key: 'trend', label: 'Écart', right: true },
 ]
 </script>
 
 <template>
-    <Head title="Marques à vérifier" />
+    <Head title="Vérifier les transferts" />
 
     <AppLayout>
         <div class="space-y-5 p-6">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques à vérifier' }]" />
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Vérifier les transferts' }]" />
 
             <FilterBar title="Filtres" :has-active-filters="!!search || !minTransfers || showChecked" @reset="resetFilters">
                 <div class="flex flex-wrap items-center gap-3">
@@ -200,11 +207,13 @@ const COLUMNS = [
                 </div>
             </FilterBar>
 
-            <p class="text-xs text-gray-500">
-                Durée réelle : durée de la mise en relation avec la marque, sans l'attente Voxnode qui la précède.
-                Moins de 15 s : le plus souvent un message « numéro non attribué », un répondeur « fermé » ou occupé.
-                Rappellent dans l'heure : même numéro qui rappelle dans l'heure suivant la fin du transfert.
-            </p>
+            <!-- Définition de chaque colonne, valable pour Voxnode comme pour notre serveur -->
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-1.5 rounded-lg border border-gray-100 bg-white px-4 py-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                <div v-for="d in DEFINITIONS" :key="d.term">
+                    <dt class="inline font-medium text-gray-700">{{ d.term }} :</dt>
+                    <dd class="inline text-gray-500"> {{ d.text }}</dd>
+                </div>
+            </dl>
 
             <!-- Mesure des transferts pas encore mesurés -->
             <div v-if="measure.running && measure.total" class="rounded-lg border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700">
@@ -246,7 +255,10 @@ const COLUMNS = [
                                     <td class="pl-3 text-gray-400"><ChevronRight class="size-4 transition-transform" :class="open === b.key && 'rotate-90'" /></td>
                                     <td class="px-2 py-2">
                                         <div class="font-medium text-gray-900">{{ b.name }}</div>
-                                        <div class="text-xs text-gray-500 tabular-nums">{{ phone(b.phonenumber) }}</div>
+                                        <div class="text-xs text-gray-500 tabular-nums">
+                                            {{ phone(b.phonenumber) }}
+                                            <Link v-if="b.brand_id" :href="`/brands/${b.brand_id}/edit`" class="ml-1.5 text-gray-500 underline hover:text-gray-900" @click.stop>Modifier</Link>
+                                        </div>
                                     </td>
                                     <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ b.transfers.toLocaleString('fr-FR') }}</td>
                                     <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ formatDuration(b.median) }}</td>

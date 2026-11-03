@@ -24,6 +24,7 @@ class Brand extends Model
         'image',
         'icon',
         'display_time',
+        'transfer_announcement',
     ];
 
     protected $casts = [
@@ -32,6 +33,8 @@ class Brand extends Model
         'can_offer_callback' => 'boolean',
         'display_118500' => 'boolean',
         'display_time' => 'boolean',
+        'transfer_announcement' => 'boolean',
+        'transfer_checked_at' => 'datetime',
     ];
 
     public function calls(): HasMany

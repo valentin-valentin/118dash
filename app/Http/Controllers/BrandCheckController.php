@@ -33,8 +33,8 @@ class BrandCheckController extends Controller
 
     private const MP3_BYTES_PER_SECOND = 32000 / 8;
 
-    // Mise en relation de moins de 15 s : message « numéro non attribué », répondeur « fermé », occupé…
-    private const SHORT_SECONDS = 15;
+    // Mise en relation de moins d'une minute : anormalement courte pour un client qui voulait joindre la marque
+    private const SHORT_SECONDS = 60;
 
     private const MEASURE_BATCH = 600;
 
@@ -154,8 +154,9 @@ class BrandCheckController extends Controller
             unset($b);
         }
 
-        $checked = DB::table('brands')->whereNotNull('transfer_checked_at')->get(['name', 'phonenumber', 'transfer_checked_at'])
-            ->mapWithKeys(fn ($b) => [$b->name . '|' . substr(preg_replace('/\D/', '', (string) $b->phonenumber), -9) => $b->transfer_checked_at]);
+        // Fiche de la marque (nom + 9 derniers chiffres du numéro) : lien de modification et date de vérification
+        $known = DB::table('brands')->whereNotNull('phonenumber')->where('phonenumber', '!=', '')->get(['id', 'name', 'phonenumber', 'transfer_checked_at'])
+            ->keyBy(fn ($b) => $b->name . '|' . substr(preg_replace('/\D/', '', (string) $b->phonenumber), -9));
 
         $result = [];
         foreach ($brands as $key => $b) {
@@ -179,7 +180,8 @@ class BrandCheckController extends Controller
                 'prev_short_pct' => $b['prev'][0] ? round($b['prev'][1] / $b['prev'][0] * 100, 1) : null,
                 'prev_measured' => $b['prev'][0],
                 'last_at' => $b['last_at'],
-                'checked_at' => $checked[$key] ?? null,
+                'brand_id' => $known[$key]->id ?? null,
+                'checked_at' => $known[$key]->transfer_checked_at ?? null,
             ];
         }
 

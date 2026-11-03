@@ -22,6 +22,7 @@ use App\Http\Controllers\TelephonyController;
 use App\Http\Controllers\SourcePaymentController;
 use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\BrandCheckController;
+use App\Http\Controllers\BrandController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -93,7 +94,12 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/rejected-calls', [RejectedCallController::class, 'index'])->name('rejected-calls.index');
     Route::get('/wait-loss', [WaitLossController::class, 'index'])->name('wait-loss.index');
     Route::get('/assistant', [AssistantController::class, 'index'])->name('assistant.index');
-    Route::get('/brand-checks', [BrandCheckController::class, 'index'])->name('brand-checks.index');
+    Route::get('/brands', [BrandController::class, 'index'])->name('brands.index');
+    Route::get('/brands/create', [BrandController::class, 'create'])->name('brands.create');
+    Route::post('/brands', [BrandController::class, 'store'])->name('brands.store');
+    Route::get('/brands/transfer-check', [BrandCheckController::class, 'index'])->name('brands.transfer-check');
+    Route::get('/brands/{brand}/edit', [BrandController::class, 'edit'])->name('brands.edit');
+    Route::put('/brands/{brand}', [BrandController::class, 'update'])->name('brands.update');
 
     Route::get('/routing-logs', [RoutingLogController::class, 'index'])->name('routing-logs.index');
     Route::get('/routing-logs/{routingLog}', [RoutingLogController::class, 'show'])->name('routing-logs.show');
@@ -190,6 +196,8 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);
+        Route::get('/brands', [BrandController::class, 'data']);
+        Route::get('/brands/stats', [BrandController::class, 'stats']);
         Route::get('/brand-checks', [BrandCheckController::class, 'data']);
         Route::post('/brand-checks/measure', [BrandCheckController::class, 'measure']);
         Route::get('/brand-checks/shortest', [BrandCheckController::class, 'shortest']);
