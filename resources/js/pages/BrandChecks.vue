@@ -13,7 +13,6 @@ import { formatDateTime, formatDuration, formatPhone } from '@/lib/calls'
  * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu.
  * Une seule mesure : la médiane de la durée réelle des transferts, sur 7 ou 30 jours (au moins 5 transferts mesurés).
  * Seules les marques sous le seuil sont listées, la plus basse en premier ; les 10 derniers transferts s'écoutent en un clic.
- * En bas : les numéros de transfert partagés par plusieurs marques.
  * À l'ouverture, la page mesure d'abord les transferts pas encore mesurés (taille de chaque enregistrement).
  */
 const xsrf = () => decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '')
@@ -225,22 +224,6 @@ async function markChecked(b) {
                 </div>
             </div>
 
-            <!-- Numéros de transfert partagés par plusieurs marques -->
-            <section v-if="data?.shared?.length" class="rounded-lg border border-gray-100 bg-white">
-                <h2 class="border-b border-gray-100 px-4 py-2.5 text-sm font-semibold text-gray-900">
-                    Même numéro sur plusieurs marques <span class="ml-1 font-normal text-gray-400">{{ data.shared.length }}</span>
-                </h2>
-                <ul class="divide-y divide-gray-50 text-sm">
-                    <li v-for="s in data.shared" :key="s.phonenumber" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-2">
-                        <span class="w-32 shrink-0 tabular-nums text-gray-700">{{ formatPhone(s.phonenumber) }}</span>
-                        <span class="flex flex-wrap gap-x-3 gap-y-1">
-                            <Link v-for="m in s.brands" :key="m.id" :href="`/brands/${m.id}/edit`" class="text-gray-900 underline decoration-gray-300 hover:decoration-gray-900">
-                                {{ m.name }}<span v-if="!m.enabled" class="ml-1 text-xs text-gray-400">(inactive)</span>
-                            </Link>
-                        </span>
-                    </li>
-                </ul>
-            </section>
         </div>
     </AppLayout>
 </template>

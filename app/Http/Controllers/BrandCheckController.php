@@ -101,7 +101,7 @@ class BrandCheckController extends Controller
     }
 
     /**
-     * Marques dont la médiane de durée réelle est sous le seuil, et numéros partagés par plusieurs marques.
+     * Marques dont la médiane de durée réelle est sous le seuil.
      */
     public function data(Request $request): JsonResponse
     {
@@ -156,17 +156,7 @@ class BrandCheckController extends Controller
         }
         usort($result, fn ($a, $b) => $a['median'] <=> $b['median']);
 
-        // Même numéro de transfert sur plusieurs marques
-        $shared = $known->groupBy(fn ($b) => $this->lastDigits($b->phonenumber))
-            ->filter(fn ($group) => $group->pluck('name')->unique()->count() > 1)
-            ->map(fn ($group) => [
-                'phonenumber' => $group->first()->phonenumber,
-                'brands' => $group->sortBy('name')->map(fn ($b) => ['id' => $b->id, 'name' => $b->name, 'enabled' => (bool) $b->enabled])->values(),
-            ])
-            ->sortBy(fn ($s) => $s['brands'][0]['name'])
-            ->values();
-
-        return response()->json(['days' => $days, 'threshold' => $threshold, 'brands' => $result, 'shared' => $shared]);
+        return response()->json(['days' => $days, 'threshold' => $threshold, 'brands' => $result]);
     }
 
     private function lastDigits(?string $number): string
