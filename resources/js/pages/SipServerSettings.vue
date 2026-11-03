@@ -180,14 +180,13 @@ const trafficForm = numberForm(
         selfhosted_percent: { min: 0, max: 100, error: 'Part des nouveaux numéros : un nombre entier entre 0 et 100.' },
         pbx_recovery_minutes: { min: 1, max: 120, error: 'Retour après une panne : entre 1 et 120 minutes.' },
     },
-    // Baisser la part renvoie immédiatement des numéros chez Voxnode : on confirme
+    // Baisser la part ne touche que les nouvelles attributions (les numéros chez nous y restent) : on le rappelle
     (payload) =>
         'selfhosted_percent' in payload && payload.selfhosted_percent < telSettings.value.selfhosted_percent
             ? ask({
                   title: `Passer de ${telSettings.value.selfhosted_percent} % à ${payload.selfhosted_percent} % ?`,
-                  body: 'Les numéros chez nous au-delà du nouveau pourcentage repartent immédiatement chez Voxnode ; les agents suivent progressivement.',
+                  body: `Les nouveaux numéros iront à ${payload.selfhosted_percent} % chez nous. Les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite : Désactiver.`,
                   confirm: 'Baisser la part',
-                  danger: true,
               })
             : Promise.resolve(true),
 )
@@ -282,7 +281,7 @@ async function setVoxnodeCut(cut) {
                   confirm: 'Couper Voxnode',
                   danger: true,
               }
-            : { title: 'Rétablir Voxnode ?', body: 'Notre serveur ne garde que sa part réglée : les autres numéros repartent immédiatement chez Voxnode, les agents progressivement.', confirm: 'Rétablir' },
+            : { title: 'Rétablir Voxnode ?', body: 'Notre serveur ne garde qu\'environ sa part réglée (tirage au hasard) : les autres numéros repartent immédiatement chez Voxnode, les agents progressivement.', confirm: 'Rétablir' },
     )
     if (ok) saveTelephony({ voxnode_manual_off: cut }, cut ? 'Voxnode est coupé' : 'Voxnode est rétabli')
 }
@@ -884,7 +883,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="percent" class="text-gray-900">Part des nouveaux numéros envoyée chez nous</Label>
-                                            <p class="text-sm text-gray-500">La baisser : les numéros en trop repartent immédiatement chez Voxnode, les agents progressivement.</p>
+                                            <p class="text-sm text-gray-500">Ne change que les nouvelles attributions : les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite : Désactiver.</p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="percent" v-model.number="trafficForm.values.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-24 text-right tabular-nums" />
