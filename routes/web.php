@@ -200,7 +200,6 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/brands/stats', [BrandController::class, 'stats']);
         Route::get('/brand-checks', [BrandCheckController::class, 'data']);
         Route::post('/brand-checks/measure', [BrandCheckController::class, 'measure']);
-        Route::get('/brand-checks/shortest', [BrandCheckController::class, 'shortest']);
         Route::put('/brand-checks/check', [BrandCheckController::class, 'check']);
         Route::get('/assistant/conversations', [AssistantController::class, 'conversations']);
         Route::get('/assistant/conversations/{id}', [AssistantController::class, 'show'])->whereNumber('id');

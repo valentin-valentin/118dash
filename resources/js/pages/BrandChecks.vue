@@ -1,31 +1,26 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
-import { ChevronRight, LoaderCircle } from 'lucide-vue-next'
+import { LoaderCircle, Pause } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { agentLabel, formatDateTime, formatDuration } from '@/lib/calls'
+import { formatDateTime, formatDuration, formatPhone } from '@/lib/calls'
 
 /**
- * Vérifier les transferts (page Marques) : marques dont le numéro de transfert ne répond peut-être plus normalement.
- * Pour chaque marque (nom + numéro de transfert), sur 7 ou 30 jours :
- *   - durée réelle des mises en relation (sans l'attente Voxnode avant la mise en relation) ;
- *   - part de mises en relation de moins d'une minute (anormalement courtes) ;
- *   - part sans enregistrement, part des clients qui rappellent dans l'heure ;
- *   - part de moins d'une minute sur les 7 derniers jours et les 7 jours d'avant (un numéro qui change se voit là).
+ * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu.
+ * Une seule mesure : la médiane de la durée réelle des transferts, sur 7 ou 30 jours (au moins 5 transferts mesurés).
+ * Seules les marques sous le seuil sont listées, la plus basse en premier ; les 10 derniers transferts s'écoutent en un clic.
+ * En bas : les numéros de transfert partagés par plusieurs marques.
  * À l'ouverture, la page mesure d'abord les transferts pas encore mesurés (taille de chaque enregistrement).
  */
 const xsrf = () => decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '')
 
 const days = ref(7)
-const search = ref('')
-const minTransfers = ref(true)
-const showChecked = ref(false)
-const sort = reactive({ key: 'short_pct', dir: 'desc' })
+const threshold = ref(60)
+const THRESHOLDS = [30, 60, 120]
 
 const data = ref(null)
 const loading = ref(false)
@@ -38,10 +33,7 @@ async function measureAll() {
     measure.total = 0
     try {
         for (;;) {
-            const res = await fetch(`/data/brand-checks/measure?days=${days.value}`, {
-                method: 'POST',
-                headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() },
-            })
+            const res = await fetch(`/data/brand-checks/measure?days=${days.value}`, { method: 'POST', headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() } })
             if (!res.ok) throw new Error(`Mesure des transferts : erreur HTTP ${res.status}`)
             const r = await res.json()
             measure.done += r.measured
@@ -53,124 +45,72 @@ async function measureAll() {
     }
 }
 
+let requestId = 0
+async function loadData() {
+    const id = ++requestId
+    const seconds = Number(threshold.value)
+    if (!Number.isInteger(seconds) || seconds < 1) return
+    const res = await fetch(`/data/brand-checks?days=${days.value}&threshold=${seconds}`, { headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
+    const json = await res.json()
+    if (id === requestId) data.value = json
+}
+
 async function load() {
     loading.value = true
     error.value = null
     try {
         await measureAll()
-        const res = await fetch(`/data/brand-checks?days=${days.value}`, { headers: { Accept: 'application/json' } })
-        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
-        data.value = await res.json()
+        await loadData()
     } catch (e) {
         error.value = e.message
     } finally {
         loading.value = false
     }
 }
-watch(days, () => {
-    open.value = null
-    load()
+watch(days, load)
+let thresholdTimer = null
+watch(threshold, () => {
+    clearTimeout(thresholdTimer)
+    thresholdTimer = setTimeout(() => loadData().catch((e) => (error.value = e.message)), 400)
 })
 onMounted(load)
 
-// Une marque vérifiée il y a moins de 7 jours est masquée (sauf si on demande à la voir)
-const recentlyChecked = (b) => b.checked_at && Date.now() - new Date(b.checked_at).getTime() < 7 * 86400 * 1000
-
 function resetFilters() {
-    search.value = ''
-    minTransfers.value = true
-    showChecked.value = false
+    days.value = 7
+    threshold.value = 60
 }
 
-const rows = computed(() => {
-    const q = search.value.trim().toLowerCase()
-    const list = (data.value?.brands ?? []).filter(
-        (b) =>
-            (!minTransfers.value || b.transfers >= 10) &&
-            (showChecked.value || !recentlyChecked(b)) &&
-            (!q || b.name.toLowerCase().includes(q) || b.phonenumber.includes(q)),
-    )
-    const value = (b) => (sort.key === 'trend' ? trend(b) : b[sort.key])
-    return list.sort((a, b) => {
-        const va = value(a)
-        const vb = value(b)
-        if (va === null || va === undefined) return 1
-        if (vb === null || vb === undefined) return -1
-        const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb
-        return sort.dir === 'asc' ? cmp : -cmp
-    })
-})
-const hiddenChecked = computed(() => (showChecked.value ? 0 : (data.value?.brands ?? []).filter(recentlyChecked).length))
-
-// Écart, en points, entre les 7 derniers jours et les 7 jours d'avant
-const trend = (b) => (b.week_short_pct === null || b.prev_short_pct === null ? null : Math.round((b.week_short_pct - b.prev_short_pct) * 10) / 10)
-
-function toggleSort(key) {
-    if (sort.key === key) sort.dir = sort.dir === 'asc' ? 'desc' : 'asc'
-    else Object.assign(sort, { key, dir: key === 'name' ? 'asc' : 'desc' })
-}
-
-const pct = (v) => (v === null || v === undefined ? '—' : `${String(v).replace('.', ',')} %`)
-const phone = (n) => (n?.startsWith('+33') ? `0${n.slice(3)}`.replace(/(\d{2})(?=\d)/g, '$1 ') : n)
-
-// Transferts les plus courts d'une marque, à écouter
-const open = ref(null)
-const shortest = reactive({ key: null, rows: [], loading: false, error: null })
-async function toggle(b) {
-    if (open.value === b.key) {
-        open.value = null
+// Écoute : un seul enregistrement à la fois
+const audio = typeof Audio !== 'undefined' ? new Audio() : null
+const playing = ref(null) // id de l'appel en cours de lecture
+audio?.addEventListener('ended', () => (playing.value = null))
+audio?.addEventListener('pause', () => (playing.value = null))
+function play(transfer) {
+    if (!audio || !transfer.record_transfer) return
+    if (playing.value === transfer.id) {
+        audio.pause()
         return
     }
-    open.value = b.key
-    Object.assign(shortest, { key: b.key, rows: [], loading: true, error: null })
-    try {
-        const res = await fetch(`/data/brand-checks/shortest?${new URLSearchParams({ days: days.value, name: b.name, phonenumber: b.phonenumber })}`, { headers: { Accept: 'application/json' } })
-        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
-        if (shortest.key === b.key) shortest.rows = await res.json()
-    } catch (e) {
-        if (shortest.key === b.key) shortest.error = e.message
-    } finally {
-        if (shortest.key === b.key) shortest.loading = false
-    }
+    audio.src = transfer.record_transfer
+    audio.play().then(() => (playing.value = transfer.id)).catch(() => (playing.value = null))
 }
+onUnmounted(() => audio?.pause())
 
-async function setChecked(b, checked) {
+async function markChecked(b) {
     const res = await fetch('/data/brand-checks/check', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() },
-        body: JSON.stringify({ name: b.name, phonenumber: b.phonenumber, checked }),
+        body: JSON.stringify({ name: b.name, phonenumber: b.phonenumber, checked: true }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) {
         error.value = json.message ?? `Erreur HTTP ${res.status}`
         return
     }
-    b.checked_at = json.checked_at
+    // Masquée jusqu'à ce que de nouveaux transferts restent sous le seuil
+    data.value.brands = data.value.brands.filter((x) => x.key !== b.key)
 }
-
-// Un seul enregistrement à la fois
-function pauseOthers(e) {
-    document.querySelectorAll('audio').forEach((a) => a !== e.target && a.pause())
-}
-
-const DEFINITIONS = [
-    { term: 'Durée réelle', text: "durée de la mise en relation avec la marque, sans l'attente qui la précède." },
-    { term: 'Moins d’1 min', text: 'part des transferts dont la durée réelle est inférieure à une minute.' },
-    { term: 'Sans enregistrement', text: 'part des transferts dont la durée réelle est inconnue, faute d’enregistrement de la mise en relation.' },
-    { term: 'Rappellent dans l’heure', text: 'part des transferts suivis d’un nouvel appel du même numéro dans l’heure.' },
-]
-
-const COLUMNS = [
-    { key: 'name', label: 'Marque' },
-    { key: 'transfers', label: 'Transferts', right: true },
-    { key: 'median', label: 'Durée réelle médiane', right: true },
-    { key: 'short_pct', label: 'Moins d’1 min', right: true },
-    { key: 'no_recording_pct', label: 'Sans enregistrement', right: true },
-    { key: 'called_back_pct', label: "Rappellent dans l'heure", right: true },
-    { key: 'week_short_pct', label: '< 1 min, 7 derniers jours', right: true },
-    { key: 'prev_short_pct', label: '< 1 min, 7 jours d’avant', right: true },
-    { key: 'trend', label: 'Écart', right: true },
-]
 </script>
 
 <template>
@@ -180,8 +120,8 @@ const COLUMNS = [
         <div class="space-y-5 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Vérifier les transferts' }]" />
 
-            <FilterBar title="Filtres" :has-active-filters="!!search || !minTransfers || showChecked" @reset="resetFilters">
-                <div class="flex flex-wrap items-center gap-3">
+            <FilterBar title="Filtres" :has-active-filters="days !== 7 || threshold !== 60" @reset="resetFilters">
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                     <div class="flex items-center gap-1.5">
                         <button
                             v-for="d in [7, 30]"
@@ -195,27 +135,26 @@ const COLUMNS = [
                             {{ d }} derniers jours
                         </button>
                     </div>
-                    <Input v-model="search" type="text" placeholder="Marque ou numéro..." class="h-8 w-56" />
-                    <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
-                        <Checkbox :model-value="minTransfers" @update:model-value="(v) => (minTransfers = !!v)" />
-                        Au moins 10 transferts
-                    </label>
-                    <label class="flex cursor-pointer items-center gap-2 text-xs text-gray-700">
-                        <Checkbox :model-value="showChecked" @update:model-value="(v) => (showChecked = !!v)" />
-                        Afficher les marques vérifiées cette semaine{{ hiddenChecked ? ` (${hiddenChecked})` : '' }}
-                    </label>
+                    <div class="flex items-center gap-1.5 text-xs text-gray-600">
+                        Médiane sous
+                        <Input v-model.number="threshold" type="number" min="1" max="3600" class="h-8 w-20 text-right tabular-nums" aria-label="Seuil en secondes" />
+                        secondes
+                        <button
+                            v-for="t in THRESHOLDS"
+                            :key="t"
+                            type="button"
+                            class="ml-1 h-8 rounded-md px-2.5 font-medium"
+                            :class="threshold === t ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
+                            @click="threshold = t"
+                        >
+                            {{ t }} s
+                        </button>
+                    </div>
                 </div>
             </FilterBar>
 
-            <!-- Définition de chaque colonne, valable pour Voxnode comme pour notre serveur -->
-            <dl class="grid grid-cols-1 gap-x-6 gap-y-1.5 rounded-lg border border-gray-100 bg-white px-4 py-3 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                <div v-for="d in DEFINITIONS" :key="d.term">
-                    <dt class="inline font-medium text-gray-700">{{ d.term }} :</dt>
-                    <dd class="inline text-gray-500"> {{ d.text }}</dd>
-                </div>
-            </dl>
+            <p class="text-sm text-gray-600">Marques dont les transferts durent anormalement peu : écoutez les derniers pour vérifier le numéro.</p>
 
-            <!-- Mesure des transferts pas encore mesurés -->
             <div v-if="measure.running && measure.total" class="rounded-lg border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700">
                 Mesure de la durée des transferts : {{ measure.done.toLocaleString('fr-FR') }} sur {{ measure.total.toLocaleString('fr-FR') }}
                 <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
@@ -228,94 +167,80 @@ const COLUMNS = [
             <div class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
-                        <thead class="border-b border-gray-100 text-xs text-gray-400">
+                        <thead class="border-b border-gray-100 text-left text-xs text-gray-400 uppercase">
                             <tr>
-                                <th class="w-8" />
-                                <th
-                                    v-for="col in COLUMNS"
-                                    :key="col.key"
-                                    class="cursor-pointer px-2 py-2 font-medium uppercase tracking-wide select-none hover:text-gray-700"
-                                    :class="col.right ? 'text-right' : 'text-left'"
-                                    @click="toggleSort(col.key)"
-                                >
-                                    {{ col.label }}<template v-if="sort.key === col.key"> {{ sort.dir === 'asc' ? '↑' : '↓' }}</template>
-                                </th>
-                                <th class="px-2 py-2 pr-4 text-right font-medium uppercase tracking-wide">Vérification</th>
+                                <th class="px-4 py-2 font-medium tracking-wide">Marque</th>
+                                <th class="px-2 py-2 text-right font-medium tracking-wide">Médiane</th>
+                                <th class="px-2 py-2 text-right font-medium tracking-wide">Transferts mesurés</th>
+                                <th class="px-2 py-2 font-medium tracking-wide">10 derniers transferts</th>
+                                <th class="px-4 py-2" />
                             </tr>
                         </thead>
                         <tbody :class="loading && data && 'opacity-50'">
-                            <tr v-if="loading && !data">
-                                <td :colspan="COLUMNS.length + 2" class="py-12 text-center text-gray-400"><LoaderCircle class="mx-auto size-5 animate-spin" /></td>
+                            <tr v-if="!data">
+                                <td colspan="5" class="py-12 text-center text-gray-400"><LoaderCircle class="mx-auto size-5 animate-spin" /></td>
                             </tr>
-                            <tr v-else-if="!rows.length">
-                                <td :colspan="COLUMNS.length + 2" class="py-12 text-center text-gray-400">—</td>
+                            <tr v-else-if="!data.brands.length">
+                                <td colspan="5" class="py-12 text-center text-gray-500">Rien à vérifier</td>
                             </tr>
-                            <template v-for="b in rows" :key="b.key">
-                                <tr class="cursor-pointer border-t border-gray-50 hover:bg-gray-50" :class="open === b.key && 'bg-gray-50'" @click="toggle(b)">
-                                    <td class="pl-3 text-gray-400"><ChevronRight class="size-4 transition-transform" :class="open === b.key && 'rotate-90'" /></td>
-                                    <td class="px-2 py-2">
-                                        <div class="font-medium text-gray-900">{{ b.name }}</div>
-                                        <div class="text-xs text-gray-500 tabular-nums">
-                                            {{ phone(b.phonenumber) }}
-                                            <Link v-if="b.brand_id" :href="`/brands/${b.brand_id}/edit`" class="ml-1.5 text-gray-500 underline hover:text-gray-900" @click.stop>Modifier</Link>
-                                        </div>
-                                    </td>
-                                    <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ b.transfers.toLocaleString('fr-FR') }}</td>
-                                    <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ formatDuration(b.median) }}</td>
-                                    <td class="px-2 py-2 text-right tabular-nums">
-                                        <span class="text-gray-900">{{ pct(b.short_pct) }}</span>
-                                        <div class="text-xs text-gray-400">{{ b.short }} sur {{ b.measured }}</div>
-                                    </td>
-                                    <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ pct(b.no_recording_pct) }}</td>
-                                    <td class="px-2 py-2 text-right tabular-nums text-gray-900">{{ pct(b.called_back_pct) }}</td>
-                                    <td class="px-2 py-2 text-right tabular-nums">
-                                        <span class="text-gray-900">{{ pct(b.week_short_pct) }}</span>
-                                        <div class="text-xs text-gray-400">{{ b.week_measured }} transferts</div>
-                                    </td>
-                                    <td class="px-2 py-2 text-right tabular-nums">
-                                        <span class="text-gray-900">{{ pct(b.prev_short_pct) }}</span>
-                                        <div class="text-xs text-gray-400">{{ b.prev_measured }} transferts</div>
-                                    </td>
-                                    <td class="px-2 py-2 text-right tabular-nums" :class="trend(b) >= 20 ? 'font-medium text-red-700' : 'text-gray-700'">
-                                        {{ trend(b) === null ? '—' : `${trend(b) > 0 ? '+' : ''}${String(trend(b)).replace('.', ',')} pts` }}
-                                    </td>
-                                    <td class="px-2 py-2 pr-4 text-right whitespace-nowrap" @click.stop>
-                                        <template v-if="b.checked_at">
-                                            <span class="text-xs text-gray-500">Vérifiée le {{ new Date(b.checked_at).toLocaleDateString('fr-FR') }}</span>
-                                            <button type="button" class="ml-2 text-xs text-gray-400 underline hover:text-gray-700" @click="setChecked(b, false)">Annuler</button>
-                                        </template>
-                                        <Button v-else variant="outline" size="sm" @click="setChecked(b, true)">Marquer vérifiée</Button>
-                                    </td>
-                                </tr>
-
-                                <!-- Transferts les plus courts : écouter ce que répond le numéro -->
-                                <tr v-if="open === b.key" class="bg-gray-50">
-                                    <td />
-                                    <td :colspan="COLUMNS.length + 1" class="px-2 pt-1 pb-4">
-                                        <p class="mb-2 text-xs font-medium text-gray-500">Les 10 mises en relation les plus courtes de la période</p>
-                                        <p v-if="shortest.loading" class="text-gray-400"><LoaderCircle class="size-4 animate-spin" /></p>
-                                        <p v-else-if="shortest.error" class="text-sm text-red-600">{{ shortest.error }}</p>
-                                        <p v-else-if="!shortest.rows.length" class="text-sm text-gray-500">—</p>
-                                        <ul v-else class="space-y-1.5">
-                                            <li v-for="t in shortest.rows" :key="t.id" class="flex flex-wrap items-center gap-3 rounded-md border border-gray-100 bg-white px-3 py-1.5 text-xs">
-                                                <span class="w-32 tabular-nums text-gray-700">{{ formatDateTime(t.called_at) }}</span>
-                                                <span class="w-28 tabular-nums text-gray-600">{{ phone(t.caller) }}</span>
-                                                <span class="w-24 text-gray-600">{{ agentLabel(t.agent_name) ?? '-' }}</span>
-                                                <span class="w-36 text-gray-900">
-                                                    Réelle {{ formatDuration(t.real) }}
-                                                    <span v-if="t.platform !== 'selfhosted'" class="text-gray-400">· Voxnode {{ formatDuration(t.duration_transfer) }}</span>
-                                                </span>
-                                                <audio v-if="t.record_transfer" :src="t.record_transfer" controls preload="none" class="h-8 min-w-0 flex-1" @play="pauseOthers" />
-                                                <span v-else class="text-gray-400">Pas d'enregistrement</span>
-                                            </li>
-                                        </ul>
-                                    </td>
-                                </tr>
-                            </template>
+                            <tr v-for="b in data?.brands ?? []" :key="b.key" class="border-t border-gray-50 align-top">
+                                <td class="px-4 py-2.5">
+                                    <div class="font-medium text-gray-900">{{ b.name }}</div>
+                                    <div class="text-xs text-gray-500 tabular-nums">
+                                        {{ formatPhone(b.phonenumber) }}
+                                        <Link v-if="b.brand_id" :href="`/brands/${b.brand_id}/edit`" class="ml-1.5 underline hover:text-gray-900">Modifier</Link>
+                                    </div>
+                                </td>
+                                <td class="px-2 py-2.5 text-right font-medium tabular-nums text-gray-900">{{ formatDuration(b.median) }}</td>
+                                <td class="px-2 py-2.5 text-right tabular-nums text-gray-700">{{ b.measured }}</td>
+                                <td class="px-2 py-2.5">
+                                    <div class="flex flex-wrap gap-1">
+                                        <button
+                                            v-for="t in b.last"
+                                            :key="t.id"
+                                            type="button"
+                                            class="inline-flex h-6 items-center gap-1 rounded px-1.5 text-xs tabular-nums"
+                                            :class="
+                                                !t.record_transfer
+                                                    ? 'cursor-default bg-gray-50 text-gray-400'
+                                                    : playing === t.id
+                                                      ? 'bg-gray-900 text-white'
+                                                      : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                                            "
+                                            :title="`${formatDateTime(t.called_at)}${t.record_transfer ? ' · écouter' : ' · pas d’enregistrement'}`"
+                                            :disabled="!t.record_transfer"
+                                            @click="play(t)"
+                                        >
+                                            <Pause v-if="playing === t.id" class="size-3" />
+                                            {{ formatDuration(t.seconds) }}
+                                        </button>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <Button variant="outline" size="sm" @click="markChecked(b)">Marquer vérifiée</Button>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+
+            <!-- Numéros de transfert partagés par plusieurs marques -->
+            <section v-if="data?.shared?.length" class="rounded-lg border border-gray-100 bg-white">
+                <h2 class="border-b border-gray-100 px-4 py-2.5 text-sm font-semibold text-gray-900">
+                    Même numéro sur plusieurs marques <span class="ml-1 font-normal text-gray-400">{{ data.shared.length }}</span>
+                </h2>
+                <ul class="divide-y divide-gray-50 text-sm">
+                    <li v-for="s in data.shared" :key="s.phonenumber" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-2">
+                        <span class="w-32 shrink-0 tabular-nums text-gray-700">{{ formatPhone(s.phonenumber) }}</span>
+                        <span class="flex flex-wrap gap-x-3 gap-y-1">
+                            <Link v-for="m in s.brands" :key="m.id" :href="`/brands/${m.id}/edit`" class="text-gray-900 underline decoration-gray-300 hover:decoration-gray-900">
+                                {{ m.name }}<span v-if="!m.enabled" class="ml-1 text-xs text-gray-400">(inactive)</span>
+                            </Link>
+                        </span>
+                    </li>
+                </ul>
+            </section>
         </div>
     </AppLayout>
 </template>

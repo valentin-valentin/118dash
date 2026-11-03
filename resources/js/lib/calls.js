@@ -111,9 +111,11 @@ export function platformLabel(platform) {
     return platform === 'selfhosted' ? 'Notre serveur' : 'Voxnode'
 }
 
-// Numéro français lisible : +33612345678 → 06 12 34 56 78
+// Numéro français lisible : +33612345678 → 06 12 34 56 78 ; numéro court (+331044) → 1044 ; sinon tel quel
 export function formatPhone(number) {
     if (!number) return '—'
-    const m = String(number).match(/^\+33(\d{9})$/)
-    return m ? `0${m[1]}`.replace(/(\d{2})(?=\d)/g, '$1 ') : number
+    const full = String(number).match(/^\+33(\d{9})$/)
+    if (full) return `0${full[1]}`.replace(/(\d{2})(?=\d)/g, '$1 ')
+    const short = String(number).match(/^\+33(\d{1,8})$/)
+    return short ? short[1] : number
 }

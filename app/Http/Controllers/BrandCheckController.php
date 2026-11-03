@@ -12,15 +12,19 @@ use Inertia\Response;
 use Throwable;
 
 /**
- * Marques à vérifier : repérer les marques dont le numéro de transfert ne répond plus normalement
- * (numéro changé, non attribué, fermé…), d'après la durée réelle des mises en relation.
+ * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu,
+ * signe d'un numéro qui ne marche plus (non attribué, fermé, répondeur).
+ *
+ * Une seule mesure : la médiane de la durée réelle des transferts de la marque sur 7 ou 30 jours (au moins 5 mesurés).
+ * Seules les marques sous le seuil choisi (60 s par défaut) sont affichées, la plus basse en premier.
+ * Une marque marquée vérifiée ne compte plus que ses transferts postérieurs à la vérification.
  *
  * Durée réelle d'un transfert (calls.transfer_real_duration) :
  *   - Voxnode : duration_transfer comprend une attente avant la mise en relation ; la vraie durée est celle de
  *     l'enregistrement record_transfer, un mp3 à débit constant de 32 kbit/s : durée = Content-Length × 8 / 32000.
  *     Mesurée par une requête HEAD, à l'ouverture de la page, pour les transferts de la période pas encore mesurés.
  *     65535 = enregistrement introuvable ou illisible (pas remesuré).
- *   - Notre serveur : duration_transfer est déjà la durée depuis le décroché de la marque.
+ *   - Notre serveur : duration_transfer, qui part du décroché de la marque.
  * Le service interne (+33184131572) n'est pas une marque : exclu. Jours en heure de Paris.
  */
 class BrandCheckController extends Controller
@@ -33,8 +37,9 @@ class BrandCheckController extends Controller
 
     private const MP3_BYTES_PER_SECOND = 32000 / 8;
 
-    // Mise en relation de moins d'une minute : anormalement courte pour un client qui voulait joindre la marque
-    private const SHORT_SECONDS = 60;
+    private const MIN_MEASURED = 5;
+
+    private const LAST_TRANSFERS = 10;
 
     private const MEASURE_BATCH = 600;
 
@@ -66,12 +71,11 @@ class BrandCheckController extends Controller
 
     /**
      * Mesure un lot de transferts Voxnode pas encore mesurés (HEAD sur l'enregistrement) ; la page rappelle
-     * cette route jusqu'à ce qu'il n'en reste plus. Les deux semaines comparées sont toujours couvertes.
+     * cette route jusqu'à ce qu'il n'en reste plus.
      */
     public function measure(Request $request): JsonResponse
     {
         [$from, $to] = $this->period($request);
-        $from = $from->min(now(self::TZ)->subDays(13)->startOfDay());
 
         $pending = fn () => $this->transfers($from, $to)
             ->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'))
@@ -97,117 +101,77 @@ class BrandCheckController extends Controller
     }
 
     /**
-     * Une ligne par marque (nom + numéro de transfert) : transferts, durée réelle, transferts courts,
-     * enregistrements manquants, rappels dans l'heure, évolution sur deux semaines.
+     * Marques dont la médiane de durée réelle est sous le seuil, et numéros partagés par plusieurs marques.
      */
     public function data(Request $request): JsonResponse
     {
         [$from, $to, $days] = $this->period($request);
-        $weekStart = now(self::TZ)->subDays(6)->startOfDay();
-        $prevStart = now(self::TZ)->subDays(13)->startOfDay();
-        $rangeStart = $from->min($prevStart);
+        $threshold = (int) ($request->validate(['threshold' => 'nullable|integer|min:1|max:3600'])['threshold'] ?? 60);
 
-        $rows = $this->transfers($rangeStart, $to)
-            ->selectRaw("id, UNIX_TIMESTAMP(called_at) AS ts, caller, total_duration, duration_transfer, transfer_real_duration,
-                platform, record_transfer, brand_name, brand_phonenumber,
-                EXISTS (SELECT 1 FROM calls c2 WHERE c2.caller = calls.caller AND c2.caller <> ''
-                    AND c2.called_at > calls.called_at
-                    AND c2.called_at <= calls.called_at + INTERVAL (calls.total_duration + 3600) SECOND) AS called_back")
-            ->orderBy('id')
+        // Fiches des marques (nom + 9 derniers chiffres du numéro) : lien de modification et date de vérification
+        $known = DB::table('brands')->whereNotNull('phonenumber')->where('phonenumber', '!=', '')
+            ->get(['id', 'name', 'phonenumber', 'enabled', 'transfer_checked_at']);
+        $byKey = $known->keyBy(fn ($b) => $b->name . '|' . $this->lastDigits($b->phonenumber));
+
+        $rows = $this->transfers($from, $to)
+            ->selectRaw('id, called_at, UNIX_TIMESTAMP(called_at) AS ts, duration_transfer, transfer_real_duration, platform, record_transfer, brand_name, brand_phonenumber')
+            ->orderByDesc('called_at')
             ->get();
 
         $brands = [];
-        $fromTs = $from->getTimestamp();
         foreach ($rows as $r) {
-            $key = $r->brand_name . '|' . substr(preg_replace('/\D/', '', $r->brand_phonenumber), -9);
-            $b = &$brands[$key];
-            $b ??= ['name' => $r->brand_name, 'phonenumber' => $r->brand_phonenumber, 'durations' => [], 'transfers' => 0, 'no_recording' => 0, 'called_back' => 0, 'short' => [], 'week' => [0, 0], 'prev' => [0, 0], 'last_at' => 0];
             $real = $this->realDuration($r);
-
-            // Deux semaines comparées : % de transferts courts parmi les transferts mesurés
-            if ($real !== null) {
-                $isShort = $real < self::SHORT_SECONDS;
-                if ($r->ts >= $weekStart->getTimestamp()) {
-                    $b['week'][0]++;
-                    $b['week'][1] += $isShort;
-                } elseif ($r->ts >= $prevStart->getTimestamp()) {
-                    $b['prev'][0]++;
-                    $b['prev'][1] += $isShort;
-                }
-            }
-
-            if ($r->ts < $fromTs) {
-                unset($b);
+            if ($real === null) {
                 continue;
             }
-            $b['transfers']++;
-            $b['last_at'] = max($b['last_at'], (int) $r->ts);
-            $b['called_back'] += (int) $r->called_back;
-            if ($real === null) {
-                $b['no_recording']++;
-            } else {
-                $b['durations'][] = $real;
-                if ($real < self::SHORT_SECONDS) {
-                    $b['short'][] = $r;
-                }
+            $key = $r->brand_name . '|' . $this->lastDigits($r->brand_phonenumber);
+            // Marque vérifiée : seuls les transferts postérieurs à la vérification comptent
+            $checkedAt = $byKey[$key]->transfer_checked_at ?? null;
+            if ($checkedAt && $r->ts <= strtotime($checkedAt . ' UTC')) {
+                continue;
             }
-            unset($b);
+            $brands[$key] ??= ['name' => $r->brand_name, 'phonenumber' => $r->brand_phonenumber, 'durations' => [], 'last' => []];
+            $brands[$key]['durations'][] = $real;
+            if (count($brands[$key]['last']) < self::LAST_TRANSFERS) {
+                $brands[$key]['last'][] = ['id' => $r->id, 'called_at' => $r->called_at, 'seconds' => $real, 'record_transfer' => $r->record_transfer ?: null];
+            }
         }
-
-        // Fiche de la marque (nom + 9 derniers chiffres du numéro) : lien de modification et date de vérification
-        $known = DB::table('brands')->whereNotNull('phonenumber')->where('phonenumber', '!=', '')->get(['id', 'name', 'phonenumber', 'transfer_checked_at'])
-            ->keyBy(fn ($b) => $b->name . '|' . substr(preg_replace('/\D/', '', (string) $b->phonenumber), -9));
 
         $result = [];
         foreach ($brands as $key => $b) {
-            if (!$b['transfers']) {
+            $median = $this->median($b['durations']);
+            if (count($b['durations']) < self::MIN_MEASURED || $median >= $threshold) {
                 continue;
             }
-            $measured = count($b['durations']);
             $result[] = [
                 'key' => $key,
                 'name' => $b['name'],
                 'phonenumber' => $b['phonenumber'],
-                'transfers' => $b['transfers'],
-                'measured' => $measured,
-                'median' => $this->median($b['durations']),
-                'short' => count($b['short']),
-                'short_pct' => $measured ? round(count($b['short']) / $measured * 100, 1) : null,
-                'no_recording_pct' => round($b['no_recording'] / $b['transfers'] * 100, 1),
-                'called_back_pct' => round($b['called_back'] / $b['transfers'] * 100, 1),
-                'week_short_pct' => $b['week'][0] ? round($b['week'][1] / $b['week'][0] * 100, 1) : null,
-                'week_measured' => $b['week'][0],
-                'prev_short_pct' => $b['prev'][0] ? round($b['prev'][1] / $b['prev'][0] * 100, 1) : null,
-                'prev_measured' => $b['prev'][0],
-                'last_at' => $b['last_at'],
-                'brand_id' => $known[$key]->id ?? null,
-                'checked_at' => $known[$key]->transfer_checked_at ?? null,
+                'median' => $median,
+                'measured' => count($b['durations']),
+                'last' => $b['last'],
+                'brand_id' => $byKey[$key]->id ?? null,
+                'checked_at' => $byKey[$key]->transfer_checked_at ?? null,
             ];
         }
+        usort($result, fn ($a, $b) => $a['median'] <=> $b['median']);
 
-        return response()->json(['days' => $days, 'short_seconds' => self::SHORT_SECONDS, 'brands' => $result]);
-    }
-
-    /**
-     * Les transferts les plus courts d'une marque sur la période, pour les écouter.
-     */
-    public function shortest(Request $request): JsonResponse
-    {
-        $validated = $request->validate(['name' => 'required|string', 'phonenumber' => 'required|string']);
-        [$from, $to] = $this->period($request);
-        $digits = substr(preg_replace('/\D/', '', $validated['phonenumber']), -9);
-
-        $rows = $this->transfers($from, $to)
-            ->where('brand_name', $validated['name'])
-            ->whereRaw('RIGHT(brand_phonenumber, 9) = ?', [$digits])
-            ->get(['id', 'called_at', 'caller', 'agent_name', 'duration_transfer', 'transfer_real_duration', 'platform', 'record_transfer'])
-            ->map(fn ($r) => [...(array) $r, 'real' => $this->realDuration($r)])
-            ->filter(fn ($r) => $r['real'] !== null)
-            ->sortBy('real')
-            ->take(10)
+        // Même numéro de transfert sur plusieurs marques
+        $shared = $known->groupBy(fn ($b) => $this->lastDigits($b->phonenumber))
+            ->filter(fn ($group) => $group->pluck('name')->unique()->count() > 1)
+            ->map(fn ($group) => [
+                'phonenumber' => $group->first()->phonenumber,
+                'brands' => $group->sortBy('name')->map(fn ($b) => ['id' => $b->id, 'name' => $b->name, 'enabled' => (bool) $b->enabled])->values(),
+            ])
+            ->sortBy(fn ($s) => $s['brands'][0]['name'])
             ->values();
 
-        return response()->json($rows);
+        return response()->json(['days' => $days, 'threshold' => $threshold, 'brands' => $result, 'shared' => $shared]);
+    }
+
+    private function lastDigits(?string $number): string
+    {
+        return substr(preg_replace('/\D/', '', (string) $number), -9);
     }
 
     /**

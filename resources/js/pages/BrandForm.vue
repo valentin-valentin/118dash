@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
+import { formatPhone } from '@/lib/calls'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -47,7 +48,7 @@ const SWITCHES = [
 //   - numéro de transfert : les transferts partent vers le nouveau numéro tout de suite ;
 //   - nom : les appels passés gardent l'ancien nom (historique et stats retrouvent la marque par son nom).
 const confirming = ref(false)
-const phone = (n) => (n?.startsWith('+33') ? `0${n.slice(3)}`.replace(/(\d{2})(?=\d)/g, '$1 ') : n || 'aucun')
+const phone = (n) => (n ? formatPhone(n) : 'aucun')
 const changes = computed(() => {
     if (!isEdit.value) return []
     const list = []

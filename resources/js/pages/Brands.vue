@@ -9,6 +9,7 @@ import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import { Button } from '@/components/ui/button'
+import { formatPhone } from '@/lib/calls'
 import { Input } from '@/components/ui/input'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
@@ -66,7 +67,7 @@ const YES_NO = [
     { value: 'no', label: 'Non' },
 ]
 
-const phone = (n) => (n?.startsWith('+33') ? `0${n.slice(3)}`.replace(/(\d{2})(?=\d)/g, '$1 ') : n || '-')
+const phone = (n) => (n ? formatPhone(n) : '-')
 
 onMounted(() => {
     stats.load()
