@@ -41,7 +41,7 @@ class BrandCheckController extends Controller
 
     private const LAST_TRANSFERS = 10;
 
-    private const MEASURE_BATCH = 600;
+    private const MEASURE_BATCH = 300;
 
     public function index(): Response
     {
@@ -81,6 +81,11 @@ class BrandCheckController extends Controller
             ->where(fn ($q) => $q->whereNull('platform')->orWhere('platform', '!=', 'selfhosted'))
             ->whereNull('transfer_real_duration')
             ->where('record_transfer', '!=', '');
+
+        // Premier appel de la page : seulement le nombre à mesurer, pour afficher la progression tout de suite
+        if ($request->boolean('count_only')) {
+            return response()->json(['measured' => 0, 'remaining' => $pending()->count()]);
+        }
 
         $batch = $pending()->limit(self::MEASURE_BATCH)->pluck('record_transfer', 'id');
         if ($batch->isNotEmpty()) {

@@ -30,14 +30,19 @@ async function measureAll() {
     measure.running = true
     measure.done = 0
     measure.total = 0
+    const call = async (extra = '') => {
+        const res = await fetch(`/data/brand-checks/measure?days=${days.value}${extra}`, { method: 'POST', headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() } })
+        if (!res.ok) throw new Error(`Mesure des transferts : erreur HTTP ${res.status}`)
+        return res.json()
+    }
     try {
-        for (;;) {
-            const res = await fetch(`/data/brand-checks/measure?days=${days.value}`, { method: 'POST', headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() } })
-            if (!res.ok) throw new Error(`Mesure des transferts : erreur HTTP ${res.status}`)
-            const r = await res.json()
+        // D'abord le nombre de transferts à mesurer, pour afficher la progression dès le début
+        measure.total = (await call('&count_only=1')).remaining
+        while (measure.done < measure.total) {
+            const r = await call()
             measure.done += r.measured
             measure.total = measure.done + r.remaining
-            if (!r.remaining || !r.measured) break
+            if (!r.measured) break
         }
     } finally {
         measure.running = false
@@ -154,9 +159,12 @@ async function markChecked(b) {
 
             <p class="text-sm text-gray-600">Marques dont les transferts durent anormalement peu : écoutez les derniers pour vérifier le numéro.</p>
 
-            <div v-if="measure.running && measure.total" class="rounded-lg border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700">
-                Mesure de la durée des transferts : {{ measure.done.toLocaleString('fr-FR') }} sur {{ measure.total.toLocaleString('fr-FR') }}
-                <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
+            <div v-if="measure.running" class="rounded-lg border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700">
+                <template v-if="measure.total">
+                    Mesure de la durée des nouveaux transferts : {{ measure.done.toLocaleString('fr-FR') }} sur {{ measure.total.toLocaleString('fr-FR') }}
+                </template>
+                <span v-else class="flex items-center gap-2"><LoaderCircle class="size-4 animate-spin text-gray-400" /> Recherche des transferts pas encore mesurés…</span>
+                <div v-if="measure.total" class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
                     <div class="h-full bg-gray-900 transition-all" :style="{ width: `${(measure.done / measure.total) * 100}%` }" />
                 </div>
             </div>
