@@ -22,7 +22,7 @@ const days = ref(7)
 const threshold = ref(60)
 const THRESHOLDS = [30, 60, 120]
 // Nombre minimal de transferts mesurés pour qu'une marque soit listée
-const minMeasured = ref(5)
+const minMeasured = ref(3)
 const MINIMUMS = [1, 3, 5, 10]
 
 const data = ref(null)
@@ -88,7 +88,7 @@ onMounted(load)
 function resetFilters() {
     days.value = 7
     threshold.value = 60
-    minMeasured.value = 5
+    minMeasured.value = 3
 }
 
 // Écoute : un seul enregistrement à la fois
@@ -130,7 +130,7 @@ async function markChecked(b) {
         <div class="space-y-5 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Vérifier les transferts' }]" />
 
-            <FilterBar title="Filtres" :has-active-filters="days !== 7 || threshold !== 60 || minMeasured !== 5" @reset="resetFilters">
+            <FilterBar title="Filtres" :has-active-filters="days !== 7 || threshold !== 60 || minMeasured !== 3" @reset="resetFilters">
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
                     <div class="flex items-center gap-1.5">
                         <button
@@ -182,15 +182,15 @@ async function markChecked(b) {
             <dl class="space-y-1 rounded-lg border border-gray-100 bg-white px-4 py-3 text-xs text-gray-600">
                 <div>
                     <dt class="inline font-medium text-gray-800">Notre serveur :</dt>
-                    <dd class="inline">durée du transfert mesurée par le serveur, depuis le décroché de la marque (sonnerie et message avant transfert exclus).</dd>
+                    <dd class="ml-1 inline">durée du transfert mesurée par le serveur, depuis le décroché de la marque (sonnerie et message avant transfert exclus).</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Voxnode :</dt>
-                    <dd class="inline">durée de l'enregistrement audio du transfert.</dd>
+                    <dd class="ml-1 inline">durée de l'enregistrement audio du transfert.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Liste :</dt>
-                    <dd class="inline">marques dont la durée médiane des transferts sur la période est sous le seuil, à partir de {{ minMeasured }} transfert{{ minMeasured > 1 ? 's' : '' }} mesuré{{ minMeasured > 1 ? 's' : '' }}.</dd>
+                    <dd class="ml-1 inline">marques dont la durée médiane des transferts sur la période est sous le seuil, à partir de {{ minMeasured }} transfert{{ minMeasured > 1 ? 's' : '' }} mesuré{{ minMeasured > 1 ? 's' : '' }}.</dd>
                 </div>
             </dl>
 

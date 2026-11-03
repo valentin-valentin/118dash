@@ -15,7 +15,7 @@ use Throwable;
  * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu,
  * signe d'un numéro qui ne marche plus (non attribué, fermé, répondeur).
  *
- * Une seule mesure : la médiane de la durée réelle des transferts de la marque sur 7 ou 30 jours (au moins N mesurés, 5 par défaut).
+ * Une seule mesure : la médiane de la durée réelle des transferts de la marque sur 7 ou 30 jours (au moins N mesurés, 3 par défaut).
  * Seules les marques sous le seuil choisi (60 s par défaut) sont affichées, la plus basse en premier.
  * Une marque marquée vérifiée ne compte plus que ses transferts postérieurs à la vérification.
  *
@@ -38,7 +38,7 @@ class BrandCheckController extends Controller
     private const MP3_BYTES_PER_SECOND = 32000 / 8;
 
     // Nombre minimal de transferts mesurés pour qu'une marque soit listée (réglable sur la page)
-    private const MIN_MEASURED = 5;
+    private const MIN_MEASURED = 3;
 
     private const LAST_TRANSFERS = 10;
 
