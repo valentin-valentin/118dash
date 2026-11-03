@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
-import { LoaderCircle, Pause } from 'lucide-vue-next'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { Head, Link, usePage } from '@inertiajs/vue3'
+import { LoaderCircle, Pause, Phone } from 'lucide-vue-next'
+import { call as callNumber, normalizeNumber } from '@/composables/useSoftphone'
 import AppLayout from '@/layouts/AppLayout.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -107,6 +108,22 @@ function play(transfer) {
 }
 onUnmounted(() => audio?.pause())
 
+// Appeler la marque avec le softphone (numéros français composables uniquement)
+const softphoneEnabled = computed(() => !!usePage().props.softphone?.enabled)
+const callable = (number) => softphoneEnabled.value && !!normalizeNumber(number ?? '')
+
+// Tri : par défaut les marques les plus transférées d'abord
+const sort = reactive({ key: 'measured', dir: 'desc' })
+function toggleSort(key) {
+    if (sort.key === key) sort.dir = sort.dir === 'asc' ? 'desc' : 'asc'
+    else Object.assign(sort, { key, dir: key === 'median' ? 'asc' : 'desc' })
+}
+const sortedBrands = computed(() => {
+    const list = [...(data.value?.brands ?? [])]
+    const factor = sort.dir === 'asc' ? 1 : -1
+    return list.sort((a, b) => (a[sort.key] - b[sort.key]) * factor || a.median - b.median)
+})
+
 async function markChecked(b) {
     const res = await fetch('/data/brand-checks/check', {
         method: 'PUT',
@@ -189,6 +206,14 @@ async function markChecked(b) {
                     <dd class="ml-1 inline">durée de l'enregistrement audio du transfert.</dd>
                 </div>
                 <div>
+                    <dt class="inline font-medium text-gray-800">Mise à jour :</dt>
+                    <dd class="ml-1 inline">à l'ouverture de la page et au changement de période, les transferts pas encore mesurés le sont, puis la liste est recalculée. Changer le seuil ou le nombre de transferts recalcule la liste aussitôt.</dd>
+                </div>
+                <div>
+                    <dt class="inline font-medium text-gray-800">Marquer vérifiée :</dt>
+                    <dd class="ml-1 inline">retire la marque de la liste. Elle revient si ses transferts suivants ont encore une durée médiane sous le seuil.</dd>
+                </div>
+                <div>
                     <dt class="inline font-medium text-gray-800">Liste :</dt>
                     <dd class="ml-1 inline">marques dont la durée médiane des transferts sur la période est sous le seuil, à partir de {{ minMeasured }} transfert{{ minMeasured > 1 ? 's' : '' }} mesuré{{ minMeasured > 1 ? 's' : '' }}.</dd>
                 </div>
@@ -212,8 +237,12 @@ async function markChecked(b) {
                         <thead class="border-b border-gray-100 text-left text-xs text-gray-400 uppercase">
                             <tr>
                                 <th class="px-4 py-2 font-medium tracking-wide">Marque</th>
-                                <th class="px-2 py-2 text-right font-medium tracking-wide">Médiane</th>
-                                <th class="px-2 py-2 text-right font-medium tracking-wide">Transferts mesurés</th>
+                                <th class="cursor-pointer px-2 py-2 text-right font-medium tracking-wide select-none hover:text-gray-700" @click="toggleSort('median')">
+                                    Médiane<template v-if="sort.key === 'median'"> {{ sort.dir === 'asc' ? '↑' : '↓' }}</template>
+                                </th>
+                                <th class="cursor-pointer px-2 py-2 text-right font-medium tracking-wide select-none hover:text-gray-700" @click="toggleSort('measured')">
+                                    Transferts mesurés<template v-if="sort.key === 'measured'"> {{ sort.dir === 'asc' ? '↑' : '↓' }}</template>
+                                </th>
                                 <th class="px-2 py-2 font-medium tracking-wide">10 derniers transferts</th>
                                 <th class="px-4 py-2" />
                             </tr>
@@ -225,11 +254,21 @@ async function markChecked(b) {
                             <tr v-else-if="!data.brands.length">
                                 <td colspan="5" class="py-12 text-center text-gray-500">Rien à vérifier</td>
                             </tr>
-                            <tr v-for="b in data?.brands ?? []" :key="b.key" class="border-t border-gray-50 align-top">
+                            <tr v-for="b in sortedBrands" :key="b.key" class="border-t border-gray-50 align-top">
                                 <td class="px-4 py-2.5">
                                     <div class="font-medium text-gray-900">{{ b.name }}</div>
-                                    <div class="text-xs text-gray-500 tabular-nums">
-                                        {{ formatPhone(b.phonenumber) }}
+                                    <div class="flex items-center text-xs text-gray-500 tabular-nums">
+                                        <button
+                                            v-if="callable(b.phonenumber)"
+                                            type="button"
+                                            class="inline-flex items-center gap-1 rounded hover:text-gray-900"
+                                            :title="`Appeler ${b.name} avec le softphone`"
+                                            @click="callNumber(b.phonenumber)"
+                                        >
+                                            <Phone class="size-3" />
+                                            {{ formatPhone(b.phonenumber) }}
+                                        </button>
+                                        <span v-else>{{ formatPhone(b.phonenumber) }}</span>
                                         <Link v-if="b.brand_id" :href="`/brands/${b.brand_id}/edit`" class="ml-1.5 underline hover:text-gray-900">Modifier</Link>
                                     </div>
                                 </td>
@@ -237,7 +276,8 @@ async function markChecked(b) {
                                 <td class="px-2 py-2.5 text-right tabular-nums text-gray-700">{{ b.measured }}</td>
                                 <td class="px-2 py-2.5">
                                     <div class="flex flex-wrap gap-1">
-                                        <Tooltip v-for="t in b.last" :key="t.id">
+                                        <!-- Reste affichée quand on clique pour écouter -->
+                                        <Tooltip v-for="t in b.last" :key="t.id" disable-closing-trigger>
                                             <TooltipTrigger as-child>
                                                 <button
                                                     type="button"
@@ -264,7 +304,7 @@ async function markChecked(b) {
                                                     <dt class="opacity-70">Transfert</dt><dd class="tabular-nums">{{ formatDuration(t.seconds) }}</dd>
                                                     <dt class="opacity-70">Plateforme</dt><dd>{{ platformLabel(t.platform) }}</dd>
                                                 </dl>
-                                                <p class="mt-1 opacity-70">{{ t.record_transfer ? (playing === t.id ? 'Cliquer pour arrêter' : 'Cliquer pour écouter') : "Pas d'enregistrement" }}</p>
+                                                <p v-if="!t.record_transfer" class="mt-1 opacity-70">Pas d'enregistrement</p>
                                             </TooltipContent>
                                         </Tooltip>
                                     </div>
