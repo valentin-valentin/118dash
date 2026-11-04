@@ -933,7 +933,8 @@ class DashboardController extends Controller
         $totalReverse = round($daily->sum('reverse'), 2);
         $totalBenefice = round($daily->sum('benefice'), 2);
         $totalDuration = $daily->sum('total_duration');
-        $avgDuration = $daily->avg('avg_duration') ? round($daily->avg('avg_duration')) : 0;
+        // Moyenne de tous les appels du mois (comme le mois précédent), pas la moyenne des moyennes de chaque jour
+        $avgDuration = $totalCalls > 0 ? round($totalDuration / $totalCalls) : 0;
 
         // Calculer les totaux du mois précédent à la même période (jusqu'au même jour du mois)
         $previousMonthStart = $start->copy()->subMonth();
