@@ -132,23 +132,26 @@ function toggleSort(key) {
 const sortedBrands = computed(() => {
     const list = [...(data.value?.brands ?? [])]
     const factor = sort.dir === 'asc' ? 1 : -1
-    return list.sort((a, b) => (a[sort.key] - b[sort.key]) * factor || a.median - b.median)
+    // Les marques déjà vérifiées toujours en bas
+    return list.sort((a, b) => a.verified - b.verified || (a[sort.key] - b[sort.key]) * factor || a.median - b.median)
 })
 
-async function markChecked(b) {
+async function setChecked(b, checked) {
     const res = await fetch('/data/brand-checks/check', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() },
-        body: JSON.stringify({ brand_id: b.brand_id, checked: true }),
+        body: JSON.stringify({ brand_id: b.brand_id, checked }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) {
         error.value = json.message ?? `Erreur HTTP ${res.status}`
         return
     }
-    // Masquée jusqu'à ce que de nouveaux transferts restent sous le seuil
-    data.value.brands = data.value.brands.filter((x) => x.key !== b.key)
+    // Vérifiée : passe en bas, grisée (aucun transfert postérieur pour l'instant)
+    b.checked_at = json.checked_at
+    b.verified = checked
 }
+const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
 </script>
 
 <template>
@@ -235,7 +238,7 @@ async function markChecked(b) {
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Marquer vérifiée :</dt>
-                    <dd class="ml-1 inline">retire la marque de la liste. Elle revient si ses transferts suivants ont encore une durée médiane sous le seuil.</dd>
+                    <dd class="ml-1 inline">range la marque en bas, grisée. Elle remonte si ses transferts suivants ont encore une durée médiane sous le seuil.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Liste :</dt>
@@ -278,7 +281,7 @@ async function markChecked(b) {
                             <tr v-else-if="!data.brands.length">
                                 <td colspan="5" class="py-12 text-center text-gray-500">Rien à vérifier</td>
                             </tr>
-                            <tr v-for="b in sortedBrands" :key="b.key" class="border-t border-gray-50 align-top">
+                            <tr v-for="b in sortedBrands" :key="b.key" class="border-t border-gray-50 align-top" :class="b.verified && 'bg-gray-50/60 opacity-50 hover:opacity-100'">
                                 <td class="px-4 py-2.5">
                                     <div class="font-medium" :class="b.name ? 'text-gray-900' : 'text-gray-400'">{{ b.name || 'Sans nom de marque' }}</div>
                                     <div class="flex items-center text-xs text-gray-500 tabular-nums">
@@ -338,7 +341,11 @@ async function markChecked(b) {
                                     </div>
                                 </td>
                                 <td class="px-4 py-2.5 text-right whitespace-nowrap">
-                                    <Button v-if="b.brand_id" variant="outline" size="sm" @click="markChecked(b)">Marquer vérifiée</Button>
+                                    <template v-if="b.verified">
+                                        <span class="text-xs text-gray-500">Vérifiée le {{ formatDay(b.checked_at) }}</span>
+                                        <button type="button" class="ml-2 text-xs text-gray-400 underline hover:text-gray-700" @click="setChecked(b, false)">Annuler</button>
+                                    </template>
+                                    <Button v-else-if="b.brand_id" variant="outline" size="sm" @click="setChecked(b, true)">Marquer vérifiée</Button>
                                 </td>
                             </tr>
                         </tbody>

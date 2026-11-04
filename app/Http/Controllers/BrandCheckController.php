@@ -17,7 +17,8 @@ use Throwable;
  *
  * Une seule mesure : la médiane de la durée réelle des transferts de la marque sur 7 ou 30 jours (au moins N mesurés, 3 par défaut).
  * Seules les marques sous le seuil choisi (60 s par défaut) sont affichées, la plus basse en premier.
- * Une marque marquée vérifiée ne compte plus que ses transferts postérieurs à la vérification.
+ * Une marque vérifiée est rangée en bas, grisée ; elle revient dans la liste si ses transferts postérieurs à la
+ * vérification sont encore sous le seuil.
  *
  * Durée réelle d'un transfert (calls.transfer_real_duration) :
  *   - Voxnode : duration_transfer comprend une attente avant la mise en relation ; la vraie durée est celle de
@@ -151,19 +152,20 @@ class BrandCheckController extends Controller
             // Une ligne par fiche de marque (tous ses numéros), sinon par nom + numéro composé
             $brand = $brandOf($r);
             $key = $brand ? "id:{$brand->id}" : $r->brand_name . '|' . $this->lastDigits($r->brand_phonenumber);
-            // Marque vérifiée : seuls les transferts postérieurs à la vérification comptent
             $checkedAt = $brand->transfer_checked_at ?? null;
-            if ($checkedAt && $r->ts <= strtotime($checkedAt . ' UTC')) {
-                continue;
-            }
             $brands[$key] ??= [
                 'name' => $brand->name ?? $r->brand_name,
                 'phonenumber' => $brand->phonenumber ?? $r->brand_phonenumber,
                 'brand_id' => $brand->id ?? null,
+                'checked_at' => $checkedAt,
                 'durations' => [],
+                'durations_after_check' => [],
                 'last' => [],
             ];
             $brands[$key]['durations'][] = $real;
+            if ($checkedAt && $r->ts > strtotime($checkedAt . ' UTC')) {
+                $brands[$key]['durations_after_check'][] = $real;
+            }
             if (count($brands[$key]['last']) < self::LAST_TRANSFERS) {
                 $brands[$key]['last'][] = [
                     'id' => $r->id,
@@ -181,12 +183,16 @@ class BrandCheckController extends Controller
             }
         }
 
+        // Marque vérifiée : elle repasse en liste normale seulement si ses transferts postérieurs à la
+        // vérification sont encore sous le seuil ; sinon elle est rangée à part (en bas de la page, grisée)
         $result = [];
         foreach ($brands as $key => $b) {
             $median = $this->median($b['durations']);
             if (count($b['durations']) < $minMeasured || $median >= $threshold) {
                 continue;
             }
+            $after = $b['durations_after_check'];
+            $stillShort = count($after) >= $minMeasured && $this->median($after) < $threshold;
             $result[] = [
                 'key' => $key,
                 'name' => $b['name'],
@@ -195,6 +201,8 @@ class BrandCheckController extends Controller
                 'measured' => count($b['durations']),
                 'last' => $b['last'],
                 'brand_id' => $b['brand_id'],
+                'checked_at' => $b['checked_at'],
+                'verified' => $b['checked_at'] !== null && !$stillShort,
             ];
         }
         usort($result, fn ($a, $b) => $a['median'] <=> $b['median']);
