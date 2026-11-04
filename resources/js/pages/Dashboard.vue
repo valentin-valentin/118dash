@@ -663,7 +663,7 @@ onMounted(() => {
                             class="h-4 w-4 rounded border-gray-300"
                         />
                         <label for="with-rejected" class="text-sm text-gray-700 cursor-pointer select-none">
-                            Avec les rejetés
+                            Rejetés
                         </label>
                     </div>
 
@@ -676,7 +676,7 @@ onMounted(() => {
                             class="h-4 w-4 rounded border-gray-300"
                         />
                         <label for="with-quality" class="text-sm text-gray-700 cursor-pointer select-none">
-                            Avec qualité audio
+                            Qualité audio
                         </label>
                     </div>
 
@@ -689,7 +689,7 @@ onMounted(() => {
                             class="h-4 w-4 rounded border-gray-300"
                         />
                         <label for="with-loss" class="text-sm text-gray-700 cursor-pointer select-none">
-                            Avec attente et pertes
+                            Attente/pertes
                         </label>
                     </div>
                 </div>
