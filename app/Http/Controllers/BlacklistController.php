@@ -6,6 +6,7 @@ use App\Models\Blacklist;
 use App\Support\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -73,6 +74,22 @@ class BlacklistController extends Controller
 
         return redirect()->route('blacklists.index')
             ->with('success', 'Blacklist modifiée avec succès.');
+    }
+
+    /**
+     * Retire un numéro de la blacklist : ses prochains appels ne sont plus bloqués.
+     * Les appels passés gardent leur historique, sans lien vers ce numéro (calls : SET NULL par la base ;
+     * disabled_calls n'a pas de règle de suppression, on retire le lien ici).
+     */
+    public function destroy(Blacklist $blacklist): JsonResponse
+    {
+        DB::transaction(function () use ($blacklist) {
+            DB::table('disabled_calls')->where('blacklist_id', $blacklist->id)->update(['blacklist_id' => null]);
+            $blacklist->delete();
+        });
+        Log::info('[Blacklist] Numéro retiré : ' . $blacklist->phonenumber, ['user' => auth()->user()?->email]);
+
+        return response()->json(['deleted' => true]);
     }
 
     public function bulkImport(Request $request): JsonResponse

@@ -189,6 +189,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/blacklists/filter-options', [BlacklistController::class, 'filterOptions']);
         Route::get('/blacklists', [BlacklistController::class, 'data']);
         Route::post('/blacklists/bulk-import', [BlacklistController::class, 'bulkImport']);
+        Route::delete('/blacklists/{blacklist}', [BlacklistController::class, 'destroy']);
 
         Route::get('/assignment-history/stats', [AssignmentHistoryController::class, 'stats']);
         Route::get('/assignment-history/filter-options', [AssignmentHistoryController::class, 'filterOptions']);

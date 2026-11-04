@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
-import { Plus, Pencil, Upload } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, Upload } from 'lucide-vue-next'
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 const stats = useApi('/data/blacklists/stats')
@@ -108,6 +108,30 @@ async function submitImport() {
         importError.value = "Erreur lors de l'import"
     } finally {
         importing.value = false
+    }
+}
+
+// ─── Suppression (confirmée : les appels de ce numéro ne sont plus bloqués) ──────
+const toDelete = ref(null)
+const deleting = ref(false)
+const deleteError = ref(null)
+async function confirmDelete() {
+    deleting.value = true
+    deleteError.value = null
+    try {
+        const res = await fetch(`/data/blacklists/${toDelete.value.id}`, {
+            method: 'DELETE',
+            headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrfToken() },
+        })
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `Erreur HTTP ${res.status}`)
+        toDelete.value = null
+        table.load(filters)
+        stats.load()
+        filterOptions.load()
+    } catch (e) {
+        deleteError.value = e.message
+    } finally {
+        deleting.value = false
     }
 }
 
@@ -211,11 +235,16 @@ onMounted(() => {
                     </template>
 
                     <template #actions="{ row }">
-                        <Button variant="ghost" size="sm" as-child>
-                            <Link :href="`/blacklists/${row.id}/edit`">
-                                <Pencil class="h-4 w-4" />
-                            </Link>
-                        </Button>
+                        <div class="flex items-center">
+                            <Button variant="ghost" size="sm" as-child>
+                                <Link :href="`/blacklists/${row.id}/edit`" title="Modifier">
+                                    <Pencil class="h-4 w-4" />
+                                </Link>
+                            </Button>
+                            <Button variant="ghost" size="sm" class="text-gray-500 hover:text-red-600" title="Supprimer" @click="(toDelete = row), (deleteError = null)">
+                                <Trash2 class="h-4 w-4" />
+                            </Button>
+                        </div>
                     </template>
                 </DataTable>
 
@@ -310,6 +339,19 @@ onMounted(() => {
                             {{ importing ? 'Import...' : 'Importer' }}
                         </Button>
                     </template>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+        <Dialog :open="!!toDelete" @update:open="(open) => !open && (toDelete = null)">
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Retirer {{ toDelete?.phonenumber }} de la blacklist ?</DialogTitle>
+                    <DialogDescription>Les prochains appels de ce numéro ne seront plus bloqués.</DialogDescription>
+                </DialogHeader>
+                <p v-if="deleteError" class="text-sm text-red-600">{{ deleteError }}</p>
+                <DialogFooter>
+                    <Button variant="outline" @click="toDelete = null">Annuler</Button>
+                    <Button variant="destructive" :disabled="deleting" @click="confirmDelete">Retirer de la blacklist</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
