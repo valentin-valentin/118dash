@@ -129,10 +129,12 @@ class BrandCheckController extends Controller
         $threshold = (int) ($params['threshold'] ?? 60);
         $minMeasured = (int) ($params['min'] ?? self::MIN_MEASURED);
 
-        // Fiches des marques (nom + 9 derniers chiffres du numéro) : lien de modification et date de vérification
-        $known = DB::table('brands')->whereNotNull('phonenumber')->where('phonenumber', '!=', '')
-            ->get(['id', 'name', 'phonenumber', 'enabled', 'transfer_checked_at']);
-        $byKey = $known->keyBy(fn ($b) => $b->name . '|' . $this->lastDigits($b->phonenumber));
+        // Fiche de la marque d'un transfert : l'appel ne garde que le nom et le numéro composé. On cherche d'abord
+        // le nom + ce numéro, sinon le nom seul s'il n'appartient qu'à une marque (numéro corrigé depuis l'appel).
+        $known = DB::table('brands')->get(['id', 'name', 'phonenumber', 'transfer_checked_at'])->keyBy('id');
+        $byNameNumber = $known->filter(fn ($b) => $b->phonenumber)->keyBy(fn ($b) => $b->name . '|' . $this->lastDigits($b->phonenumber));
+        $byUniqueName = $known->groupBy('name')->filter(fn ($g) => $g->count() === 1)->map->first();
+        $brandOf = fn ($r) => $byNameNumber[$r->brand_name . '|' . $this->lastDigits($r->brand_phonenumber)] ?? $byUniqueName[$r->brand_name] ?? null;
 
         $rows = $this->transfers($from, $to)
             ->when($params['hangup'] ?? null, fn ($q, $hangup) => $q->where('who_hangup', $hangup))
@@ -146,13 +148,21 @@ class BrandCheckController extends Controller
             if ($real === null) {
                 continue;
             }
-            $key = $r->brand_name . '|' . $this->lastDigits($r->brand_phonenumber);
+            // Une ligne par fiche de marque (tous ses numéros), sinon par nom + numéro composé
+            $brand = $brandOf($r);
+            $key = $brand ? "id:{$brand->id}" : $r->brand_name . '|' . $this->lastDigits($r->brand_phonenumber);
             // Marque vérifiée : seuls les transferts postérieurs à la vérification comptent
-            $checkedAt = $byKey[$key]->transfer_checked_at ?? null;
+            $checkedAt = $brand->transfer_checked_at ?? null;
             if ($checkedAt && $r->ts <= strtotime($checkedAt . ' UTC')) {
                 continue;
             }
-            $brands[$key] ??= ['name' => $r->brand_name, 'phonenumber' => $r->brand_phonenumber, 'durations' => [], 'last' => []];
+            $brands[$key] ??= [
+                'name' => $brand->name ?? $r->brand_name,
+                'phonenumber' => $brand->phonenumber ?? $r->brand_phonenumber,
+                'brand_id' => $brand->id ?? null,
+                'durations' => [],
+                'last' => [],
+            ];
             $brands[$key]['durations'][] = $real;
             if (count($brands[$key]['last']) < self::LAST_TRANSFERS) {
                 $brands[$key]['last'][] = [
@@ -166,6 +176,7 @@ class BrandCheckController extends Controller
                     'duration_agent' => (int) $r->duration_agent,
                     'platform' => $r->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
                     'who_hangup' => $r->who_hangup ?: null,
+                    'dialed' => $r->brand_phonenumber,
                 ];
             }
         }
@@ -183,8 +194,7 @@ class BrandCheckController extends Controller
                 'median' => $median,
                 'measured' => count($b['durations']),
                 'last' => $b['last'],
-                'brand_id' => $byKey[$key]->id ?? null,
-                'checked_at' => $byKey[$key]->transfer_checked_at ?? null,
+                'brand_id' => $b['brand_id'],
             ];
         }
         usort($result, fn ($a, $b) => $a['median'] <=> $b['median']);
@@ -202,13 +212,8 @@ class BrandCheckController extends Controller
      */
     public function check(Request $request): JsonResponse
     {
-        $validated = $request->validate(['name' => 'required|string', 'phonenumber' => 'required|string', 'checked' => 'required|boolean']);
-        $digits = substr(preg_replace('/\D/', '', $validated['phonenumber']), -9);
-        $updated = DB::table('brands')
-            ->where('name', $validated['name'])
-            ->whereRaw('RIGHT(phonenumber, 9) = ?', [$digits])
-            ->update(['transfer_checked_at' => $validated['checked'] ? now() : null]);
-        abort_unless($updated, 404, 'Marque introuvable dans la liste des marques (nom et numéro).');
+        $validated = $request->validate(['brand_id' => 'required|integer|exists:brands,id', 'checked' => 'required|boolean']);
+        DB::table('brands')->where('id', $validated['brand_id'])->update(['transfer_checked_at' => $validated['checked'] ? now() : null]);
 
         return response()->json(['checked_at' => $validated['checked'] ? now()->toIso8601String() : null]);
     }

@@ -139,7 +139,7 @@ async function markChecked(b) {
     const res = await fetch('/data/brand-checks/check', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-XSRF-TOKEN': xsrf() },
-        body: JSON.stringify({ name: b.name, phonenumber: b.phonenumber, checked: true }),
+        body: JSON.stringify({ brand_id: b.brand_id, checked: true }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -326,6 +326,9 @@ async function markChecked(b) {
                                                     <dt class="opacity-70">Appelant</dt><dd class="tabular-nums">{{ formatPhone(t.caller) }}</dd>
                                                     <dt class="opacity-70">Agent</dt><dd>{{ agentLabel(t.agent_name) ?? '-' }}<template v-if="t.duration_agent"> ({{ formatDuration(t.duration_agent) }})</template></dd>
                                                     <dt class="opacity-70">Transfert</dt><dd class="tabular-nums">{{ formatDuration(t.seconds) }}</dd>
+                                                    <template v-if="t.dialed && t.dialed !== b.phonenumber">
+                                                        <dt class="opacity-70">Numéro composé</dt><dd class="tabular-nums">{{ formatPhone(t.dialed) }}</dd>
+                                                    </template>
                                                     <dt class="opacity-70">Raccroché par</dt><dd>{{ hangupLabel(t.who_hangup) }}</dd>
                                                     <dt class="opacity-70">Plateforme</dt><dd>{{ platformLabel(t.platform) }}</dd>
                                                 </dl>
@@ -335,7 +338,7 @@ async function markChecked(b) {
                                     </div>
                                 </td>
                                 <td class="px-4 py-2.5 text-right whitespace-nowrap">
-                                    <Button variant="outline" size="sm" @click="markChecked(b)">Marquer vérifiée</Button>
+                                    <Button v-if="b.brand_id" variant="outline" size="sm" @click="markChecked(b)">Marquer vérifiée</Button>
                                 </td>
                             </tr>
                         </tbody>

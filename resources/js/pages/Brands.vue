@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
-import { Pencil, PhoneForwarded, Plus } from 'lucide-vue-next'
+import { Head, Link, usePage } from '@inertiajs/vue3'
+import { Pencil, Phone, PhoneForwarded, Plus } from 'lucide-vue-next'
+import { call as callNumber, normalizeNumber } from '@/composables/useSoftphone'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
@@ -69,6 +70,10 @@ const YES_NO = [
 
 const phone = (n) => (n ? formatPhone(n) : '-')
 
+// Appeler la marque avec le softphone (numéros français composables uniquement)
+const softphoneEnabled = computed(() => !!usePage().props.softphone?.enabled)
+const callable = (number) => softphoneEnabled.value && !!normalizeNumber(number ?? '')
+
 onMounted(() => {
     stats.load()
     table.load(filters)
@@ -129,7 +134,19 @@ onMounted(() => {
                     </template>
                     <template #type="{ value }"><span class="text-sm text-gray-600">{{ value || '-' }}</span></template>
                     <template #country="{ value }"><span class="text-sm text-gray-600">{{ value || '-' }}</span></template>
-                    <template #phonenumber="{ value }"><span class="text-sm whitespace-nowrap text-gray-700 tabular-nums">{{ phone(value) }}</span></template>
+                    <template #phonenumber="{ value, row }">
+                        <button
+                            v-if="callable(value)"
+                            type="button"
+                            class="inline-flex items-center gap-1.5 text-sm whitespace-nowrap text-gray-700 tabular-nums hover:text-gray-900"
+                            :title="`Appeler ${row.name} avec le softphone`"
+                            @click="callNumber(value)"
+                        >
+                            <Phone class="size-3.5 text-gray-400" />
+                            {{ phone(value) }}
+                        </button>
+                        <span v-else class="text-sm whitespace-nowrap text-gray-700 tabular-nums">{{ phone(value) }}</span>
+                    </template>
                     <template #can_transfer="{ value }"><span class="text-sm" :class="value ? 'text-gray-900' : 'text-gray-400'">{{ value ? 'Oui' : 'Non' }}</span></template>
                     <template #transfer_announcement="{ value }"><span class="text-sm" :class="value ? 'text-gray-900' : 'text-gray-400'">{{ value ? 'Oui' : 'Non' }}</span></template>
                     <template #transfers_30d="{ value }"><span class="text-sm tabular-nums text-gray-700">{{ value ? value.toLocaleString('fr-FR') : '-' }}</span></template>
