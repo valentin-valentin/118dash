@@ -204,7 +204,7 @@ async function setFailoverMode(mode) {
         mode === 'simulate'
             ? {
                   title: 'Passer en simulation ?',
-                  body: "En cas de panne de notre serveur, rien ne basculera plus sur Voxnode : la panne sera seulement journalisée. Les appels envoyés chez nous pendant une panne seront perdus.",
+                  body: "En cas de panne de notre serveur, rien ne basculera plus sur Voxnode : la panne sera seulement notée dans l'historique. Les appels envoyés chez nous pendant une panne seront perdus.",
                   confirm: 'Passer en simulation',
                   danger: true,
               }
@@ -218,8 +218,16 @@ async function setTransfersInternal(internal) {
     if (internal === !!telSettings.value.selfhosted_transfers_internal) return
     const ok = await ask(
         internal
-            ? { title: 'Envoyer tous les transferts au service interne ?', body: "Sur notre serveur, chaque transfert partira au service interne au lieu de la marque. La marque choisie par l'agent reste enregistrée.", confirm: 'Service interne' }
-            : { title: 'Transférer vers les marques ?', body: "Sur notre serveur, chaque transfert partira vers la marque choisie par l'agent.", confirm: 'Vers les marques', danger: true },
+            ? {
+                  title: 'Envoyer tous les transferts au service interne ?',
+                  body: "Sur notre serveur, tous les transferts iront au service interne, y compris ceux de l'agent IA, sans message avant transfert. La marque choisie par l'agent reste notée sur l'appel. Les appels Voxnode ne changent pas.",
+                  confirm: 'Tout au service interne',
+              }
+            : {
+                  title: 'Transférer vers les marques ?',
+                  body: "Sur notre serveur, chaque transfert appellera la marque choisie par l'agent, avec le message avant transfert si la marque l'a. Si la marque ne décroche pas en 2 minutes, est occupée ou refuse l'appel, le client part automatiquement au service interne. Les appels Voxnode ne changent pas.",
+                  confirm: 'Vers les marques',
+              },
     )
     if (ok) saveTelephony({ selfhosted_transfers_internal: internal }, internal ? 'Transferts : service interne' : 'Transferts : vers les marques')
 }
@@ -243,9 +251,9 @@ const ourDown = computed(() => ourState.value === 'on' && !tel.value?.available?
 const ourStateText = computed(() => {
     const st = telSettings.value
     if (!st) return ''
-    if (ourState.value === 'off') return `Ne reçoit aucun nouveau numéro ; ses agents partent progressivement chez Voxnode. En le réactivant, il reprend ${st.selfhosted_percent} % des nouveaux numéros.`
+    if (ourState.value === 'off') return `Ne reçoit aucun nouveau numéro ; ses agents partent progressivement chez Voxnode (sauf les agents forcés « Toujours notre serveur »). En le réactivant, il reprend ${st.selfhosted_percent} % des nouveaux numéros.`
     if (ourDown.value) return `En panne : tout part chez Voxnode, retour automatique après ${st.pbx_recovery_minutes} min de bon fonctionnement.`
-    return `Reçoit ${st.selfhosted_percent} % des nouveaux numéros ; le régulateur lui envoie des agents.`
+    return `Reçoit environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés, si un agent est libre). Les agents suivent : autant d'agents chez nous que la part des numéros qui y arrivent.`
 })
 // L'API refuse de désactiver notre serveur quand Voxnode est coupé
 const ourOffBlocked = computed(() => (telSettings.value?.voxnode_manual_off ? 'Impossible : Voxnode est coupé' : ''))
@@ -255,10 +263,10 @@ async function setOurState(target) {
     const st = telSettings.value
     const ok = await ask(
         target === 'on'
-            ? { title: 'Activer notre serveur ?', body: `Il recevra ${st.selfhosted_percent} % des nouveaux numéros, et le régulateur lui enverra des agents.`, confirm: 'Activer' }
+            ? { title: 'Activer notre serveur ?', body: `Environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés seulement) iront chez nous, à condition qu'un agent soit libre. Les agents y sont envoyés au fur et à mesure que des numéros y arrivent.`, confirm: 'Activer' }
             : {
                   title: 'Désactiver notre serveur ?',
-                  body: "Ses numéros repartent immédiatement chez Voxnode. Ses agents partent progressivement : le dernier attend qu'il ne reste plus aucun client ni numéro chez nous (au moins 3 min 30).",
+                  body: "Ses numéros repartent immédiatement chez Voxnode. Ses agents partent progressivement : le dernier attend qu'il ne reste plus aucun client ni numéro chez nous (au moins 3 min 30). Les appels en cours chez nous continuent normalement.",
                   confirm: 'Désactiver',
                   danger: true,
               },
@@ -277,11 +285,11 @@ async function setVoxnodeCut(cut) {
         cut
             ? {
                   title: 'Couper Voxnode ?',
-                  body: 'Les numéros dont le fournisseur est autorisé chez nous arrivent immédiatement chez nous, ainsi que tous les agents automatiques.',
+                  body: 'Les numéros dont le fournisseur est autorisé chez nous arrivent immédiatement chez nous, ainsi que tous les agents automatiques. Les numéros des autres fournisseurs restent chez Voxnode : seuls les agents forcés « Toujours Voxnode » pourront y répondre.',
                   confirm: 'Couper Voxnode',
                   danger: true,
               }
-            : { title: 'Rétablir Voxnode ?', body: 'Notre serveur ne garde qu\'environ sa part réglée (tirage au hasard) : les autres numéros repartent immédiatement chez Voxnode, les agents progressivement.', confirm: 'Rétablir' },
+            : { title: 'Rétablir Voxnode ?', body: `Notre serveur ne garde qu'environ ${telSettings.value.selfhosted_percent} % des numéros, choisis au hasard ; les autres repartent tout de suite chez Voxnode, les agents petit à petit.`, confirm: 'Rétablir' },
     )
     if (ok) saveTelephony({ voxnode_manual_off: cut }, cut ? 'Voxnode est coupé' : 'Voxnode est rétabli')
 }
@@ -623,7 +631,7 @@ async function addIp() {
     if (await run(() => send('POST', '/data/sip/trusted-ips', { ip }), `${ip} autorisée`)) showIpDialog.value = false
 }
 async function removeIp(ip) {
-    if (!(await ask({ title: `Retirer ${ip} ?`, body: 'Les appels venant de cette IP seront refusés immédiatement.', confirm: 'Retirer', danger: true }))) return
+    if (!(await ask({ title: `Retirer ${ip} ?`, body: 'Les appels venant de cette IP seront refusés immédiatement. Si ce fournisseur est autorisé chez nous, ses appels seront perdus.', confirm: 'Retirer', danger: true }))) return
     run(() => send('DELETE', `/data/sip/trusted-ips/${encodeURIComponent(ip)}`), `${ip} retirée`)
 }
 
@@ -684,7 +692,7 @@ const tabs = computed(() => {
         problem: false,
     })
     list.push({ id: 'service-interne', label: 'Service interne', summary: plural(sequences.value.internal.length, 'son'), problem: false })
-    list.push({ id: 'fournisseurs', label: 'Fournisseurs', summary: `${trustedIps.value.length} IP autorisées`, problem: false })
+    list.push({ id: 'fournisseurs', label: 'Fournisseurs', summary: plural(trustedIps.value.length, 'IP autorisée'), problem: false })
     if (regulatorForm.available.length) list.push({ id: 'regulateur', label: 'Régulateur', summary: tel.value?.regulator ? (regulatorStopped.value ? 'Arrêté' : 'Tourne') : '—', problem: regulatorStopped.value })
     const storageLow = disks.value.some((d) => d.low) || !!cloud.value?.stale
     list.push({ id: 'serveur', label: 'Serveur et stockage', summary: storageLow ? 'Stockage à surveiller' : `Asterisk ${version.value}`, problem: storageLow })
@@ -730,7 +738,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Impossible de joindre le panel : {{ error }}</p>
             <div v-if="!configured" class="rounded-lg border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
-                API du serveur SIP non configurée : renseigner SIP_API_URL et SIP_API_TOKEN dans le .env, puis php artisan config:cache.
+                Configuration à faire par le développeur : API du serveur SIP non configurée : renseigner SIP_API_URL et SIP_API_TOKEN dans le .env, puis php artisan config:cache.
             </div>
 
             <div v-else class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -761,7 +769,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
                     <!-- ═══ Trafic ═══ -->
                     <template v-else-if="currentTab === 'trafic'">
-                        <p v-if="telephony?.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">API téléphonie indisponible : {{ telephony.error }}</p>
+                        <p v-if="telephony?.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de lire les réglages de téléphonie (vn.118.ae) : {{ telephony.error }}</p>
                         <template v-else-if="telSettings">
                             <!-- Actions immédiates -->
                             <section class="rounded-lg border border-gray-100 bg-white">
@@ -816,7 +824,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </div>
                                             <p class="mt-2 text-sm" :class="telSettings.voxnode_manual_off ? 'text-red-600' : 'text-gray-500'">
                                                 {{ telSettings.voxnode_manual_off
-                                                    ? 'Coupé à la main : tout ce qui peut venir chez nous y est.'
+                                                    ? 'Coupé : les numéros des fournisseurs autorisés et tous les agents automatiques sont chez nous.'
                                                     : voxnodeCutBlocked
                                                       ? `Reçoit le reste du trafic. ${voxnodeCutBlocked.replace('Impossible : ', 'Ne peut pas être coupé : ')}.`
                                                       : 'Reçoit le reste du trafic.' }}
@@ -842,7 +850,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </div>
                                             <p class="mt-2 text-sm" :class="telSettings.pbx_failover_mode === 'simulate' ? 'text-amber-700' : 'text-gray-500'">
                                                 {{ telSettings.pbx_failover_mode === 'simulate'
-                                                    ? 'Une panne de notre serveur est seulement journalisée : rien ne bascule sur Voxnode.'
+                                                    ? 'Une panne de notre serveur est seulement notée dans l’historique : rien ne bascule sur Voxnode.'
                                                     : 'Une panne de notre serveur envoie ses numéros et ses agents sur Voxnode.' }}
                                             </p>
                                         </div>
@@ -853,7 +861,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                         <div>
                                             <div class="inline-flex rounded-md border border-gray-200 p-0.5">
                                                 <button
-                                                    v-for="(label, key) in { brand: 'Vers la marque', internal: 'Tous au service interne' }"
+                                                    v-for="(label, key) in { brand: 'Vers la marque (sinon service interne)', internal: 'Tout au service interne' }"
                                                     :key="key"
                                                     type="button"
                                                     class="rounded px-3 py-1.5 text-sm transition-colors"
@@ -866,8 +874,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </div>
                                             <p class="mt-2 text-sm text-gray-500">
                                                 {{ telSettings.selfhosted_transfers_internal
-                                                    ? "Chaque transfert sur notre serveur part au service interne ; la marque choisie par l'agent reste enregistrée."
-                                                    : "Chaque transfert sur notre serveur part vers la marque choisie par l'agent." }}
+                                                    ? "Tous les transferts vont au service interne, sans message avant transfert, y compris ceux de l'agent IA. La marque choisie par l'agent reste notée sur l'appel."
+                                                    : "Chaque transfert appelle la marque choisie par l'agent (la marque voit le numéro du client). S'il n'aboutit pas (refus, occupé, pas de réponse en 2 min), le client part au service interne." }}
                                             </p>
                                         </div>
                                     </div>
@@ -883,7 +891,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="percent" class="text-gray-900">Part des nouveaux numéros envoyée chez nous</Label>
-                                            <p class="text-sm text-gray-500">Ne change que les nouvelles attributions : les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite : Désactiver.</p>
+                                            <p class="text-sm text-gray-500">Ne change que les nouvelles attributions : les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite : Désactiver. Fournisseurs autorisés seulement ; si aucun agent n'est libre, le numéro va chez Voxnode. Les agents suivent les numéros.</p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="percent" v-model.number="trafficForm.values.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-24 text-right tabular-nums" />
@@ -893,7 +901,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="recovery" class="text-gray-900">Retour après une panne</Label>
-                                            <p class="text-sm text-gray-500">Temps de bon fonctionnement avant de renvoyer du trafic sur notre serveur.</p>
+                                            <p class="text-sm text-gray-500">Après une panne, durée de bon fonctionnement avant que notre serveur reçoive de nouveau des numéros (mode Bascule automatique).</p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="recovery" v-model.number="trafficForm.values.pbx_recovery_minutes" type="number" min="1" max="120" class="h-9 w-24 text-right tabular-nums" />
@@ -915,7 +923,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                     <div>
                                         <Label for="ai-calls" class="text-gray-900">Test des agents IA</Label>
-                                        <p class="text-sm text-gray-500">Appels envoyés chaque jour au prestataire IA, répartis au hasard sur la journée. 0 = test coupé.</p>
+                                        <p class="text-sm text-gray-500">Environ {{ telSettings.ai_daily_calls }} appels par jour de notre serveur (au plus {{ telSettings.ai_daily_calls }}), jamais les appelants prioritaires. Si l'IA ne décroche pas en 5 s, nos agents prennent l'appel. 0 = test coupé.</p>
                                     </div>
                                     <div class="flex items-center gap-2 text-sm text-gray-600">
                                         <Input id="ai-calls" v-model.number="aiForm.values.ai_daily_calls" type="number" min="0" max="1000" class="h-9 w-24 text-right tabular-nums" />
@@ -943,7 +951,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <header class="border-b border-gray-100 px-5 py-3">
                             <h2 class="font-semibold text-gray-900">Horaires d'ouverture</h2>
                             <p class="text-sm text-gray-500">
-                                Heure de Paris. En dehors des horaires, les nouveaux appels sont refusés sans décrocher (l'appelant ne paie rien) ; un appel en cours n'est jamais coupé.
+                                Heure de Paris, appels arrivant sur notre serveur uniquement (Voxnode n'est pas concerné). En dehors des horaires, l'appel est refusé sans décrocher : il n'est pas facturé. Un appel déjà en cours n'est jamais coupé.
                             </p>
                         </header>
                         <p
@@ -1000,7 +1008,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <section class="rounded-lg border border-gray-100 bg-white">
                             <header class="border-b border-gray-100 px-5 py-3">
                                 <h2 class="font-semibold text-gray-900">Parcours de l'appelant</h2>
-                                <p class="text-sm text-gray-500">Ce qu'entend chaque appel entrant, dans l'ordre : jusqu'à ce qu'un agent décroche, puis s'il est transféré.</p>
+                                <p class="text-sm text-gray-500">Ce qu'entend chaque appel arrivant sur notre serveur, dans l'ordre, jusqu'à ce qu'un agent décroche, puis en cas de transfert.</p>
                             </header>
                             <ol class="px-5 py-2">
                                 <li class="relative border-l border-gray-200 pb-6 pl-6 pt-3">
@@ -1102,7 +1110,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">4</span>
                                     <SipSoundSequence
                                         title="Message avant transfert"
-                                        description="Joué en entier au client quand l'agent transfère vers une marque (l'agent est libéré tout de suite), puis transfert. Activé par marque (colonne transfer_announcement), désactivé pour le service interne."
+                                        description="Joué en entier au client avant un transfert vers une marque (l'agent est libéré tout de suite). Il se règle marque par marque, dans la fiche de la marque. Il n'est pas joué pour le service interne, ni quand tous les transferts vont au service interne."
                                         :names="sequences.transfer"
                                         :library="sounds"
                                         empty-text="Aucun message : le transfert est immédiat."
@@ -1142,7 +1150,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                     <section v-else-if="currentTab === 'service-interne'" class="rounded-lg border border-gray-100 bg-white">
                         <header class="border-b border-gray-100 px-5 py-3">
                             <h2 class="font-semibold text-gray-900">Service interne</h2>
-                            <p class="text-sm text-gray-500">Ce qu'entendent les appels transférés vers le service interne ({{ INTERNAL_SERVICE_NUMBER }}).</p>
+                            <p class="text-sm text-gray-500">Ce qu'entend le client quand il est envoyé au service interne ({{ INTERNAL_SERVICE_NUMBER }}) : choix de l'agent, transfert vers une marque qui n'a pas abouti, ou tous les transferts si le réglage est actif. Joué jusqu'à la fin de l'appel (29 min 45 au plus depuis le décroché).</p>
                         </header>
                         <div class="px-5 py-4">
                             <SipSoundSequence
@@ -1184,7 +1192,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <header class="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-3">
                             <div>
                                 <h2 class="font-semibold text-gray-900">IP autorisées · {{ trustedIps.length }}</h2>
-                                <p class="text-sm text-gray-500">Seuls ces serveurs de fournisseurs peuvent nous envoyer des appels. L'IP de Voxnode est exclue volontairement.</p>
+                                <p class="text-sm text-gray-500">Seuls ces serveurs de fournisseurs peuvent nous envoyer des appels. L'IP de Voxnode est exclue volontairement (Voxnode n'envoie jamais nos appels ici).</p>
                             </div>
                             <Button size="sm" variant="secondary" class="shrink-0" :disabled="busy" @click="openIpDialog">
                                 <Plus class="mr-1.5 h-4 w-4" />
@@ -1206,7 +1214,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                     <form v-else-if="currentTab === 'regulateur'" class="rounded-lg border border-gray-100 bg-white" @submit.prevent="regulatorForm.save()">
                         <header class="border-b border-gray-100 px-5 py-3">
                             <h2 class="font-semibold text-gray-900">Régulateur</h2>
-                            <p class="text-sm text-gray-500">Toutes les 30 s, il déplace des agents automatiques vers la plateforme qui en a besoin.</p>
+                            <p class="text-sm text-gray-500">Toutes les 30 s, il répartit les agents automatiques : autant d'agents chez nous que la part des numéros qui y arrivent, plus ou moins quelques agents selon l'attente des deux côtés. Personne n'est envoyé chez nous tant qu'aucun numéro n'y est.</p>
                         </header>
                         <p v-if="tel?.regulator" class="border-b px-5 py-3 text-sm" :class="regulatorStopped ? 'border-red-100 bg-red-50 text-red-700' : 'border-gray-100 text-gray-600'">
                             <template v-if="regulatorStopped">Arrêté : dernière décision {{ lastRun?.at ? new Date(lastRun.at).toLocaleTimeString('fr-FR') : 'inconnue' }}.</template>
@@ -1216,9 +1224,9 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <div class="divide-y divide-gray-50">
                             <div
                                 v-for="f in [
-                                    { key: 'regulator_max_moves', label: 'Agents déplacés à chaque passage', help: 'Au maximum, toutes les 30 s.', unit: 'agents', min: 1, max: 10 },
+                                    { key: 'regulator_max_moves', label: 'Agents déplacés à chaque passage', help: 'Nombre maximum d\'agents déplacés toutes les 30 s.', unit: 'agents', min: 1, max: 10 },
                                     { key: 'regulator_cooldown_minutes', label: 'Délai avant de redéplacer un agent', help: 'Un agent qui vient de changer de plateforme n\'est pas redéplacé avant.', unit: 'min', min: 0, max: 60 },
-                                    { key: 'regulator_wait_seconds', label: 'Attente qui déclenche un renfort', help: 'Un client qui attend plus longtemps dans notre file = besoin d\'agents chez nous.', unit: 's', min: 0, max: 600 },
+                                    { key: 'regulator_wait_seconds', label: 'Attente qui déclenche un renfort', help: 'Au-delà de cette attente dans notre file (après l\'attente forcée), un agent libre de Voxnode est envoyé en renfort.', unit: 's', min: 0, max: 600 },
                                 ]"
                                 :key="f.key"
                                 class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]"
@@ -1279,7 +1287,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 </div>
                             </div>
                             <p class="border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
-                                Purge prévue : enregistrements agent après 120 j, transfert après 30 j, blacklist conservés.
+                                Suppression automatique : enregistrements agent après 180 jours, transferts après 60 jours. Ceux des appelants blacklistés sont gardés.
                                 <template v-if="usage?.computed_at">Détail calculé à {{ new Date(usage.computed_at).toLocaleTimeString('fr-FR') }}.</template>
                             </p>
                         </section>
@@ -1290,7 +1298,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                             </header>
                             <dl class="divide-y divide-gray-50 text-sm">
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">IP à donner aux fournisseurs (SIP / RTP)</dt><dd class="font-mono text-gray-900">54.36.250.193</dd></div>
-                                <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">WebRTC (softphone du panel)</dt><dd class="font-mono text-gray-900">wss://sip.118.ae/ws</dd></div>
+                                <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Connexion des softphones (agents et panel)</dt><dd class="font-mono text-gray-900">wss://sip.118.ae/ws</dd></div>
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Machine</dt><dd class="text-gray-900">OVH RISE-2 · Gravelines</dd></div>
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Système</dt><dd class="text-gray-900">Ubuntu 26.04 · Asterisk {{ version }}</dd></div>
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">En service depuis</dt><dd class="text-gray-900">{{ uptimeText }}</dd></div>
