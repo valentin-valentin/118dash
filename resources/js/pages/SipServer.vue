@@ -106,7 +106,7 @@ const lineDown = computed(() => registrations.value.length > 0 && registrations.
 const statusItems = computed(() => {
     if (!data.value) return []
     const st = telSettings.value
-    let ours = { value: 'En service', problem: false }
+    let ours = { value: 'Actif', problem: false }
     if (!serverUp.value) ours = { value: 'Ne répond pas', problem: true }
     else if (tel.value && !st.selfhosted_enabled) ours = { value: 'Désactivé', problem: false }
     else if (tel.value && st.selfhosted_manual_off) ours = { value: 'Désactivé', problem: false }
@@ -118,19 +118,19 @@ const statusItems = computed(() => {
     if (tel.value && 'selfhosted_transfers_internal' in st) {
         items.push({
             label: 'Transferts (notre serveur)',
-            value: st.selfhosted_transfers_internal ? 'service interne' : 'vers la marque',
+            value: st.selfhosted_transfers_internal ? 'Service interne' : 'Vers la marque',
             href: '/sip-server/settings#trafic',
             title: st.selfhosted_transfers_internal
-                ? 'Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)'
-                : "Vers la marque choisie par l'agent ; si elle ne répond pas en 20 s ou refuse, service interne",
+                ? 'Sur notre serveur, tous les transferts vont au service interne. La marque choisie par l’agent reste notée sur l’appel.'
+                : "Chaque transfert appelle la marque choisie par l'agent. Si elle ne décroche pas en 20 s, est occupée ou refuse, le client part au service interne.",
         })
     }
     if (routedProviders.value) {
         items.push({
             label: 'Fournisseurs autorisés chez nous',
-            value: routedProviders.value.length ? routedProviders.value.map((p) => p.name).join(', ') : 'aucun',
+            value: routedProviders.value.length ? routedProviders.value.map((p) => p.name).join(', ') : 'Aucun',
             href: '/providers',
-            title: 'Seuls les numéros de ces fournisseurs peuvent arriver sur notre serveur (réglable dans la fiche du fournisseur)',
+            title: 'Seuls les numéros de ces fournisseurs peuvent arriver sur notre serveur. Ce choix se règle dans la fiche de chaque fournisseur.',
         })
     }
     if (tel.value) {
@@ -153,7 +153,7 @@ const statusItems = computed(() => {
 const freshness = computed(() => {
     if (!loadedAt.value) return null
     const s = Math.max(0, Math.round((now.value - loadedAt.value) / 1000))
-    return s > 20 ? { text: `Données figées depuis ${s} s`, problem: true } : { text: `Actualisé il y a ${s} s`, problem: false }
+    return s > 20 ? { text: `Pas de mise à jour depuis ${s} s`, problem: true } : { text: `Actualisé il y a ${s} s`, problem: false }
 })
 
 const hoursWanted = computed(() => telSettings.value?.opening_hours ?? null)
@@ -196,23 +196,27 @@ const alerts = computed(() => {
     const st = telSettings.value
     if (data.value && !serverUp.value) list.push('Notre serveur ne répond pas.')
     if (tel.value && st.selfhosted_enabled && !st.selfhosted_manual_off && !tel.value.available?.selfhosted) {
-        list.push(`Notre serveur est en panne : tout part chez Voxnode, retour après ${st.pbx_recovery_minutes} min de bonne santé.`)
+        list.push(
+            st.pbx_failover_mode === 'simulate'
+                ? 'Notre serveur est en panne. Mode simulation : rien ne part chez Voxnode, les appels envoyés chez nous pendant la panne sont perdus.'
+                : `Notre serveur est en panne. Tout part chez Voxnode. Notre serveur recevra de nouveau des numéros après ${st.pbx_recovery_minutes} min sans problème.`,
+        )
     }
     // Redémarrage récent d'Asterisk : les appels en cours ont été coupés
     const restart = (tel.value?.health?.events ?? []).find((e) => e.state === 'restart' && Date.now() - new Date(e.at).getTime() < 30 * 60 * 1000)
-    if (restart) list.push(`Notre serveur a redémarré à ${formatTime(restart.at)} : les appels en cours ont été coupés. ${restart.reason ?? ''}`.trim())
-    if (lineDown.value) list.push('La ligne OVH est déconnectée : le téléphone du panel ne peut plus appeler l’extérieur.')
-    if (diskLow('disk_data', DATA_LOW_BYTES) || diskLow('disk_root', ROOT_LOW_BYTES)) list.push('Le disque de notre serveur est presque plein (détail dans Configuration).')
+    if (restart) list.push(`Notre serveur a redémarré à ${formatTime(restart.at)}. Les appels en cours à ce moment-là ont été coupés. ${restart.reason ?? ''}`.trim())
+    if (lineDown.value) list.push('La ligne OVH est déconnectée. Le softphone du panel ne peut plus appeler l’extérieur.')
+    if (diskLow('disk_data', DATA_LOW_BYTES) || diskLow('disk_root', ROOT_LOW_BYTES)) list.push('Le disque de notre serveur est presque plein. Le détail est dans Configuration, onglet Serveur et stockage.')
     if (hoursProblem.value?.level === 'error') list.push(hoursProblem.value.text)
-    if (regulatorStale.value) list.push(`Le régulateur ne tourne plus : dernière décision ${lastRun.value?.at ? `à ${formatTime(lastRun.value.at)}` : 'inconnue'}.`)
+    if (regulatorStale.value) list.push(`Le régulateur est arrêté. ${lastRun.value?.at ? `Dernière décision à ${formatTime(lastRun.value.at)}.` : 'Aucune décision connue.'}`)
     const failed = (telAgents.value ?? []).filter((a) => a.online && a.switch_failed)
     // switch_failed : la plateforme visée par la bascule ratée (« selfhosted » ou « voxnode »)
     const failedTo = (platform) => failed.filter((a) => a.switch_failed === platform).map((a) => a.username).join(', ')
     const failedOurs = failedTo('selfhosted')
     const failedVoxnode = failedTo('voxnode')
-    if (failedOurs) list.push(`Passage sur notre serveur raté : ${failedOurs} (nouvel essai automatique dans quelques minutes).`)
-    if (failedVoxnode) list.push(`Retour vers Voxnode raté : ${failedVoxnode} (nouvel essai dans 2 min).`)
-    if (lostAgents.value.length) list.push(`Connectés mais sans téléphone actif depuis plus de 30 s : ${lostAgents.value.map((a) => a.username).join(', ')}.`)
+    if (failedOurs) list.push(`Ces agents n’ont pas pu passer sur notre serveur : ${failedOurs}. Un nouvel essai aura lieu automatiquement dans quelques minutes.`)
+    if (failedVoxnode) list.push(`Ces agents n’ont pas pu repasser chez Voxnode : ${failedVoxnode}. Nouvel essai dans 2 min.`)
+    if (lostAgents.value.length) list.push(`Ces agents sont connectés, mais leur téléphone n’est relié ni à notre serveur ni à Voxnode depuis plus de 30 s : ${lostAgents.value.map((a) => a.username).join(', ')}.`)
     return list
 })
 
@@ -340,7 +344,7 @@ const splitCalls = (list) => ({ ours: list.filter((c) => c.platform === 'selfhos
 
 const callColumns = [
     { key: 'platform', label: 'Plateforme' },
-    { key: 'caller', label: 'Appelant' },
+    { key: 'caller', label: 'Client' },
     { key: 'exten', label: 'Numéro appelé' },
     { key: 'status', label: 'Étape' },
     { key: 'agent', label: 'Agent' },
@@ -379,14 +383,14 @@ const callFigures = computed(() => {
         { label: 'Avec un agent', value: busyAgents.value.length, split: split(busyAgents.value) },
         { label: 'Introduction et attente forcée', value: welcome.length, split: splitCalls(welcome) },
         { label: "En attente d'un agent", value: queue.length, split: splitCalls(queue) },
-        { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : "personne n'attend un agent", title: "Client en attente d'un agent depuis le plus longtemps" },
+        { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : "Personne n'attend", title: "Le client qui attend un agent depuis le plus longtemps. La durée est comptée depuis le début de son appel." },
     ]
 })
 // Note du groupe Appels : Voxnode non branché, ou attentes sans détail d'étape
 const callsNote = computed(() => {
-    if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Appels Voxnode non disponibles ici' : `Voxnode indisponible : ${voxnode.value.error}`
+    if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Appels Voxnode non disponibles ici' : `Impossible de lire les appels Voxnode. Erreur : ${voxnode.value.error}`
     const legacy = byStage('waiting').length
-    return legacy ? `+ ${legacy} chez Voxnode « En attente », sans détail` : ''
+    return legacy ? `Plus ${legacy} en attente chez Voxnode, étape inconnue` : ''
 })
 
 // Part des nouveaux numéros envoyée chez nous : un pourcentage court, la raison en dessous
@@ -440,7 +444,7 @@ async function setPin(agent, value) {
         })
         const json = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(json.message || `Erreur HTTP ${res.status}`)
-        pinMessage.value = { ok: true, text: `${agent.username} : ${PIN_OPTIONS.find((o) => o.value === value)?.label}` }
+        pinMessage.value = { ok: true, text: `${agent.username} est maintenant en mode « ${PIN_OPTIONS.find((o) => o.value === value)?.label} »` }
         await load()
     } catch (e) {
         pinMessage.value = { ok: false, text: e.message }
@@ -524,9 +528,9 @@ const sinceLastRun = computed(() => {
                 </template>
             </PageHeader>
 
-            <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Impossible de joindre le panel : {{ error }}</p>
+            <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Impossible de charger les données. Erreur : {{ error }}</p>
             <div v-if="!configured" class="rounded-lg border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
-                API du serveur SIP non configurée : renseigner SIP_API_URL et SIP_API_TOKEN dans le .env, puis php artisan config:cache.
+                Le lien avec notre serveur n'est pas configuré. À faire par le développeur : renseigner SIP_API_URL et SIP_API_TOKEN dans le .env, puis lancer php artisan config:cache.
             </div>
 
             <template v-else>
@@ -555,7 +559,7 @@ const sinceLastRun = computed(() => {
                         {{ text }}
                     </p>
                     <p v-if="telephony?.ok === false" class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                        Réglages de téléphonie indisponibles ({{ telephony.error }}) : seuls les agents de notre serveur sont affichés.
+                        Impossible de lire les réglages de téléphonie. Seuls les agents connectés à notre serveur sont affichés. Erreur : {{ telephony.error }}
                     </p>
                     <p v-if="hoursProblem?.level === 'pending'" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">{{ hoursProblem.text }}</p>
                 </div>
@@ -577,7 +581,7 @@ const sinceLastRun = computed(() => {
                                 <p v-else class="truncate text-2xl font-semibold tabular-nums" :class="f.problem ? 'text-red-600' : 'text-gray-900'">{{ f.value }}</p>
                                 <!-- Répartition nous / Voxnode, avec les mêmes repères que la liste des agents -->
                                 <p v-if="f.split" class="flex items-center gap-3 whitespace-nowrap text-xs tabular-nums text-gray-500">
-                                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-900" />nous {{ f.split.ours }}</span>
+                                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-900" />chez nous {{ f.split.ours }}</span>
                                     <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-200" />Voxnode {{ f.split.theirs }}</span>
                                 </p>
                                 <p v-else-if="f.sub" :title="f.sub" class="truncate text-xs" :class="f.problem ? 'text-red-600' : 'text-gray-400'">{{ f.sub }}</p>
@@ -598,7 +602,7 @@ const sinceLastRun = computed(() => {
                                 :rows="tableCalls"
                                 :row-class="(row) => (row.status.key === 'ended' ? 'opacity-50' : '')"
                                 :loading="loading"
-                                :empty-message="data?.calls?.ok === false ? `Liste indisponible : ${data.calls.error}` : 'Aucun appel en cours'"
+                                :empty-message="data?.calls?.ok === false ? `Impossible de lire les appels de notre serveur. Erreur : ${data.calls.error}` : 'Aucun appel en cours'"
                             >
                                 <template #platform="{ value }">
                                     <span class="flex items-center gap-1.5 whitespace-nowrap text-sm text-gray-600">
@@ -649,7 +653,7 @@ const sinceLastRun = computed(() => {
                                             :key="a.username"
                                             class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs"
                                             :class="a.current_platform === 'selfhosted' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-800'"
-                                            :title="[a.name, PLATFORMS[a.current_platform] ?? 'plateforme inconnue', moving(a) ? `bascule vers ${PLATFORMS[a.wanted_platform]}` : ''].filter(Boolean).join(' · ')"
+                                            :title="[a.name, PLATFORMS[a.current_platform] ?? 'plateforme inconnue', moving(a) ? `passe chez ${PLATFORMS[a.wanted_platform]}` : ''].filter(Boolean).join(' · ')"
                                         >
                                             {{ a.username }}
                                             <ArrowRightLeft v-if="moving(a)" class="h-3 w-3 text-amber-500" />
@@ -671,7 +675,7 @@ const sinceLastRun = computed(() => {
                                 <p v-if="tel" class="flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-100 px-4 py-2 text-xs text-gray-400">
                                     <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-900" />Notre serveur</span>
                                     <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-200" />Voxnode</span>
-                                    <span class="flex items-center gap-1"><ArrowRightLeft class="h-3 w-3 text-amber-600" />en bascule</span>
+                                    <span class="flex items-center gap-1"><ArrowRightLeft class="h-3 w-3 text-amber-600" />change de plateforme</span>
                                 </p>
                             </template>
                         </div>
@@ -688,8 +692,8 @@ const sinceLastRun = computed(() => {
                     <div class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[26rem_1fr]">
                         <dl class="space-y-1">
                             <div class="flex justify-between"><dt class="text-gray-500">Agents automatiques en ligne</dt><dd class="tabular-nums">{{ lastRun?.active_agents ?? '—' }}</dd></div>
-                            <div class="flex justify-between"><dt class="text-gray-500">Chez nous / objectif</dt><dd class="tabular-nums">{{ lastRun?.on_selfhosted ?? '—' }} / {{ lastRun?.target ?? '—' }}</dd></div>
-                            <div class="flex justify-between" title="Agents en plus (+) ou en moins (−) chez nous par rapport à la part des numéros qui arrivent réellement chez nous, selon l'attente réelle des deux côtés. Revient vers 0, d'un agent toutes les 5 min quand personne n'attend.">
+                            <div class="flex justify-between"><dt class="text-gray-500">Agents chez nous / objectif</dt><dd class="tabular-nums">{{ lastRun?.on_selfhosted ?? '—' }} / {{ lastRun?.target ?? '—' }}</dd></div>
+                            <div class="flex justify-between" title="Agents envoyés en renfort chez nous (+) ou chez Voxnode (−), selon l'attente des clients des deux côtés. Revient vers 0, d'un agent toutes les 5 min quand personne n'attend.">
                                 <dt class="cursor-help text-gray-500">Décalage d'agents</dt>
                                 <dd class="tabular-nums">{{ offsetText(lastRun?.offset) }}</dd>
                             </div>
@@ -701,19 +705,19 @@ const sinceLastRun = computed(() => {
                                 <dt class="text-gray-500">File chez Voxnode</dt>
                                 <dd class="tabular-nums" :class="!lastRun?.voxnode_queue && 'text-gray-400'">
                                     <template v-if="lastRun?.voxnode_queue">
-                                        {{ lastRun.voxnode_queue.calls }} appels · {{ lastRun.voxnode_queue.natural }} en vraie attente<template v-if="lastRun.voxnode_queue.waiting_long"> · dont {{ lastRun.voxnode_queue.waiting_long }} depuis plus de 30 s</template>
+                                        {{ lastRun.voxnode_queue.calls }} appels · {{ lastRun.voxnode_queue.natural }} attendent un agent après l'attente forcée<template v-if="lastRun.voxnode_queue.waiting_long"> · dont {{ lastRun.voxnode_queue.waiting_long }} depuis plus de 30 s</template>
                                     </template>
                                     <template v-else>non mesurée</template>
                                 </dd>
                             </div>
-                            <p v-if="telSettings.pbx_failover_mode === 'simulate'" class="pt-1 text-xs text-amber-700">Mode simulation : si notre serveur tombe en panne, rien ne bascule vers Voxnode (la panne est seulement notée). Les déplacements d'agents ci-dessus, eux, sont bien appliqués.</p>
+                            <p v-if="telSettings.pbx_failover_mode === 'simulate'" class="pt-1 text-xs text-amber-700">Mode simulation activé. Si notre serveur tombe en panne, rien ne part chez Voxnode. La panne est seulement notée dans l'historique. Les déplacements d'agents ci-dessus, eux, sont bien réels.</p>
                         </dl>
                         <ul v-if="regulatorEvents.length" class="space-y-1">
                             <li v-for="(e, i) in regulatorEvents" :key="i" class="flex gap-3">
                                 <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
                                 <span class="min-w-0 flex-1 text-gray-700">
-                                    {{ e.type === 'reset' ? 'Liste des agents remise à zéro (serveur désactivé, en panne ou Voxnode désactivé)' : e.reason }}
-                                    <span v-if="e.to_selfhosted?.length" class="ml-1 text-gray-500">→ nous : {{ e.to_selfhosted.join(', ') }}</span>
+                                    {{ e.type === 'reset' ? 'Le régulateur repart de zéro. Notre serveur était désactivé ou en panne, ou Voxnode était désactivé.' : e.reason }}
+                                    <span v-if="e.to_selfhosted?.length" class="ml-1 text-gray-500">→ chez nous : {{ e.to_selfhosted.join(', ') }}</span>
                                     <span v-if="e.to_voxnode?.length" class="ml-1 text-gray-500">→ Voxnode : {{ e.to_voxnode.join(', ') }}</span>
                                 </span>
                             </li>
@@ -726,12 +730,12 @@ const sinceLastRun = computed(() => {
                 <details v-if="telAgents" id="modes" :open="modesOpen" class="scroll-mt-6 rounded-lg border border-gray-100 bg-white text-sm" @toggle="modesOpen = $event.target.open">
                     <summary class="flex cursor-pointer items-center gap-3 px-4 py-2.5">
                         <span class="font-semibold text-gray-900">Mode des agents</span>
-                        <span class="text-gray-600">{{ pinnedCount ? `${pinnedCount} forcé${pinnedCount > 1 ? 's' : ''} sur une plateforme` : 'tous automatiques' }}</span>
+                        <span class="text-gray-600">{{ pinnedCount ? `${pinnedCount} agent${pinnedCount > 1 ? 's' : ''} forcé${pinnedCount > 1 ? 's' : ''} sur une plateforme` : 'Tous les agents en automatique' }}</span>
                     </summary>
                     <div class="border-t border-gray-100">
                         <p class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 text-xs text-gray-500">
-                            <input v-model="modeSearch" type="search" placeholder="Agent, nom ou centre…" class="h-8 w-56 rounded-md border border-gray-200 px-2 text-sm text-gray-900" />
-                            Automatique : l'agent suit la répartition et les bascules. Forcé : il reste sur la même plateforme, même en cas de panne.
+                            <input v-model="modeSearch" type="search" placeholder="Rechercher un agent, un nom ou un centre…" class="h-8 w-56 rounded-md border border-gray-200 px-2 text-sm text-gray-900" />
+                            Automatique : le régulateur envoie l'agent là où sont les clients, et le déplace en cas de panne ou de désactivation. Forcé : l'agent reste sur la même plateforme, même en cas de panne.
                             <span v-if="pinMessage" :class="pinMessage.ok ? 'text-gray-900' : 'text-red-600'">{{ pinMessage.text }}</span>
                         </p>
                         <DataTable :columns="modeColumns" :rows="allAgents" :loading="loading" empty-message="Aucun agent">
@@ -744,7 +748,7 @@ const sinceLastRun = computed(() => {
                             <template #platform="{ row }">
                                 <span class="text-gray-600">{{ PLATFORMS[row.current_platform] ?? '—' }}</span>
                                 <span v-if="moving(row)" class="ml-1 text-amber-700">→ {{ PLATFORMS[row.wanted_platform] }}</span>
-                                <span v-if="row.switch_failed" class="ml-2 text-xs text-red-600">bascule ratée le {{ formatDateTime(row.switch_failed_at) }}</span>
+                                <span v-if="row.switch_failed" class="ml-2 text-xs text-red-600">changement de plateforme raté le {{ formatDateTime(row.switch_failed_at) }}</span>
                             </template>
                             <template #pin="{ row }">
                                 <select :value="row.pin ?? ''" class="h-8 rounded-md border border-gray-200 bg-white px-2 text-sm" :disabled="pinBusy" @change="setPin(row, $event.target.value)">
@@ -777,7 +781,7 @@ const sinceLastRun = computed(() => {
                                     {{ label }}
                                 </button>
                             </div>
-                            <span>À surveiller : réponse du serveur au-delà de 600 ms, 3 messages sans réponse ou plus, 2 coupures ou plus.</span>
+                            <span>Une connexion est à surveiller dans trois cas. Le serveur met plus de 600 ms à répondre en moyenne. Ou 3 messages ou plus restent sans réponse. Ou la connexion coupe 2 fois ou plus.</span>
                         </div>
                         <div class="overflow-x-auto" :class="networkLoading && 'opacity-60'">
                             <table class="w-full text-sm">
@@ -785,12 +789,12 @@ const sinceLastRun = computed(() => {
                                     <tr class="border-y border-gray-100 text-left text-xs uppercase tracking-wide text-gray-400">
                                         <th class="px-4 py-2 font-medium">Agent</th>
                                         <th class="px-3 py-2 font-medium">Plateforme</th>
-                                        <th class="px-3 py-2 font-medium" title="Dernière mesure remontée par le softphone">En direct</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="Réponse SIP OPTIONS du serveur, authentification comprise">Réponse du serveur (moyenne)</th>
+                                        <th class="px-3 py-2 font-medium" title="Dernière mesure envoyée par le téléphone de l'agent">En direct</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Temps que met le serveur à répondre au téléphone de l'agent, identification comprise">Réponse du serveur (moyenne)</th>
                                         <th class="px-3 py-2 text-right font-medium">Réponse du serveur (max)</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="OPTIONS envoyés sans réponse">Messages sans réponse</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="Coupures de l'enregistrement SIP">Coupures de connexion</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="Aller-retour vers l'application">Délai vers le site</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Messages de contrôle envoyés au serveur et restés sans réponse">Messages sans réponse</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Nombre de fois où le téléphone de l'agent a perdu sa connexion au serveur">Coupures de connexion</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Temps de réponse du site, mesuré depuis l'ordinateur de l'agent">Délai vers le site</th>
                                         <th class="px-4 py-2 font-medium">État</th>
                                     </tr>
                                 </thead>
@@ -831,7 +835,7 @@ const sinceLastRun = computed(() => {
                             <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
                             <span :class="HEALTH_EVENTS[e.state]?.class ?? 'text-gray-700'">{{ HEALTH_EVENTS[e.state]?.label ?? e.state }}</span>
                             <span class="min-w-0 truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
-                            <span v-if="e.simulated" class="text-gray-400">(simulation : rien n’a basculé)</span>
+                            <span v-if="e.simulated" class="text-gray-400">Simulation, rien n’est parti chez Voxnode</span>
                         </li>
                     </ul>
                 </details>

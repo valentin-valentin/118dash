@@ -248,12 +248,14 @@ const ourState = computed(() => {
     return st.selfhosted_enabled && !st.selfhosted_manual_off ? 'on' : 'off'
 })
 const ourDown = computed(() => ourState.value === 'on' && !tel.value?.available?.selfhosted)
+// Sous les boutons : la panne (en rouge), sinon ce qui se passe si on désactive ou si on réactive
 const ourStateText = computed(() => {
     const st = telSettings.value
     if (!st) return ''
-    if (ourState.value === 'off') return `Ne reçoit aucun nouveau numéro ; ses agents partent progressivement chez Voxnode (sauf les agents forcés « Toujours notre serveur »). En le réactivant, il reprend ${st.selfhosted_percent} % des nouveaux numéros.`
     if (ourDown.value) return `En panne : tout part chez Voxnode, retour automatique après ${st.pbx_recovery_minutes} min de bon fonctionnement.`
-    return `Reçoit environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés, si un agent est libre). Les agents suivent : autant d'agents chez nous que la part des numéros qui y arrivent.`
+    if (ourState.value === 'off') return `Si vous le réactivez : environ ${st.selfhosted_percent} % des nouveaux numéros arriveront de nouveau chez nous, et des agents y seront envoyés à mesure que des clients y appellent.`
+    const text = 'Si vous le désactivez : ses numéros repartent tout de suite chez Voxnode. Ses agents restent tant que des clients y sont encore, puis partent chez Voxnode. Les appels en cours continuent normalement.'
+    return ourOffBlocked.value ? `${text} Ne peut pas être désactivé : Voxnode est désactivé.` : text
 })
 // L'API refuse de désactiver notre serveur quand Voxnode est désactivé
 const ourOffBlocked = computed(() => (telSettings.value?.voxnode_manual_off ? 'Impossible : Voxnode est désactivé' : ''))
@@ -263,7 +265,7 @@ async function setOurState(target) {
     const st = telSettings.value
     const ok = await ask(
         target === 'on'
-            ? { title: 'Activer notre serveur ?', body: `Environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés seulement) iront chez nous, à condition qu'un agent soit libre. Les agents y sont envoyés au fur et à mesure que des numéros y arrivent.`, confirm: 'Activer' }
+            ? { title: 'Activer notre serveur ?', body: `Environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés seulement) iront chez nous, à condition qu'un agent soit libre. Les agents vont là où sont les clients : ils viennent chez nous à mesure que des clients y appellent.`, confirm: 'Activer' }
             : {
                   title: 'Désactiver notre serveur ?',
                   body: "Ses numéros repartent immédiatement chez Voxnode. Ses agents partent progressivement : le dernier attend qu'il ne reste plus aucun client ni numéro chez nous (au moins 3 min 30). Les appels en cours chez nous continuent normalement.",
@@ -796,7 +798,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                                     {{ label }}
                                                 </button>
                                             </div>
-                                            <p class="mt-2 text-sm" :class="ourDown ? 'text-red-600' : 'text-gray-500'">{{ ourStateText }}</p>
+                                            <p v-if="ourStateText" class="mt-2 text-sm" :class="ourDown ? 'text-red-600' : 'text-gray-500'">{{ ourStateText }}</p>
                                         </div>
                                     </div>
                                     <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
@@ -823,12 +825,15 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                                     Désactivé
                                                 </button>
                                             </div>
-                                            <p class="mt-2 text-sm text-gray-500">
-                                                {{ telSettings.voxnode_manual_off
-                                                    ? 'Ne reçoit plus les numéros des fournisseurs autorisés chez nous ; ses agents viennent chez nous au fur et à mesure que sa file se vide.'
-                                                    : voxnodeCutBlocked
-                                                      ? `Reçoit le reste du trafic. ${voxnodeCutBlocked.replace('Impossible : ', 'Ne peut pas être désactivé : ')}.`
-                                                      : 'Reçoit le reste du trafic.' }}
+                                            <!-- Seulement ce qui se passe si on désactive -->
+                                            <p v-if="!telSettings.voxnode_manual_off" class="mt-2 text-sm text-gray-500">
+                                                Si vous le désactivez : ses numéros arrivent tout de suite chez nous, sauf ceux des fournisseurs qui ne sont pas autorisés chez nous.
+                                                Ses agents restent tant que des clients y attendent, puis viennent chez nous. Si Voxnode ne répond plus du tout, ils viennent tout de suite.
+                                                Les transferts vers les marques passent par Voxnode : s’il est en panne, ils vont au service interne.
+                                                <template v-if="voxnodeCutBlocked">Ne peut pas être désactivé : notre serveur est désactivé.</template>
+                                            </p>
+                                            <p v-else class="mt-2 text-sm text-gray-500">
+                                                Si vous le réactivez : notre serveur ne garde qu’environ {{ telSettings.selfhosted_percent }} % des numéros, les autres repartent tout de suite chez Voxnode. Les agents y retournent petit à petit.
                                             </p>
                                         </div>
                                     </div>
@@ -892,7 +897,13 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="percent" class="text-gray-900">Part des nouveaux numéros envoyée chez nous</Label>
-                                            <p class="text-sm text-gray-500">Ne change que les nouvelles attributions : les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite : Désactiver. Fournisseurs autorisés seulement ; si aucun agent n'est libre, le numéro va chez Voxnode. Les agents suivent les numéros.</p>
+                                            <p class="text-sm text-gray-500">
+                                                Environ {{ trafficForm.values.selfhosted_percent ?? '…' }} % des nouveaux numéros arrivent chez nous. Un numéro reste chez Voxnode si son fournisseur n’est pas autorisé chez nous, ou si aucun agent n’est libre au moment de l’attribution.
+                                                Changer ce chiffre ne déplace pas les numéros déjà attribués : ils restent où ils sont jusqu’à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite, désactivez notre serveur.
+                                            </p>
+                                            <p class="mt-1.5 text-sm text-gray-500">
+                                                Les agents vont là où sont les clients : chaque client qui appelle chez nous a un agent qui l’attend, dès l’accueil. Quand des clients attendent plus d’un côté que de l’autre, des agents y sont envoyés en renfort. Aucun agent n’est envoyé chez nous tant qu’aucun numéro n’y est.
+                                            </p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="percent" v-model.number="trafficForm.values.selfhosted_percent" type="number" min="0" max="100" class="h-9 w-24 text-right tabular-nums" />
@@ -1215,7 +1226,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                     <form v-else-if="currentTab === 'regulateur'" class="rounded-lg border border-gray-100 bg-white" @submit.prevent="regulatorForm.save()">
                         <header class="border-b border-gray-100 px-5 py-3">
                             <h2 class="font-semibold text-gray-900">Régulateur</h2>
-                            <p class="text-sm text-gray-500">Toutes les 30 s, il répartit les agents automatiques : autant d'agents chez nous que la part des numéros qui y arrivent, plus ou moins quelques agents selon l'attente des deux côtés. Personne n'est envoyé chez nous tant qu'aucun numéro n'y est.</p>
+                            <p class="text-sm text-gray-500">Toutes les 30 s, il envoie les agents automatiques là où sont les clients : chaque client qui appelle chez nous a un agent qui l'attend, et des agents partent en renfort du côté où les clients attendent le plus. Aucun agent n'est envoyé chez nous tant qu'aucun numéro n'y est.</p>
                         </header>
                         <p v-if="tel?.regulator" class="border-b px-5 py-3 text-sm" :class="regulatorStopped ? 'border-red-100 bg-red-50 text-red-700' : 'border-gray-100 text-gray-600'">
                             <template v-if="regulatorStopped">Arrêté : dernière décision {{ lastRun?.at ? new Date(lastRun.at).toLocaleTimeString('fr-FR') : 'inconnue' }}.</template>
