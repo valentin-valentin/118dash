@@ -225,7 +225,7 @@ async function setTransfersInternal(internal) {
               }
             : {
                   title: 'Transférer vers les marques ?',
-                  body: "Sur notre serveur, chaque transfert appellera la marque choisie par l'agent, avec le message avant transfert si la marque l'a. Si la marque ne décroche pas en 2 minutes, est occupée ou refuse l'appel, le client part automatiquement au service interne. Les appels Voxnode ne changent pas.",
+                  body: "Sur notre serveur, chaque transfert appellera la marque choisie par l'agent, avec le message avant transfert si la marque l'a. Si la marque ne décroche pas en 20 secondes, est occupée ou refuse l'appel, le client part automatiquement au service interne. Les appels Voxnode ne changent pas.",
                   confirm: 'Vers les marques',
               },
     )
@@ -875,7 +875,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             <p class="mt-2 text-sm text-gray-500">
                                                 {{ telSettings.selfhosted_transfers_internal
                                                     ? "Tous les transferts vont au service interne, sans message avant transfert, y compris ceux de l'agent IA. La marque choisie par l'agent reste notée sur l'appel."
-                                                    : "Chaque transfert appelle la marque choisie par l'agent (la marque voit le numéro du client). S'il n'aboutit pas (refus, occupé, pas de réponse en 2 min), le client part au service interne." }}
+                                                    : "Chaque transfert appelle la marque choisie par l'agent (la marque voit le numéro du client). S'il n'aboutit pas (refus, occupé, pas de réponse en 20 s), le client part au service interne." }}
                                             </p>
                                         </div>
                                     </div>

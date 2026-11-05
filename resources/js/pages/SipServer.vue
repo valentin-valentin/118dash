@@ -122,7 +122,7 @@ const statusItems = computed(() => {
             href: '/sip-server/settings#trafic',
             title: st.selfhosted_transfers_internal
                 ? 'Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)'
-                : "Vers la marque choisie par l'agent ; si elle ne répond pas ou refuse, service interne",
+                : "Vers la marque choisie par l'agent ; si elle ne répond pas en 20 s ou refuse, service interne",
         })
     }
     if (routedProviders.value) {
