@@ -255,8 +255,8 @@ const ourStateText = computed(() => {
     if (ourDown.value) return `En panne : tout part chez Voxnode, retour automatique après ${st.pbx_recovery_minutes} min de bon fonctionnement.`
     return `Reçoit environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés, si un agent est libre). Les agents suivent : autant d'agents chez nous que la part des numéros qui y arrivent.`
 })
-// L'API refuse de désactiver notre serveur quand Voxnode est coupé
-const ourOffBlocked = computed(() => (telSettings.value?.voxnode_manual_off ? 'Impossible : Voxnode est coupé' : ''))
+// L'API refuse de désactiver notre serveur quand Voxnode est désactivé
+const ourOffBlocked = computed(() => (telSettings.value?.voxnode_manual_off ? 'Impossible : Voxnode est désactivé' : ''))
 
 async function setOurState(target) {
     if (target === ourState.value) return
@@ -277,21 +277,22 @@ async function setOurState(target) {
     saveTelephony(payload, target === 'on' ? 'Notre serveur est activé' : 'Notre serveur est désactivé')
 }
 
-// Voxnode : actif ou coupé. L'API refuse de couper les deux, ou Voxnode quand notre serveur n'est pas actif.
+// Voxnode : Actif ou Désactivé (voxnode_manual_off), même logique que notre serveur.
+// L'API refuse de désactiver les deux, ou Voxnode quand notre serveur n'est pas actif.
 const voxnodeCutBlocked = computed(() => (ourState.value === 'off' ? 'Impossible : notre serveur est désactivé' : ''))
 async function setVoxnodeCut(cut) {
     if (cut === !!telSettings.value?.voxnode_manual_off) return
     const ok = await ask(
         cut
             ? {
-                  title: 'Couper Voxnode ?',
-                  body: 'Les numéros dont le fournisseur est autorisé chez nous arrivent immédiatement chez nous, ainsi que tous les agents automatiques. Les numéros des autres fournisseurs restent chez Voxnode : seuls les agents forcés « Toujours Voxnode » pourront y répondre.',
-                  confirm: 'Couper Voxnode',
+                  title: 'Désactiver Voxnode ?',
+                  body: 'Ses numéros (fournisseurs autorisés chez nous) arrivent immédiatement chez nous. Ses agents viennent progressivement : Voxnode en garde un par client qui y attend encore. Si Voxnode ne répond plus du tout, tous les agents viennent tout de suite. Les numéros des autres fournisseurs restent chez Voxnode. Les transferts vers les marques passent par Voxnode : s’il est en panne, ils iront au service interne.',
+                  confirm: 'Désactiver',
                   danger: true,
               }
-            : { title: 'Rétablir Voxnode ?', body: `Notre serveur ne garde qu'environ ${telSettings.value.selfhosted_percent} % des numéros, choisis au hasard ; les autres repartent tout de suite chez Voxnode, les agents petit à petit.`, confirm: 'Rétablir' },
+            : { title: 'Activer Voxnode ?', body: `Notre serveur ne garde qu'environ ${telSettings.value.selfhosted_percent} % des numéros, choisis au hasard ; les autres repartent tout de suite chez Voxnode, les agents petit à petit.`, confirm: 'Activer' },
     )
-    if (ok) saveTelephony({ voxnode_manual_off: cut }, cut ? 'Voxnode est coupé' : 'Voxnode est rétabli')
+    if (ok) saveTelephony({ voxnode_manual_off: cut }, cut ? 'Voxnode est désactivé' : 'Voxnode est activé')
 }
 
 // ─── Horaires d'ouverture : la semaine entière est envoyée, un jour fermé vaut null ─
@@ -681,8 +682,8 @@ const tabs = computed(() => {
     if (telephony.value?.configured) {
         let summary = '—'
         if (st) summary = ourState.value === 'on' ? (ourDown.value ? 'Notre serveur en panne' : `Actif · ${st.selfhosted_percent} %`) : 'Notre serveur désactivé'
-        if (st?.voxnode_manual_off) summary = 'Voxnode coupé'
-        list.push({ id: 'trafic', label: 'Trafic', summary, problem: telephony.value.ok === false || ourDown.value || !!st?.voxnode_manual_off })
+        if (st?.voxnode_manual_off) summary = 'Voxnode désactivé'
+        list.push({ id: 'trafic', label: 'Trafic', summary, problem: telephony.value.ok === false || ourDown.value })
     }
     if (hoursWanted.value) list.push({ id: 'horaires', label: 'Horaires', summary: hoursHeadline(hoursWanted.value)?.text, problem: hoursProblem.value?.level === 'error' })
     list.push({
@@ -814,19 +815,19 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                                 <button
                                                     type="button"
                                                     class="rounded px-3 py-1.5 text-sm transition-colors disabled:opacity-40"
-                                                    :class="telSettings.voxnode_manual_off ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'"
+                                                    :class="telSettings.voxnode_manual_off ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'"
                                                     :disabled="busy || (!telSettings.voxnode_manual_off && !!voxnodeCutBlocked)"
                                                     :title="telSettings.voxnode_manual_off ? '' : voxnodeCutBlocked"
                                                     @click="setVoxnodeCut(true)"
                                                 >
-                                                    Coupé (urgence)
+                                                    Désactivé
                                                 </button>
                                             </div>
-                                            <p class="mt-2 text-sm" :class="telSettings.voxnode_manual_off ? 'text-red-600' : 'text-gray-500'">
+                                            <p class="mt-2 text-sm text-gray-500">
                                                 {{ telSettings.voxnode_manual_off
-                                                    ? 'Coupé : les numéros des fournisseurs autorisés et tous les agents automatiques sont chez nous.'
+                                                    ? 'Ne reçoit plus les numéros des fournisseurs autorisés chez nous ; ses agents viennent chez nous au fur et à mesure que sa file se vide.'
                                                     : voxnodeCutBlocked
-                                                      ? `Reçoit le reste du trafic. ${voxnodeCutBlocked.replace('Impossible : ', 'Ne peut pas être coupé : ')}.`
+                                                      ? `Reçoit le reste du trafic. ${voxnodeCutBlocked.replace('Impossible : ', 'Ne peut pas être désactivé : ')}.`
                                                       : 'Reçoit le reste du trafic.' }}
                                             </p>
                                         </div>

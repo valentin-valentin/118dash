@@ -3,6 +3,15 @@ Les pages du panel comportent quelques incohérences de fuseau (signalées ci-de
 
 ---
 
+## Vocabulaire des gérants
+
+| Ils disent | En base |
+|---|---|
+| **Voxnode** (plateforme Voxnode) | `platform IS NULL OR platform = 'voxnode'`, c'est-à-dire tout ce qui n'est pas `'selfhosted'` : `(platform IS NULL OR platform <> 'selfhosted')` |
+| **Notre serveur** (selfhosted, PBX, Asterisk, sip.118.ae) | `platform = 'selfhosted'` |
+| **Backup** (service interne, 01 84 13 15 72) | transferts vers le service interne : `duration_transfer > 0 AND RIGHT(brand_phonenumber, 9) = '184131572'`. Sur notre serveur, un transfert vers une marque qui n'a pas abouti part aussi au backup : il est enregistré avec ce numéro (`brand_name` garde la marque choisie par l'agent). |
+| **Transfert vers une marque** | `duration_transfer > 0 AND brand_phonenumber <> '' AND RIGHT(brand_phonenumber, 9) <> '184131572'` |
+
 ## 0. Pièges globaux (à lire en premier)
 
 | Piège | Règle |

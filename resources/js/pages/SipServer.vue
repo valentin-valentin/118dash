@@ -136,8 +136,8 @@ const statusItems = computed(() => {
     if (tel.value) {
         items.push({
             label: 'Voxnode',
-            value: st.voxnode_manual_off ? 'Coupé (urgence)' : !tel.value.available?.voxnode ? 'Indisponible' : 'Actif',
-            problem: !!st.voxnode_manual_off || !tel.value.available?.voxnode,
+            value: st.voxnode_manual_off ? 'Désactivé' : !tel.value.available?.voxnode ? 'Indisponible' : 'Actif',
+            problem: !st.voxnode_manual_off && !tel.value.available?.voxnode,
         })
     }
     items.push({
@@ -394,9 +394,9 @@ const shareFigure = computed(() => {
     const st = telSettings.value
     if (!tel.value) return { value: '—', sub: 'Réglages de téléphonie indisponibles' }
     if (!st.selfhosted_enabled) return { value: '0 %', sub: 'notre serveur désactivé' }
-    if (st.selfhosted_manual_off) return { value: '0 %', sub: 'notre serveur coupé à la main', problem: true }
+    if (st.selfhosted_manual_off) return { value: '0 %', sub: 'notre serveur désactivé' }
     if (!tel.value.available?.selfhosted) return { value: '0 %', sub: 'notre serveur en panne', problem: true }
-    if (st.voxnode_manual_off) return { value: '100 %', sub: 'Voxnode coupé à la main', problem: true }
+    if (st.voxnode_manual_off) return { value: '100 %', sub: 'Voxnode désactivé' }
     return { value: `${st.selfhosted_percent} %`, sub: 'des nouveaux numéros' }
 })
 
@@ -712,7 +712,7 @@ const sinceLastRun = computed(() => {
                             <li v-for="(e, i) in regulatorEvents" :key="i" class="flex gap-3">
                                 <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
                                 <span class="min-w-0 flex-1 text-gray-700">
-                                    {{ e.type === 'reset' ? 'Liste des agents remise à zéro (serveur désactivé, en panne ou Voxnode coupé)' : e.reason }}
+                                    {{ e.type === 'reset' ? 'Liste des agents remise à zéro (serveur désactivé, en panne ou Voxnode désactivé)' : e.reason }}
                                     <span v-if="e.to_selfhosted?.length" class="ml-1 text-gray-500">→ nous : {{ e.to_selfhosted.join(', ') }}</span>
                                     <span v-if="e.to_voxnode?.length" class="ml-1 text-gray-500">→ Voxnode : {{ e.to_voxnode.join(', ') }}</span>
                                 </span>
