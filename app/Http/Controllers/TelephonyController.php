@@ -81,11 +81,11 @@ class TelephonyController extends Controller
                 }
             }],
         ], [
-            'selfhosted_percent.between' => 'Part du trafic : entre 0 et 100 %.',
-            'pbx_recovery_minutes.between' => 'Délai de retour : entre 1 et 120 minutes.',
+            'selfhosted_percent.between' => 'Part des nouveaux numéros : entre 0 et 100 %.',
+            'pbx_recovery_minutes.between' => 'Retour après une panne : entre 1 et 120 minutes.',
             'ai_daily_calls.between' => 'Agents IA : entre 0 et 1000 appels par jour.',
-            'regulator_max_moves.between' => 'Agents déplacés par cycle : entre 1 et 10.',
-            'regulator_cooldown_minutes.between' => 'Délai entre deux déplacements : entre 0 et 60 minutes.',
+            'regulator_max_moves.between' => 'Agents déplacés toutes les 30 s : entre 1 et 10.',
+            'regulator_cooldown_minutes.between' => 'Délai avant de redéplacer un agent : entre 0 et 60 minutes.',
             'regulator_wait_seconds.between' => "Seuil d'attente : entre 0 et 600 secondes.",
             'priority_min_duration.between' => 'Durée minimale d\'appel : entre 1 et 3600 secondes.',
             'priority_window_hours.between' => 'Période : entre 1 et 720 heures.',
@@ -218,7 +218,7 @@ class TelephonyController extends Controller
     {
         $validated = $request->validate(
             ['pin' => 'present|nullable|in:'.implode(',', self::PINS)],
-            ['pin.in' => 'Mode inconnu : automatique, selfhosted ou voxnode.'],
+            ['pin.in' => 'Mode inconnu : Automatique, Toujours notre serveur ou Toujours Voxnode.'],
         );
 
         return $this->write('put', "/agents/{$agent}", $validated, "Agent #{$agent}, mode = ".($validated['pin'] ?? 'automatique'));

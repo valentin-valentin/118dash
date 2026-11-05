@@ -109,23 +109,25 @@ const statusItems = computed(() => {
     let ours = { value: 'En service', problem: false }
     if (!serverUp.value) ours = { value: 'Ne répond pas', problem: true }
     else if (tel.value && !st.selfhosted_enabled) ours = { value: 'Désactivé', problem: false }
-    else if (tel.value && st.selfhosted_manual_off) ours = { value: 'Coupé à la main', problem: true }
+    else if (tel.value && st.selfhosted_manual_off) ours = { value: 'Désactivé', problem: false }
     else if (tel.value && !tel.value.available?.selfhosted) ours = { value: 'En panne', problem: true }
 
     const items = []
-    if (hoursNow.value) items.push({ label: 'Horaires', value: hoursNow.value.text, problem: false })
+    if (hoursNow.value) items.push({ label: 'Horaires (notre serveur)', value: hoursNow.value.text, problem: false })
     items.push({ label: 'Notre serveur', ...ours })
     if (tel.value && 'selfhosted_transfers_internal' in st) {
         items.push({
-            label: 'Transferts chez nous',
-            value: st.selfhosted_transfers_internal ? 'service interne' : 'vers les marques',
+            label: 'Transferts (notre serveur)',
+            value: st.selfhosted_transfers_internal ? 'service interne' : 'vers la marque',
             href: '/sip-server/settings#trafic',
-            title: st.selfhosted_transfers_internal ? "Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)" : '',
+            title: st.selfhosted_transfers_internal
+                ? 'Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)'
+                : "Vers la marque choisie par l'agent ; si elle ne répond pas ou refuse, service interne",
         })
     }
     if (routedProviders.value) {
         items.push({
-            label: 'Fournisseurs routables',
+            label: 'Fournisseurs autorisés chez nous',
             value: routedProviders.value.length ? routedProviders.value.map((p) => p.name).join(', ') : 'aucun',
             href: '/providers',
             title: 'Seuls les numéros de ces fournisseurs peuvent arriver sur notre serveur (réglable dans la fiche du fournisseur)',
@@ -134,13 +136,13 @@ const statusItems = computed(() => {
     if (tel.value) {
         items.push({
             label: 'Voxnode',
-            value: st.voxnode_manual_off ? 'Coupé à la main' : !tel.value.available?.voxnode ? 'Indisponible' : 'Disponible',
+            value: st.voxnode_manual_off ? 'Coupé (urgence)' : !tel.value.available?.voxnode ? 'Indisponible' : 'Actif',
             problem: !!st.voxnode_manual_off || !tel.value.available?.voxnode,
         })
     }
     items.push({
         label: 'Ligne OVH',
-        value: !registrations.value.length ? '—' : lineDown.value ? 'Non enregistrée' : 'Enregistrée',
+        value: !registrations.value.length ? '—' : lineDown.value ? 'Déconnectée' : 'Connectée',
         problem: lineDown.value,
         title: registrations.value.map(([line, state]) => `${line} : ${state}`).join(' · '),
     })
@@ -199,13 +201,18 @@ const alerts = computed(() => {
     // Redémarrage récent d'Asterisk : les appels en cours ont été coupés
     const restart = (tel.value?.health?.events ?? []).find((e) => e.state === 'restart' && Date.now() - new Date(e.at).getTime() < 30 * 60 * 1000)
     if (restart) list.push(`Notre serveur a redémarré à ${formatTime(restart.at)} : les appels en cours ont été coupés. ${restart.reason ?? ''}`.trim())
-    if (lineDown.value) list.push("La ligne OVH n'est pas enregistrée : les appels sortants du softphone ne passent pas.")
+    if (lineDown.value) list.push('La ligne OVH est déconnectée : le téléphone du panel ne peut plus appeler l’extérieur.')
     if (diskLow('disk_data', DATA_LOW_BYTES) || diskLow('disk_root', ROOT_LOW_BYTES)) list.push('Le disque de notre serveur est presque plein (détail dans Configuration).')
     if (hoursProblem.value?.level === 'error') list.push(hoursProblem.value.text)
     if (regulatorStale.value) list.push(`Le régulateur ne tourne plus : dernière décision ${lastRun.value?.at ? `à ${formatTime(lastRun.value.at)}` : 'inconnue'}.`)
     const failed = (telAgents.value ?? []).filter((a) => a.online && a.switch_failed)
-    if (failed.length) list.push(`Bascule ratée : ${failed.map((a) => a.username).join(', ')}.`)
-    if (lostAgents.value.length) list.push(`En ligne mais sur aucune plateforme depuis plus de 30 s : ${lostAgents.value.map((a) => a.username).join(', ')}.`)
+    // switch_failed : la plateforme visée par la bascule ratée (« selfhosted » ou « voxnode »)
+    const failedTo = (platform) => failed.filter((a) => a.switch_failed === platform).map((a) => a.username).join(', ')
+    const failedOurs = failedTo('selfhosted')
+    const failedVoxnode = failedTo('voxnode')
+    if (failedOurs) list.push(`Passage sur notre serveur raté : ${failedOurs} (nouvel essai automatique dans quelques minutes).`)
+    if (failedVoxnode) list.push(`Retour vers Voxnode raté : ${failedVoxnode} (nouvel essai dans 2 min).`)
+    if (lostAgents.value.length) list.push(`Connectés mais sans téléphone actif depuis plus de 30 s : ${lostAgents.value.map((a) => a.username).join(', ')}.`)
     return list
 })
 
@@ -221,15 +228,18 @@ function channelAgent(channel) {
 // Étape d'un appel : mêmes libellés pour les deux plateformes. Plusieurs étapes partagent une clé
 // (key) pour le tri et les chiffres du haut : les trois transferts, accueil et attente forcée à part.
 const STAGES = {
-    welcome: { key: 'welcome', label: 'Accueil' },
+    welcome: { key: 'welcome', label: 'Introduction' },
     forced: { key: 'forced', label: 'Attente forcée' },
     queue: { key: 'queue', label: "En attente d'un agent" },
     // Voxnode, ancien statut « queue » : accueil, attente forcée et file mélangés
     waiting: { key: 'waiting', label: 'En attente' },
     agent: { key: 'agent', label: 'Avec un agent' },
     ai: { key: 'ai', label: "Avec l'agent IA" },
-    brand: { key: 'transfer', label: 'Transféré à la marque' },
+    brand: { key: 'transfer', label: 'Transfert vers la marque' },
     internal: { key: 'transfer', label: 'Transféré au service interne' },
+    // Chez nous : le client écoute le message avant transfert de la marque
+    announcement: { key: 'transfer', label: 'Message avant transfert' },
+    // Voxnode : transfert sans plus de précision
     transferred: { key: 'transfer', label: 'Transféré' },
     // Voxnode tant qu'il n'envoie pas le statut « agent » : « transferred » couvre les deux
     agent_or_transferred: { key: 'agent_or_transfer', label: 'Avec un agent ou transféré' },
@@ -245,7 +255,7 @@ function callStatus(client, agentInCall) {
             if (client.app === 'Dial') return STAGES.ai
             return STAGES.welcome
         case 'transfer-announce':
-            return STAGES.transferred
+            return STAGES.announcement
         case 'internal-service':
             return STAGES.internal
         case 'transfer':
@@ -254,7 +264,7 @@ function callStatus(client, agentInCall) {
         case 'panel-out':
             return STAGES.panel
         default:
-            return { key: 'other', label: client.context }
+            return { key: 'other', label: 'Transfert en cours' }
     }
 }
 
@@ -367,14 +377,14 @@ const callFigures = computed(() => {
     const longest = queue.reduce((a, b) => (!a || b.seconds > a.seconds ? b : a), null)
     return [
         { label: 'Avec un agent', value: busyAgents.value.length, split: split(busyAgents.value) },
-        { label: 'Accueil et attente forcée', value: welcome.length, split: splitCalls(welcome) },
+        { label: 'Introduction et attente forcée', value: welcome.length, split: splitCalls(welcome) },
         { label: "En attente d'un agent", value: queue.length, split: splitCalls(queue) },
         { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : "personne n'attend un agent", title: "Client en attente d'un agent depuis le plus longtemps" },
     ]
 })
 // Note du groupe Appels : Voxnode non branché, ou attentes sans détail d'étape
 const callsNote = computed(() => {
-    if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Voxnode non branché (VOXNODE_CC_KEY)' : `Voxnode indisponible : ${voxnode.value.error}`
+    if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Appels Voxnode non disponibles ici' : `Voxnode indisponible : ${voxnode.value.error}`
     const legacy = byStage('waiting').length
     return legacy ? `+ ${legacy} chez Voxnode « En attente », sans détail` : ''
 })
@@ -382,7 +392,7 @@ const callsNote = computed(() => {
 // Part des nouveaux numéros envoyée chez nous : un pourcentage court, la raison en dessous
 const shareFigure = computed(() => {
     const st = telSettings.value
-    if (!tel.value) return { value: '—', sub: 'API voxnode118 non branchée' }
+    if (!tel.value) return { value: '—', sub: 'Réglages de téléphonie indisponibles' }
     if (!st.selfhosted_enabled) return { value: '0 %', sub: 'notre serveur désactivé' }
     if (st.selfhosted_manual_off) return { value: '0 %', sub: 'notre serveur coupé à la main', problem: true }
     if (!tel.value.available?.selfhosted) return { value: '0 %', sub: 'notre serveur en panne', problem: true }
@@ -393,7 +403,7 @@ const shareFigure = computed(() => {
 const agentFigures = computed(() => [
     { label: 'En ligne', value: onlineAgents.value.length, split: split(onlineAgents.value) },
     { label: 'Libres', value: freeAgents.value.length, split: split(freeAgents.value) },
-    { label: 'Trafic chez nous', ...shareFigure.value },
+    { label: 'Part des nouveaux numéros', ...shareFigure.value },
 ])
 
 // ─── 6. Mode des agents : forcer une plateforme (tous les agents, y compris hors ligne) ─
@@ -474,7 +484,7 @@ function liveText(a) {
     if (!a?.net_sip_measured_at && !a?.net_measured_at) return { text: '—', old: true }
     const at = new Date(a.net_sip_measured_at ?? a.net_measured_at).getTime()
     const old = Date.now() - at > 10 * 60 * 1000
-    return { text: `SIP ${a.net_sip_ms ?? '—'} ms · app ${a.net_http_ms ?? '—'} ms`, old, at }
+    return { text: `serveur ${a.net_sip_ms ?? '—'} ms · site ${a.net_http_ms ?? '—'} ms`, old, at }
 }
 const ms = (v) => (v === null || v === undefined ? '—' : `${new Intl.NumberFormat('fr-FR').format(v)} ms`)
 
@@ -545,7 +555,7 @@ const sinceLastRun = computed(() => {
                         {{ text }}
                     </p>
                     <p v-if="telephony?.ok === false" class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                        API téléphonie de voxnode118 indisponible ({{ telephony.error }}) : agents et répartition limités à notre serveur.
+                        Réglages de téléphonie indisponibles ({{ telephony.error }}) : seuls les agents de notre serveur sont affichés.
                     </p>
                     <p v-if="hoursProblem?.level === 'pending'" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">{{ hoursProblem.text }}</p>
                 </div>
@@ -679,30 +689,30 @@ const sinceLastRun = computed(() => {
                         <dl class="space-y-1">
                             <div class="flex justify-between"><dt class="text-gray-500">Agents automatiques en ligne</dt><dd class="tabular-nums">{{ lastRun?.active_agents ?? '—' }}</dd></div>
                             <div class="flex justify-between"><dt class="text-gray-500">Chez nous / objectif</dt><dd class="tabular-nums">{{ lastRun?.on_selfhosted ?? '—' }} / {{ lastRun?.target ?? '—' }}</dd></div>
-                            <div class="flex justify-between" title="Agents en plus (+) ou en moins (−) chez nous par rapport au pourcentage, selon la vraie attente des deux côtés. Revient vers 0, d'un agent toutes les 5 min sans attente.">
+                            <div class="flex justify-between" title="Agents en plus (+) ou en moins (−) chez nous par rapport à la part des numéros qui arrivent réellement chez nous, selon l'attente réelle des deux côtés. Revient vers 0, d'un agent toutes les 5 min quand personne n'attend.">
                                 <dt class="cursor-help text-gray-500">Décalage d'agents</dt>
                                 <dd class="tabular-nums">{{ offsetText(lastRun?.offset) }}</dd>
                             </div>
                             <template v-if="lastRun?.queue">
-                                <div class="flex justify-between"><dt class="text-gray-500">File chez nous</dt><dd class="tabular-nums">{{ lastRun.queue.waiting }}<template v-if="lastRun.queue.waiting_long"> · {{ lastRun.queue.waiting_long }} longs</template></dd></div>
+                                <div class="flex justify-between"><dt class="text-gray-500">File chez nous</dt><dd class="tabular-nums">{{ lastRun.queue.waiting }}<template v-if="lastRun.queue.waiting_long"> · dont {{ lastRun.queue.waiting_long }} depuis plus de {{ telSettings.regulator_wait_seconds ?? 20 }} s</template></dd></div>
                                 <div class="flex justify-between"><dt class="text-gray-500">Attente la plus longue chez nous</dt><dd class="tabular-nums">{{ lastRun.queue.max_wait }} s</dd></div>
                             </template>
                             <div class="flex justify-between">
                                 <dt class="text-gray-500">File chez Voxnode</dt>
                                 <dd class="tabular-nums" :class="!lastRun?.voxnode_queue && 'text-gray-400'">
                                     <template v-if="lastRun?.voxnode_queue">
-                                        {{ lastRun.voxnode_queue.calls }} appels · {{ lastRun.voxnode_queue.natural }} en vraie attente<template v-if="lastRun.voxnode_queue.waiting_long"> · {{ lastRun.voxnode_queue.waiting_long }} longs</template>
+                                        {{ lastRun.voxnode_queue.calls }} appels · {{ lastRun.voxnode_queue.natural }} en vraie attente<template v-if="lastRun.voxnode_queue.waiting_long"> · dont {{ lastRun.voxnode_queue.waiting_long }} depuis plus de 30 s</template>
                                     </template>
                                     <template v-else>non mesurée</template>
                                 </dd>
                             </div>
-                            <p v-if="telSettings.pbx_failover_mode === 'simulate'" class="pt-1 text-xs text-amber-700">Mode simulation : les bascules ne sont pas appliquées.</p>
+                            <p v-if="telSettings.pbx_failover_mode === 'simulate'" class="pt-1 text-xs text-amber-700">Mode simulation : si notre serveur tombe en panne, rien ne bascule vers Voxnode (la panne est seulement notée). Les déplacements d'agents ci-dessus, eux, sont bien appliqués.</p>
                         </dl>
                         <ul v-if="regulatorEvents.length" class="space-y-1">
                             <li v-for="(e, i) in regulatorEvents" :key="i" class="flex gap-3">
                                 <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
                                 <span class="min-w-0 flex-1 text-gray-700">
-                                    {{ e.type === 'reset' ? 'Réinitialisation' : e.reason }}
+                                    {{ e.type === 'reset' ? 'Liste des agents remise à zéro (serveur désactivé, en panne ou Voxnode coupé)' : e.reason }}
                                     <span v-if="e.to_selfhosted?.length" class="ml-1 text-gray-500">→ nous : {{ e.to_selfhosted.join(', ') }}</span>
                                     <span v-if="e.to_voxnode?.length" class="ml-1 text-gray-500">→ Voxnode : {{ e.to_voxnode.join(', ') }}</span>
                                 </span>
@@ -767,7 +777,7 @@ const sinceLastRun = computed(() => {
                                     {{ label }}
                                 </button>
                             </div>
-                            <span>À surveiller : SIP moyen au-delà de 600 ms, OPTIONS sans réponse (3 et plus) ou coupures répétées (2 et plus).</span>
+                            <span>À surveiller : réponse du serveur au-delà de 600 ms, 3 messages sans réponse ou plus, 2 coupures ou plus.</span>
                         </div>
                         <div class="overflow-x-auto" :class="networkLoading && 'opacity-60'">
                             <table class="w-full text-sm">
@@ -776,11 +786,11 @@ const sinceLastRun = computed(() => {
                                         <th class="px-4 py-2 font-medium">Agent</th>
                                         <th class="px-3 py-2 font-medium">Plateforme</th>
                                         <th class="px-3 py-2 font-medium" title="Dernière mesure remontée par le softphone">En direct</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="Réponse SIP OPTIONS du serveur, authentification comprise">SIP moyen</th>
-                                        <th class="px-3 py-2 text-right font-medium">SIP max</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="OPTIONS envoyés sans réponse">Sans réponse</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="Coupures de l'enregistrement SIP">Coupures</th>
-                                        <th class="px-3 py-2 text-right font-medium" title="Aller-retour vers l'application">App moyen</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Réponse SIP OPTIONS du serveur, authentification comprise">Réponse du serveur (moyenne)</th>
+                                        <th class="px-3 py-2 text-right font-medium">Réponse du serveur (max)</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="OPTIONS envoyés sans réponse">Messages sans réponse</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Coupures de l'enregistrement SIP">Coupures de connexion</th>
+                                        <th class="px-3 py-2 text-right font-medium" title="Aller-retour vers l'application">Délai vers le site</th>
                                         <th class="px-4 py-2 font-medium">État</th>
                                     </tr>
                                 </thead>
@@ -821,7 +831,7 @@ const sinceLastRun = computed(() => {
                             <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
                             <span :class="HEALTH_EVENTS[e.state]?.class ?? 'text-gray-700'">{{ HEALTH_EVENTS[e.state]?.label ?? e.state }}</span>
                             <span class="min-w-0 truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
-                            <span v-if="e.simulated" class="text-gray-400">(simulé)</span>
+                            <span v-if="e.simulated" class="text-gray-400">(simulation : rien n’a basculé)</span>
                         </li>
                     </ul>
                 </details>

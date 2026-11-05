@@ -30,7 +30,7 @@ Les pages du panel comportent quelques incohérences de fuseau (signalées ci-de
 | Taux de perte | `lost / calls` (Dashboard : `lost_calls / calls * 100`, 1 décimale) | |
 | Durée totale | `total_duration` | |
 | Durée agent | `duration_agent` (agent en ligne, conversation + pauses/mises en attente côté agent) | |
-| Durée transfert | `duration_transfer` (après transfert vers la marque) ; transféré ⇔ `duration_transfer > 0` | |
+| Durée transfert | `duration_transfer` (après transfert vers la marque) ; transféré ⇔ `duration_transfer > 0`. Notre serveur : un client qui raccroche pendant la sonnerie de la marque donne `duration_transfer = 0` ; un transfert vers la marque qui n'aboutit pas est enregistré comme service interne (`brand_phonenumber = +33184131572`, `brand_name` reste la marque choisie) | |
 | Attente (Performance) | `total_duration - duration_agent - duration_transfer`, **sans correction** ; `wait_s = SUM(total_duration - duration_agent - duration_transfer)` | Performance |
 | Anomalie | `SUM(total_duration < duration_agent + duration_transfer)` (attente négative, laissée dans les sommes) | Performance |
 | Attente avant décroché (WaitLoss) | appels décrochés : `GREATEST(0, total_duration - duration_agent - duration_transfer)` ; médiane et moyenne (arrondies à l'entier) | WaitLoss |
@@ -44,7 +44,7 @@ Les pages du panel comportent quelques incohérences de fuseau (signalées ci-de
 | Enregistrements | `record_agent`, `record_transfer` (URL) | |
 | Opérateur appelant | `carrier` : codes `BOUY`=Bouygues, `FREE`/`FRMO`=Free, `FRTE`=Orange, `SFR0`=SFR (CarrierHelper), les autres codes bruts | |
 | Marque | `brand_name`, `brand_phonenumber` (→ `brands.phonenumber`) | |
-| Formats | `caller` / `called` en `+33…` ; `called` `118500…` = service interne (pas de numéro dans `phonenumbers`) | observé |
+| Formats | `caller` / `called` en `+33…`. Service interne des transferts = numéro de marque `+33184131572` (01 84 13 15 72). Un `agent_name` de forme `+33118500999@…` désigne le service interne 118 500 côté agents | observé |
 
 ### forced_wait / queue_wait (notre serveur uniquement)
 - `forced_wait` : attente forcée imposée (s). `queue_wait` : vraie attente faute d'agent (s). Renseignés seulement pour `platform='selfhosted'`. Le commentaire du code dit « depuis fin octobre 2026 » (migration du 2026-10-31) ; observé : renseignés sur les appels selfhosted depuis le 2026-10-01.
@@ -250,7 +250,7 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - `agent_logs` (soft delete, 18 M lignes) : `type`/`action` observés : `ping/ping`, `browser/visibilitychange`, `browser/loaded`, `log/{init_twilio,request_break,end_break,login,logout,request_logout,cancel_break}`, `NULL/start_break`, `danger/call_timeout`, `warning/{end_work_failed,end_break_failed}` ; `call_id`, `brand_id`, `value`.
 - `agent_console_logs` : logs JSON du navigateur de l'agent.
 - **`agent_network_quality`** (page Téléphonie, réseau) : tranches de 5 min par `agent_id` × `platform`, `period_start` TIMESTAMP. Agrégats : HTTP moyen = `SUM(http_sum)/SUM(http_count)`, HTTP max = `MAX(http_max)`, SIP moyen = `SUM(sip_sum)/SUM(sip_count)`, SIP max = `MAX(sip_max)`, `SUM(sip_lost)` (OPTIONS sans réponse), `SUM(disconnects)` (coupures SIP), `SUM(samples)`. Fenêtres : 24, 168 ou 720 h, `period_start >= FROM_UNIXTIME(now - N h)`. Seuil d'alerte : SIP > 600 ms, ou OPTIONS perdus / coupures répétés.
-- `settings` (clé → JSON) : `opening_hours` (7 jours, `{open, close}` ou null = fermé), `pbx_failover_mode`, `selfhosted_transfers_internal`… D'autres réglages (`selfhosted_percent`, `ai_daily_calls`, `priority_min_duration`, régulateur…) vivent dans l'API téléphonie, pas forcément en base.
+- `settings` (clé → JSON) : `opening_hours` (7 jours, `{open, close}` ou null = fermé), `pbx_failover_mode`, `selfhosted_transfers_internal`, `selfhosted_percent`, `ai_daily_calls`, `priority_min_duration`, réglages du régulateur… (ligne absente = valeur par défaut). Seuls l'attente forcée de base et les sons sont sur le serveur SIP (`/welcome`).
 
 ---
 

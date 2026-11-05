@@ -30,7 +30,7 @@ function duration(from) {
 const STATUS = {
     idle: { label: 'Prêt', tone: 'text-gray-500' },
     connecting: { label: 'Connexion…', tone: 'text-gray-500' },
-    calling: { label: 'Appel en cours…', tone: 'text-gray-600' },
+    calling: { label: 'Numérotation…', tone: 'text-gray-600' },
     early: { label: 'Annonce / sonnerie', tone: 'text-amber-700' },
     ringing: { label: 'Ça sonne…', tone: 'text-gray-600' },
     established: { label: 'En ligne', tone: 'text-green-700' },
@@ -72,7 +72,7 @@ onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
         <div v-if="softphone.open" class="w-72 rounded-xl border border-gray-200 bg-white shadow-xl">
             <div class="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
                 <div class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                    <span class="h-2 w-2 rounded-full" :class="softphone.connected ? 'bg-green-500' : 'bg-gray-300'" :title="softphone.connected ? 'Connecté au serveur' : 'Non connecté'" />
+                    <span class="h-2 w-2 rounded-full" :class="softphone.connected ? 'bg-green-500' : 'bg-gray-300'" :title="softphone.connected ? 'Connecté au serveur téléphonique' : 'Non connecté'" />
                     Softphone
                 </div>
                 <div class="flex items-center gap-3">
@@ -133,17 +133,18 @@ onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
                     </button>
                 </div>
 
-                <!-- Appeler / raccrocher -->
-                <button
-                    v-if="!inCall"
-                    type="button"
-                    class="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-green-600 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-40"
-                    :disabled="!canDial"
-                    @click="dial"
-                >
-                    <Phone class="h-4 w-4" />
-                    Appeler
-                </button>
+                <!-- Appeler / raccrocher : un bouton désactivé ne reçoit pas le survol, l'info-bulle est sur le span -->
+                <span v-if="!inCall" class="block" :title="canDial ? undefined : 'Numéros français uniquement (ou 118 XXX)'">
+                    <button
+                        type="button"
+                        class="flex h-10 w-full items-center justify-center gap-2 rounded-md bg-green-600 text-sm font-medium text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-40"
+                        :disabled="!canDial"
+                        @click="dial"
+                    >
+                        <Phone class="h-4 w-4" />
+                        Appeler
+                    </button>
+                </span>
                 <button
                     v-else
                     type="button"
@@ -197,7 +198,7 @@ onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
                         type="button"
                         class="ml-auto text-[11px] text-gray-500 underline hover:text-gray-800 disabled:opacity-40"
                         :disabled="inCall"
-                        title="Appelle un écho sur le serveur : vous entendez votre propre voix (ne passe pas par OVH)"
+                        title="Test du son : vous entendez votre propre voix en retour (appel gratuit, sans sortie vers l’extérieur)."
                         @click="call('600')"
                     >
                         Test audio

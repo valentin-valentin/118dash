@@ -30,7 +30,7 @@ const hangup = ref('')
 const HANGUPS = [
     { value: '', label: 'Tous' },
     { value: 'caller', label: "L'appelant" },
-    { value: 'callee', label: "L'appelé" },
+    { value: 'callee', label: 'La marque' },
     { value: 'undefined', label: 'Inconnu' },
 ]
 const hangupLabel = (v) => HANGUPS.find((h) => h.value === v && v)?.label ?? '-'
@@ -226,7 +226,7 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
             <dl class="space-y-1 rounded-lg border border-gray-100 bg-white px-4 py-3 text-xs text-gray-600">
                 <div>
                     <dt class="inline font-medium text-gray-800">Notre serveur :</dt>
-                    <dd class="ml-1 inline">durée du transfert mesurée par le serveur, depuis le décroché de la marque (sonnerie et message avant transfert exclus).</dd>
+                    <dd class="ml-1 inline">durée du transfert mesurée par le serveur, depuis le décroché de la marque (sonnerie et message avant transfert exclus). Un transfert qui n'a pas abouti (refusé, occupé, sans réponse) part au service interne et n'est pas compté ici. L'enregistrement commence dès la sonnerie.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Voxnode :</dt>

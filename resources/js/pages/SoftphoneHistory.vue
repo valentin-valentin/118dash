@@ -84,7 +84,11 @@ const STATUS = {
 }
 
 function status(call) {
-    if (call.dial_status === '') return { label: 'Test audio (écho)', tone: 'bg-blue-50 text-blue-700' }
+    // dial_status vide : test d'écho (600), ou appel refusé avant numérotation (plus de 5 appels simultanés)
+    if (call.dial_status === '') {
+        if (String(call.number ?? '').trim() === '600') return { label: 'Test audio (écho)', tone: 'bg-blue-50 text-blue-700' }
+        return { label: "Refusé : trop d'appels en même temps (5 au maximum)", tone: 'bg-red-50 text-red-700' }
+    }
     return STATUS[call.dial_status] ?? { label: call.dial_status ?? '—', tone: 'bg-gray-100 text-gray-600' }
 }
 
@@ -103,7 +107,7 @@ const Q850 = {
     38: 'réseau hors service',
     41: 'échec temporaire',
     42: 'équipement saturé',
-    127: 'interfonctionnement, non précisé',
+    127: 'erreur entre opérateurs, non précisée',
 }
 
 function hangupCause(code) {
@@ -193,7 +197,7 @@ const LOGS = [
                                 <td colspan="7" class="px-3 py-8 text-center text-gray-400"><LoaderCircle class="mx-auto size-5 animate-spin" /></td>
                             </tr>
                             <tr v-else-if="!calls.length">
-                                <td colspan="7" class="px-3 py-8 text-center text-gray-400">—</td>
+                                <td colspan="7" class="px-3 py-8 text-center text-gray-400">Aucun appel sur la période</td>
                             </tr>
                             <template v-for="call in calls" :key="call.id">
                                 <tr class="cursor-pointer border-t border-gray-100 hover:bg-gray-50" :class="openId === call.id ? 'bg-gray-50' : ''" @click="toggle(call.id)">
