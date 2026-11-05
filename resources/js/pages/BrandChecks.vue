@@ -29,7 +29,7 @@ const MINIMUMS = [1, 3, 5, 10]
 const hangup = ref('')
 const HANGUPS = [
     { value: '', label: 'Tous' },
-    { value: 'caller', label: "L'appelant" },
+    { value: 'caller', label: 'Le client' },
     { value: 'callee', label: 'La marque' },
     { value: 'undefined', label: 'Inconnu' },
 ]
@@ -226,15 +226,15 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
             <dl class="space-y-1 rounded-lg border border-gray-100 bg-white px-4 py-3 text-xs text-gray-600">
                 <div>
                     <dt class="inline font-medium text-gray-800">Notre serveur :</dt>
-                    <dd class="ml-1 inline">durée du transfert mesurée par le serveur, depuis le décroché de la marque (sonnerie et message avant transfert exclus). Un transfert qui n'a pas abouti (refusé, occupé, sans réponse) part au service interne et n'est pas compté ici. L'enregistrement commence dès la sonnerie.</dd>
+                    <dd class="ml-1 inline">la durée est comptée à partir du moment où la marque décroche. La sonnerie et le message avant transfert ne sont pas comptés. Si la marque refuse, est occupée ou ne répond pas, le client part au service interne et le transfert n'est pas compté ici. L'enregistrement, lui, commence dès la sonnerie.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Voxnode :</dt>
-                    <dd class="ml-1 inline">durée de l'enregistrement audio du transfert ; 0 s quand il n'y a pas d'enregistrement.</dd>
+                    <dd class="ml-1 inline">la durée est celle de l'enregistrement du transfert. Sans enregistrement, elle vaut 0 s.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Mise à jour :</dt>
-                    <dd class="ml-1 inline">à l'ouverture de la page et au changement de période, les transferts pas encore mesurés le sont, puis la liste est recalculée. Changer le seuil ou le nombre de transferts recalcule la liste aussitôt.</dd>
+                    <dd class="ml-1 inline">quand vous ouvrez la page ou changez de période, la page mesure d'abord les nouveaux transferts, puis recalcule la liste. Les autres filtres recalculent la liste tout de suite.</dd>
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Marquer vérifiée :</dt>
@@ -242,7 +242,7 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
                 </div>
                 <div>
                     <dt class="inline font-medium text-gray-800">Liste :</dt>
-                    <dd class="ml-1 inline">marques dont la durée médiane des transferts sur la période est sous le seuil, à partir de {{ minMeasured }} transfert{{ minMeasured > 1 ? 's' : '' }} mesuré{{ minMeasured > 1 ? 's' : '' }}.</dd>
+                    <dd class="ml-1 inline">seules les marques avec au moins {{ minMeasured }} transfert{{ minMeasured > 1 ? 's' : '' }} mesuré{{ minMeasured > 1 ? 's' : '' }} sur la période, et une durée médiane sous le seuil, sont affichées. Par exemple, avec un seuil de {{ threshold }} s, une marque apparaît si plus de la moitié de ses transferts durent moins de {{ threshold }} s.</dd>
                 </div>
             </dl>
 
@@ -279,7 +279,7 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
                                 <td colspan="5" class="py-12 text-center text-gray-400"><LoaderCircle class="mx-auto size-5 animate-spin" /></td>
                             </tr>
                             <tr v-else-if="!data.brands.length">
-                                <td colspan="5" class="py-12 text-center text-gray-500">Rien à vérifier</td>
+                                <td colspan="5" class="py-12 text-center text-gray-500">Aucune marque à vérifier</td>
                             </tr>
                             <tr v-for="b in sortedBrands" :key="b.key" class="border-t border-gray-50 align-top" :class="b.verified && 'bg-gray-50/60 opacity-50 hover:opacity-100'">
                                 <td class="px-4 py-2.5">
@@ -326,7 +326,7 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
                                             <TooltipContent class="text-xs">
                                                 <dl class="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
                                                     <dt class="opacity-70">Date</dt><dd class="tabular-nums">{{ formatDateTime(t.called_at, true) }}</dd>
-                                                    <dt class="opacity-70">Appelant</dt><dd class="tabular-nums">{{ formatPhone(t.caller) }}</dd>
+                                                    <dt class="opacity-70">Client</dt><dd class="tabular-nums">{{ formatPhone(t.caller) }}</dd>
                                                     <dt class="opacity-70">Agent</dt><dd>{{ agentLabel(t.agent_name) ?? '-' }}<template v-if="t.duration_agent"> ({{ formatDuration(t.duration_agent) }})</template></dd>
                                                     <dt class="opacity-70">Transfert</dt><dd class="tabular-nums">{{ formatDuration(t.seconds) }}</dd>
                                                     <template v-if="t.dialed && t.dialed !== b.phonenumber">

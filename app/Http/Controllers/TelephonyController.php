@@ -35,7 +35,7 @@ class TelephonyController extends Controller
                 // URL complète : get('') ajouterait une barre finale à la base
                 $response = $this->client()->get(config('services.telephony_api.url'));
             } catch (Throwable $e) {
-                return ['ok' => false, 'error' => 'API téléphonie injoignable'];
+                return ['ok' => false, 'error' => 'Impossible de joindre le serveur des réglages de téléphonie.'];
             }
 
             return $response->successful()
@@ -81,14 +81,14 @@ class TelephonyController extends Controller
                 }
             }],
         ], [
-            'selfhosted_percent.between' => 'Part des nouveaux numéros : entre 0 et 100 %.',
-            'pbx_recovery_minutes.between' => 'Retour après une panne : entre 1 et 120 minutes.',
-            'ai_daily_calls.between' => 'Agents IA : entre 0 et 1000 appels par jour.',
-            'regulator_max_moves.between' => 'Agents déplacés toutes les 30 s : entre 1 et 10.',
-            'regulator_cooldown_minutes.between' => 'Délai avant de redéplacer un agent : entre 0 et 60 minutes.',
-            'regulator_wait_seconds.between' => "Seuil d'attente : entre 0 et 600 secondes.",
-            'priority_min_duration.between' => 'Durée minimale d\'appel : entre 1 et 3600 secondes.',
-            'priority_window_hours.between' => 'Période : entre 1 et 720 heures.',
+            'selfhosted_percent.between' => 'La part des nouveaux numéros doit être entre 0 et 100 %.',
+            'pbx_recovery_minutes.between' => 'Le délai de retour après une panne doit être entre 1 et 120 minutes.',
+            'ai_daily_calls.between' => 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.',
+            'regulator_max_moves.between' => "Le nombre d'agents déplacés toutes les 30 s doit être entre 1 et 10.",
+            'regulator_cooldown_minutes.between' => 'Le délai avant de redéplacer un agent doit être entre 0 et 60 minutes.',
+            'regulator_wait_seconds.between' => "L'attente qui déclenche un renfort doit être entre 0 et 600 secondes.",
+            'priority_min_duration.between' => 'La durée minimale d\'appel doit être entre 1 et 3 600 secondes.',
+            'priority_window_hours.between' => 'La période doit être entre 1 et 720 heures.',
         ]);
         abort_if(empty($validated), 422, 'Aucun réglage à modifier.');
 
@@ -106,12 +106,12 @@ class TelephonyController extends Controller
         }
         foreach ($value as $code => $wait) {
             if (!is_string($code) || !preg_match('/^[A-Z0-9]{2,6}$/', $code)) {
-                return "code opérateur « {$code} » invalide (2 à 6 lettres majuscules ou chiffres).";
+                return "le code opérateur « {$code} » doit faire 2 à 6 lettres majuscules ou chiffres.";
             }
             $min = $wait['min'] ?? null;
             $max = $wait['max'] ?? null;
             if (!is_int($min) || !is_int($max) || $min < 0 || $max > 600 || $min > $max) {
-                return "{$code} : durées entières entre 0 et 600 secondes, minimum inférieur ou égal au maximum.";
+                return "pour {$code}, les durées doivent être des nombres entiers entre 0 et 600 secondes, et le minimum ne doit pas dépasser le maximum.";
             }
         }
 
@@ -155,15 +155,15 @@ class TelephonyController extends Controller
             $keys = is_array($hours) ? array_keys($hours) : [];
             sort($keys);
             if ($keys !== ['close', 'open']) {
-                return "{$label} : ouverture et fermeture attendues.";
+                return "il manque l'heure d'ouverture ou de fermeture du {$label}.";
             }
             foreach ($hours as $time) {
                 if (!is_string($time) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
-                    return "{$label} : heure invalide (format HH:MM, 23:59 au plus tard).";
+                    return "une heure du {$label} est invalide. Format HH:MM, 23:59 au plus tard.";
                 }
             }
             if ($hours['open'] >= $hours['close']) {
-                return "{$label} : l'ouverture doit précéder la fermeture.";
+                return "le {$label}, l'ouverture doit précéder la fermeture.";
             }
         }
 
@@ -218,7 +218,7 @@ class TelephonyController extends Controller
     {
         $validated = $request->validate(
             ['pin' => 'present|nullable|in:'.implode(',', self::PINS)],
-            ['pin.in' => 'Mode inconnu : Automatique, Toujours notre serveur ou Toujours Voxnode.'],
+            ['pin.in' => 'Mode inconnu. Choisir Automatique, Toujours notre serveur ou Toujours Voxnode.'],
         );
 
         return $this->write('put', "/agents/{$agent}", $validated, "Agent #{$agent}, mode = ".($validated['pin'] ?? 'automatique'));
@@ -231,7 +231,7 @@ class TelephonyController extends Controller
         try {
             $response = $this->client()->{$method}($path, $payload);
         } catch (Throwable $e) {
-            return response()->json(['message' => 'API téléphonie injoignable.'], 502);
+            return response()->json(['message' => 'Impossible de joindre le serveur des réglages de téléphonie.'], 502);
         }
 
         return $this->afterWrite($response, $action);
@@ -241,7 +241,7 @@ class TelephonyController extends Controller
     {
         if (!$response->successful()) {
             return response()->json([
-                'message' => $response->json('message') ?? $response->json('error') ?? "Erreur de l'API téléphonie (HTTP {$response->status()})",
+                'message' => $response->json('message') ?? $response->json('error') ?? "Le serveur des réglages de téléphonie a renvoyé une erreur (HTTP {$response->status()}).",
             ], $response->status() >= 500 ? 502 : $response->status());
         }
 

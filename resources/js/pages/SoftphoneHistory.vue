@@ -80,14 +80,14 @@ const STATUS = {
     CONGESTION: { label: 'Échec opérateur', tone: 'bg-red-50 text-red-700' },
     CHANUNAVAIL: { label: 'Ligne indisponible', tone: 'bg-red-50 text-red-700' },
     CANCEL: { label: 'Annulé', tone: 'bg-gray-100 text-gray-600' },
-    NOT_REACHED: { label: "N'a pas atteint le serveur", tone: 'bg-red-50 text-red-700' },
+    NOT_REACHED: { label: "N'a pas atteint notre serveur", tone: 'bg-red-50 text-red-700' },
 }
 
 function status(call) {
     // dial_status vide : test d'écho (600), ou appel refusé avant numérotation (plus de 5 appels simultanés)
     if (call.dial_status === '') {
         if (String(call.number ?? '').trim() === '600') return { label: 'Test audio (écho)', tone: 'bg-blue-50 text-blue-700' }
-        return { label: "Refusé : trop d'appels en même temps (5 au maximum)", tone: 'bg-red-50 text-red-700' }
+        return { label: 'Refusé : déjà 5 appels en cours, c’est le maximum', tone: 'bg-red-50 text-red-700' }
     }
     return STATUS[call.dial_status] ?? { label: call.dial_status ?? '—', tone: 'bg-gray-100 text-gray-600' }
 }
@@ -102,12 +102,12 @@ const Q850 = {
     21: 'appel refusé',
     27: 'destination hors service',
     28: 'numéro mal formé',
-    31: 'échec normal, non précisé',
+    31: 'échec sans raison précise',
     34: 'aucun circuit disponible',
     38: 'réseau hors service',
     41: 'échec temporaire',
     42: 'équipement saturé',
-    127: 'erreur entre opérateurs, non précisée',
+    127: 'erreur entre opérateurs, sans raison précise',
 }
 
 function hangupCause(code) {
@@ -223,17 +223,17 @@ const LOGS = [
                                     <td colspan="6" class="space-y-4 px-3 pt-1 pb-4">
                                         <!-- Enregistrement -->
                                         <div>
-                                            <div class="mb-1 text-xs font-medium text-gray-500">Enregistrement (dès la composition)</div>
+                                            <div class="mb-1 text-xs font-medium text-gray-500">Enregistrement, dès la composition du numéro</div>
                                             <audio v-if="call.recording_url" :src="call.recording_url" controls preload="none" class="h-9 w-full max-w-xl" />
                                             <p v-else-if="call.pending?.includes('recording')" class="text-xs text-amber-700">En cours d'envoi</p>
-                                            <p v-else class="text-xs text-gray-500">Pas d'audio</p>
+                                            <p v-else class="text-xs text-gray-500">Pas d'enregistrement</p>
                                         </div>
 
                                         <!-- Détail de la fiche -->
                                         <dl class="grid grid-cols-1 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2 lg:grid-cols-4">
                                             <div><dt class="text-gray-500">Fin</dt><dd class="text-gray-800 tabular-nums">{{ formatDate(call.ended_at) }}</dd></div>
                                             <div><dt class="text-gray-500">Sonnerie + conversation</dt><dd class="text-gray-800 tabular-nums">{{ formatSeconds(call.dial_seconds) }}</dd></div>
-                                            <div><dt class="text-gray-500">Cause du raccroché</dt><dd class="text-gray-800">{{ hangupCause(call.hangup_cause) }}</dd></div>
+                                            <div><dt class="text-gray-500">Raison de la fin d'appel</dt><dd class="text-gray-800">{{ hangupCause(call.hangup_cause) }}</dd></div>
                                             <div><dt class="text-gray-500">Raccroché par</dt><dd class="break-all text-gray-800">{{ call.hangup_source || '—' }}</dd></div>
                                             <div><dt class="text-gray-500">Réponse de l'opérateur</dt><dd class="text-gray-800">{{ call.operator_cause || '—' }}</dd></div>
                                             <div><dt class="text-gray-500">Identifiant</dt><dd class="font-mono break-all text-gray-800">{{ call.id }}</dd></div>

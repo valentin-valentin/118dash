@@ -177,25 +177,25 @@ function numberForm(fields, confirmBefore = null) {
 
 const trafficForm = numberForm(
     {
-        selfhosted_percent: { min: 0, max: 100, error: 'Part des nouveaux numéros : un nombre entier entre 0 et 100.' },
-        pbx_recovery_minutes: { min: 1, max: 120, error: 'Retour après une panne : entre 1 et 120 minutes.' },
+        selfhosted_percent: { min: 0, max: 100, error: 'La part des nouveaux numéros doit être un nombre entier entre 0 et 100.' },
+        pbx_recovery_minutes: { min: 1, max: 120, error: 'Le délai de retour après une panne doit être entre 1 et 120 minutes.' },
     },
     // Baisser la part ne touche que les nouvelles attributions (les numéros chez nous y restent) : on le rappelle
     (payload) =>
         'selfhosted_percent' in payload && payload.selfhosted_percent < telSettings.value.selfhosted_percent
             ? ask({
                   title: `Passer de ${telSettings.value.selfhosted_percent} % à ${payload.selfhosted_percent} % ?`,
-                  body: `Les nouveaux numéros iront à ${payload.selfhosted_percent} % chez nous. Les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite : Désactiver.`,
+                  body: `Environ ${payload.selfhosted_percent} % des nouveaux numéros arriveront chez nous. Les numéros déjà chez nous y restent jusqu'à la fin de leur attribution. Pour tout renvoyer chez Voxnode tout de suite, désactivez plutôt notre serveur.`,
                   confirm: 'Baisser la part',
               })
             : Promise.resolve(true),
 )
 const priorityForm = numberForm({
-    priority_min_duration: { min: 1, max: 3600, error: "Durée d'appel : entre 1 et 3600 secondes." },
-    priority_window_hours: { min: 1, max: 720, error: 'Période : entre 1 et 720 heures.' },
+    priority_min_duration: { min: 1, max: 3600, error: "La durée d'appel doit être entre 1 et 3 600 secondes." },
+    priority_window_hours: { min: 1, max: 720, error: 'La période doit être entre 1 et 720 heures.' },
 })
 // Test des agents IA : environ N appels par jour envoyés au prestataire, 0 = coupé
-const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Agents IA : entre 0 et 1000 appels par jour.' } })
+const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.' } })
 
 // En cas de panne de notre serveur : bascule réelle ou simple journal (simulation)
 async function setFailoverMode(mode) {
@@ -204,13 +204,13 @@ async function setFailoverMode(mode) {
         mode === 'simulate'
             ? {
                   title: 'Passer en simulation ?',
-                  body: "En cas de panne de notre serveur, rien ne basculera plus sur Voxnode : la panne sera seulement notée dans l'historique. Les appels envoyés chez nous pendant une panne seront perdus.",
+                  body: "Si notre serveur tombe en panne, rien ne partira chez Voxnode. La panne sera seulement notée dans l'historique. Les appels envoyés chez nous pendant la panne seront perdus.",
                   confirm: 'Passer en simulation',
                   danger: true,
               }
-            : { title: 'Réactiver la bascule automatique ?', body: 'En cas de panne de notre serveur, ses numéros et ses agents basculeront sur Voxnode.', confirm: 'Réactiver' },
+            : { title: 'Réactiver la bascule automatique ?', body: 'Si notre serveur tombe en panne, ses numéros et ses agents partiront automatiquement chez Voxnode.', confirm: 'Réactiver' },
     )
-    if (ok) saveTelephony({ pbx_failover_mode: mode }, mode === 'simulate' ? 'Bascule en simulation' : 'Bascule automatique réactivée')
+    if (ok) saveTelephony({ pbx_failover_mode: mode }, mode === 'simulate' ? 'Mode simulation activé' : 'Bascule automatique réactivée')
 }
 
 // Transferts depuis notre serveur : vers la marque choisie, ou tous vers le service interne
@@ -220,22 +220,22 @@ async function setTransfersInternal(internal) {
         internal
             ? {
                   title: 'Envoyer tous les transferts au service interne ?',
-                  body: "Sur notre serveur, tous les transferts iront au service interne, y compris ceux de l'agent IA, sans message avant transfert. La marque choisie par l'agent reste notée sur l'appel. Les appels Voxnode ne changent pas.",
+                  body: "Sur notre serveur, tous les transferts iront au service interne, y compris ceux de l'agent IA. Le message avant transfert ne sera pas joué. La marque choisie par l'agent reste notée sur l'appel. Rien ne change pour les appels Voxnode.",
                   confirm: 'Tout au service interne',
               }
             : {
                   title: 'Transférer vers les marques ?',
-                  body: "Sur notre serveur, chaque transfert appellera la marque choisie par l'agent, avec le message avant transfert si la marque l'a. Si la marque ne décroche pas en 20 secondes, est occupée ou refuse l'appel, le client part automatiquement au service interne. Les appels Voxnode ne changent pas.",
+                  body: "Sur notre serveur, chaque transfert appellera la marque choisie par l'agent. Si la marque a un message avant transfert, le client l'entend d'abord. Si la marque ne décroche pas en 20 secondes, est occupée ou refuse l'appel, le client part automatiquement au service interne. Rien ne change pour les appels Voxnode.",
                   confirm: 'Vers les marques',
               },
     )
-    if (ok) saveTelephony({ selfhosted_transfers_internal: internal }, internal ? 'Transferts : service interne' : 'Transferts : vers les marques')
+    if (ok) saveTelephony({ selfhosted_transfers_internal: internal }, internal ? 'Tous les transferts vont au service interne' : 'Les transferts vont vers les marques')
 }
 
 const regulatorForm = numberForm({
-    regulator_max_moves: { min: 1, max: 10, error: 'Agents déplacés : entre 1 et 10.' },
-    regulator_cooldown_minutes: { min: 0, max: 60, error: 'Délai avant de redéplacer un agent : entre 0 et 60 minutes.' },
-    regulator_wait_seconds: { min: 0, max: 600, error: "Seuil d'attente : entre 0 et 600 secondes." },
+    regulator_max_moves: { min: 1, max: 10, error: 'Le nombre d’agents déplacés doit être entre 1 et 10.' },
+    regulator_cooldown_minutes: { min: 0, max: 60, error: 'Le délai avant de redéplacer un agent doit être entre 0 et 60 minutes.' },
+    regulator_wait_seconds: { min: 0, max: 600, error: "L'attente qui déclenche un renfort doit être entre 0 et 600 secondes." },
 })
 
 // ─── Trafic : état des plateformes (actions immédiates) ───────────────────────
@@ -268,7 +268,7 @@ async function setOurState(target) {
             ? { title: 'Activer notre serveur ?', body: `Environ ${st.selfhosted_percent} % des nouveaux numéros (fournisseurs autorisés seulement) iront chez nous, à condition qu'un agent soit libre. Les agents vont là où sont les clients : ils viennent chez nous à mesure que des clients y appellent.`, confirm: 'Activer' }
             : {
                   title: 'Désactiver notre serveur ?',
-                  body: "Ses numéros repartent immédiatement chez Voxnode. Ses agents partent progressivement : le dernier attend qu'il ne reste plus aucun client ni numéro chez nous (au moins 3 min 30). Les appels en cours chez nous continuent normalement.",
+                  body: "Ses numéros repartent tout de suite chez Voxnode. Ses agents partent petit à petit. Le dernier agent reste tant qu'il y a encore un client ou un numéro chez nous, et au moins 3 min 30. Les appels en cours chez nous continuent normalement.",
                   confirm: 'Désactiver',
                   danger: true,
               },
@@ -288,11 +288,11 @@ async function setVoxnodeCut(cut) {
         cut
             ? {
                   title: 'Désactiver Voxnode ?',
-                  body: 'Ses numéros (fournisseurs autorisés chez nous) arrivent immédiatement chez nous. Ses agents viennent progressivement : Voxnode en garde un par client qui y attend encore. Si Voxnode ne répond plus du tout, tous les agents viennent tout de suite. Les numéros des autres fournisseurs restent chez Voxnode. Les transferts vers les marques passent par Voxnode : s’il est en panne, ils iront au service interne.',
+                  body: 'Les numéros des fournisseurs autorisés chez nous arrivent tout de suite chez nous. Les numéros des autres fournisseurs restent chez Voxnode. Les agents viennent chez nous petit à petit. Voxnode garde un agent pour chaque client qui y attend encore. Si Voxnode ne répond plus du tout, tous les agents viennent tout de suite. Attention, les transferts vers les marques passent par Voxnode. Si Voxnode est en panne, ils iront au service interne.',
                   confirm: 'Désactiver',
                   danger: true,
               }
-            : { title: 'Activer Voxnode ?', body: `Notre serveur ne garde qu'environ ${telSettings.value.selfhosted_percent} % des numéros, choisis au hasard ; les autres repartent tout de suite chez Voxnode, les agents petit à petit.`, confirm: 'Activer' },
+            : { title: 'Activer Voxnode ?', body: `Notre serveur ne garde qu'environ ${telSettings.value.selfhosted_percent} % des numéros, choisis au hasard. Les autres repartent tout de suite chez Voxnode. Les agents suivent petit à petit, là où sont les clients.`, confirm: 'Activer' },
     )
     if (ok) saveTelephony({ voxnode_manual_off: cut }, cut ? 'Voxnode est désactivé' : 'Voxnode est activé')
 }
@@ -326,7 +326,7 @@ const hoursError = computed(() => {
     for (const [day, label] of DAYS) {
         const h = hoursPayload.value[day]
         if (!h) continue
-        if (!TIME.test(h.open ?? '') || !TIME.test(h.close ?? '')) return `${label} : heures au format HH:MM (23:59 au plus tard).`
+        if (!TIME.test(h.open ?? '') || !TIME.test(h.close ?? '')) return `${label} : écrire les heures au format HH:MM, 23:59 au plus tard.`
         if (h.open >= h.close) return `${label} : l'ouverture doit précéder la fermeture.`
     }
     return null
@@ -339,7 +339,7 @@ async function saveHours() {
     const ok = await run(async () => {
         await send('PUT', '/data/telephony/settings', { opening_hours: hoursPayload.value })
         markOpeningHoursSaved()
-    }, `${message}, appliqué par le serveur SIP sous 2 minutes`)
+    }, `${message}. Notre serveur les applique d'ici 2 minutes.`)
     if (ok) {
         hoursEdited.value = false
         watchHoursCopy()
@@ -403,7 +403,7 @@ function sequenceRequest(target, list) {
 const saveSequence = (target, list, success) => run(() => sequenceRequest(target, list), success)
 
 async function deleteSound(name) {
-    if (!(await ask({ title: `Supprimer « ${name} » ?`, body: 'Le fichier est supprimé définitivement du serveur.', confirm: 'Supprimer', danger: true }))) return
+    if (!(await ask({ title: `Supprimer « ${name} » ?`, body: 'Le fichier sera supprimé définitivement de notre serveur.', confirm: 'Supprimer', danger: true }))) return
     run(() => send('DELETE', `/data/sip/sounds/${encodeURIComponent(name)}`), `Fichier « ${name} » supprimé`)
 }
 
@@ -435,7 +435,7 @@ const MAX_SOUND_BYTES = 50 * 1024 * 1024
 const uploadProgress = ref(null) // 0 à 1 pendant l'envoi
 
 async function uploadSoundInChunks(file, name) {
-    if (file.size > MAX_SOUND_BYTES) throw new Error('Fichier trop gros (50 Mo maximum).')
+    if (file.size > MAX_SOUND_BYTES) throw new Error('Fichier trop gros. La taille maximum est de 50 Mo.')
     const uploadId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     const total = Math.max(1, Math.ceil(file.size / CHUNK_SIZE))
     for (let index = 0; index < total; index++) {
@@ -451,7 +451,7 @@ async function uploadSoundInChunks(file, name) {
         try {
             await send('POST', '/data/sip/sounds/chunk', form)
         } catch (e) {
-            throw new Error(`Envoi interrompu (morceau ${index + 1} sur ${total}) : ${e.message}`)
+            throw new Error(`Envoi interrompu au morceau ${index + 1} sur ${total}. Erreur : ${e.message}`)
         }
         if (index < total - 1) uploadProgress.value = (index + 1) / total
     }
@@ -502,7 +502,7 @@ watch([waitMin, waitMax], () => {
 const waitError = computed(() => {
     const min = Number(waitMin.value)
     const max = Number(waitMax.value)
-    if (isEmpty(waitMin.value) || isEmpty(waitMax.value) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 1800) return 'Durées en secondes, entre 0 et 1800.'
+    if (isEmpty(waitMin.value) || isEmpty(waitMax.value) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 1800) return 'Les durées sont en secondes, entre 0 et 1 800.'
     if (min > max) return 'Le minimum doit être inférieur ou égal au maximum.'
     return null
 })
@@ -567,12 +567,12 @@ const carrierError = computed(() => {
     for (const r of carrierRows.value) {
         const code = r.code.trim().toUpperCase()
         if (!code) return 'Choisir un opérateur pour chaque ligne.'
-        if (!/^[A-Z0-9]{2,6}$/.test(code)) return `Code opérateur « ${r.code} » : 2 à 6 lettres ou chiffres.`
+        if (!/^[A-Z0-9]{2,6}$/.test(code)) return `Le code opérateur « ${r.code} » doit faire 2 à 6 lettres ou chiffres.`
         if (seen.has(code)) return `${code} apparaît deux fois.`
         seen.add(code)
         const min = Number(r.min)
         const max = Number(r.max)
-        if (isEmpty(r.min) || isEmpty(r.max) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 600) return `${code} : durées en secondes, entre 0 et 600.`
+        if (isEmpty(r.min) || isEmpty(r.max) || !Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max > 600) return `${code} : les durées sont en secondes, entre 0 et 600.`
         if (min > max) return `${code} : le minimum doit être inférieur ou égal au maximum.`
     }
     if (carrierRows.value.length > 50) return '50 opérateurs au plus.'
@@ -609,7 +609,7 @@ async function saveCarrierWait() {
     if (carrierError.value) return
     const payload = carrierPayload()
     const count = Object.keys(payload).length
-    if (await saveTelephony({ forced_wait_by_carrier: payload }, count ? `Attente par opérateur : ${count} opérateur${count > 1 ? 's' : ''}` : 'Attente par opérateur : aucune exception')) {
+    if (await saveTelephony({ forced_wait_by_carrier: payload }, count ? `Attente réglée pour ${count} opérateur${count > 1 ? 's' : ''}` : 'Même attente pour tous les opérateurs')) {
         carrierEdited.value = false
         carrierRows.value = savedCarrierRows()
     }
@@ -696,7 +696,7 @@ const tabs = computed(() => {
     })
     list.push({ id: 'service-interne', label: 'Service interne', summary: plural(sequences.value.internal.length, 'son'), problem: false })
     list.push({ id: 'fournisseurs', label: 'Fournisseurs', summary: plural(trustedIps.value.length, 'IP autorisée'), problem: false })
-    if (regulatorForm.available.length) list.push({ id: 'regulateur', label: 'Régulateur', summary: tel.value?.regulator ? (regulatorStopped.value ? 'Arrêté' : 'Tourne') : '—', problem: regulatorStopped.value })
+    if (regulatorForm.available.length) list.push({ id: 'regulateur', label: 'Régulateur', summary: tel.value?.regulator ? (regulatorStopped.value ? 'Arrêté' : 'En marche') : '—', problem: regulatorStopped.value })
     const storageLow = disks.value.some((d) => d.low) || !!cloud.value?.stale
     list.push({ id: 'serveur', label: 'Serveur et stockage', summary: storageLow ? 'Stockage à surveiller' : `Asterisk ${version.value}`, problem: storageLow })
     return list
@@ -739,9 +739,9 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                 {{ notice.text }}
             </div>
 
-            <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Impossible de joindre le panel : {{ error }}</p>
+            <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Impossible de charger les données. Erreur : {{ error }}</p>
             <div v-if="!configured" class="rounded-lg border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
-                Configuration à faire par le développeur : API du serveur SIP non configurée : renseigner SIP_API_URL et SIP_API_TOKEN dans le .env, puis php artisan config:cache.
+                Le lien avec notre serveur n'est pas configuré. À faire par le développeur : renseigner SIP_API_URL et SIP_API_TOKEN dans le .env, puis lancer php artisan config:cache.
             </div>
 
             <div v-else class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -763,7 +763,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                             </button>
                         </li>
                     </ul>
-                    <p class="mt-4 hidden px-3 text-xs text-gray-400 lg:block">Les changements s'appliquent immédiatement en production.</p>
+                    <p class="mt-4 hidden px-3 text-xs text-gray-400 lg:block">Les changements s'appliquent tout de suite, sur les vrais appels.</p>
                 </nav>
 
                 <!-- ─── Contenu de l'onglet ───────────────────────────────────── -->
@@ -772,13 +772,13 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
                     <!-- ═══ Trafic ═══ -->
                     <template v-else-if="currentTab === 'trafic'">
-                        <p v-if="telephony?.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de lire les réglages de téléphonie (vn.118.ae) : {{ telephony.error }}</p>
+                        <p v-if="telephony?.ok === false" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Impossible de lire les réglages de téléphonie. Erreur : {{ telephony.error }}</p>
                         <template v-else-if="telSettings">
                             <!-- Actions immédiates -->
                             <section class="rounded-lg border border-gray-100 bg-white">
                                 <header class="border-b border-gray-100 px-5 py-3">
                                     <h2 class="font-semibold text-gray-900">État des plateformes</h2>
-                                    <p class="text-sm text-gray-500">S'applique tout de suite, après confirmation.</p>
+                                    <p class="text-sm text-gray-500">Chaque choix demande une confirmation, puis s'applique tout de suite.</p>
                                 </header>
                                 <div class="divide-y divide-gray-50">
                                     <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
@@ -856,8 +856,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </div>
                                             <p class="mt-2 text-sm" :class="telSettings.pbx_failover_mode === 'simulate' ? 'text-amber-700' : 'text-gray-500'">
                                                 {{ telSettings.pbx_failover_mode === 'simulate'
-                                                    ? 'Une panne de notre serveur est seulement notée dans l’historique : rien ne bascule sur Voxnode.'
-                                                    : 'Une panne de notre serveur envoie ses numéros et ses agents sur Voxnode.' }}
+                                                    ? 'Si notre serveur tombe en panne, la panne est seulement notée dans l’historique. Rien ne part chez Voxnode.'
+                                                    : 'Si notre serveur tombe en panne, ses numéros et ses agents partent automatiquement chez Voxnode.' }}
                                             </p>
                                         </div>
                                     </div>
@@ -867,7 +867,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                         <div>
                                             <div class="inline-flex rounded-md border border-gray-200 p-0.5">
                                                 <button
-                                                    v-for="(label, key) in { brand: 'Vers la marque (sinon service interne)', internal: 'Tout au service interne' }"
+                                                    v-for="(label, key) in { brand: 'Vers la marque', internal: 'Tout au service interne' }"
                                                     :key="key"
                                                     type="button"
                                                     class="rounded px-3 py-1.5 text-sm transition-colors"
@@ -880,8 +880,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </div>
                                             <p class="mt-2 text-sm text-gray-500">
                                                 {{ telSettings.selfhosted_transfers_internal
-                                                    ? "Tous les transferts vont au service interne, sans message avant transfert, y compris ceux de l'agent IA. La marque choisie par l'agent reste notée sur l'appel."
-                                                    : "Chaque transfert appelle la marque choisie par l'agent (la marque voit le numéro du client). S'il n'aboutit pas (refus, occupé, pas de réponse en 20 s), le client part au service interne." }}
+                                                    ? "Tous les transferts vont au service interne, y compris ceux de l'agent IA. Le message avant transfert n'est pas joué. La marque choisie par l'agent reste notée sur l'appel."
+                                                    : "Chaque transfert appelle la marque choisie par l'agent. La marque voit le numéro du client. Si la marque refuse, est occupée ou ne décroche pas en 20 s, le client part au service interne." }}
                                             </p>
                                         </div>
                                     </div>
@@ -913,7 +913,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="recovery" class="text-gray-900">Retour après une panne</Label>
-                                            <p class="text-sm text-gray-500">Après une panne, durée de bon fonctionnement avant que notre serveur reçoive de nouveau des numéros (mode Bascule automatique).</p>
+                                            <p class="text-sm text-gray-500">Après une panne, notre serveur doit fonctionner sans problème pendant cette durée avant de recevoir de nouveau des numéros. Ce réglage ne sert qu'en mode Bascule automatique.</p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="recovery" v-model.number="trafficForm.values.pbx_recovery_minutes" type="number" min="1" max="120" class="h-9 w-24 text-right tabular-nums" />
@@ -935,7 +935,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                     <div>
                                         <Label for="ai-calls" class="text-gray-900">Test des agents IA</Label>
-                                        <p class="text-sm text-gray-500">Environ {{ telSettings.ai_daily_calls }} appels par jour de notre serveur (au plus {{ telSettings.ai_daily_calls }}), jamais les appelants prioritaires. Si l'IA ne décroche pas en 5 s, nos agents prennent l'appel. 0 = test coupé.</p>
+                                        <p class="text-sm text-gray-500">Environ {{ telSettings.ai_daily_calls }} appels par jour arrivant sur notre serveur sont envoyés à l'agent IA, jamais plus de {{ telSettings.ai_daily_calls }}. Les clients prioritaires n'y sont jamais envoyés. Si l'agent IA ne décroche pas en 5 s, nos agents prennent l'appel. Mettre 0 pour arrêter le test.</p>
                                     </div>
                                     <div class="flex items-center gap-2 text-sm text-gray-600">
                                         <Input id="ai-calls" v-model.number="aiForm.values.ai_daily_calls" type="number" min="0" max="1000" class="h-9 w-24 text-right tabular-nums" />
@@ -953,7 +953,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
                             <Link href="/sip-server#modes" class="block rounded-lg border border-gray-100 bg-white px-5 py-3 text-sm hover:bg-gray-50">
                                 <span class="font-medium text-gray-900">Mode des agents →</span>
-                                <span class="ml-2 text-gray-500">forcer un agent sur une plateforme (page Serveur SIP)</span>
+                                <span class="ml-2 text-gray-500">Forcer un agent à rester sur notre serveur ou chez Voxnode. Se règle sur la page Serveur SIP.</span>
                             </Link>
                         </template>
                     </template>
@@ -963,7 +963,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <header class="border-b border-gray-100 px-5 py-3">
                             <h2 class="font-semibold text-gray-900">Horaires d'ouverture</h2>
                             <p class="text-sm text-gray-500">
-                                Heure de Paris, appels arrivant sur notre serveur uniquement (Voxnode n'est pas concerné). En dehors des horaires, l'appel est refusé sans décrocher : il n'est pas facturé. Un appel déjà en cours n'est jamais coupé.
+                                Heures de Paris. Ces horaires ne valent que pour les appels qui arrivent sur notre serveur, pas pour Voxnode. En dehors des horaires, l'appel est refusé sans décrocher, donc il n'est pas facturé. Un appel déjà en cours n'est jamais coupé.
                             </p>
                         </header>
                         <p
@@ -982,7 +982,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                         <th class="py-2 pr-6 font-normal">Fermé</th>
                                         <th class="py-2 pr-3 font-normal">De</th>
                                         <th class="py-2 pr-8 font-normal">À</th>
-                                        <th class="py-2 font-normal">Appliqué par le serveur</th>
+                                        <th class="py-2 font-normal">Appliqué par notre serveur</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1008,7 +1008,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <footer v-if="hoursDirty || hoursError" class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
                             <span v-if="hoursError" class="mr-auto text-sm text-red-600">{{ hoursError }}</span>
                             <template v-if="hoursDirty">
-                                <span v-if="!hoursError" class="mr-auto text-sm text-gray-500">Appliqué par le serveur SIP sous 2 minutes.</span>
+                                <span v-if="!hoursError" class="mr-auto text-sm text-gray-500">Notre serveur l'applique dans les 2 minutes après l'enregistrement.</span>
                                 <Button type="button" variant="outline" size="sm" :disabled="busy" @click="resetHours">Annuler</Button>
                                 <Button type="submit" size="sm" :disabled="busy || !!hoursError">Enregistrer</Button>
                             </template>
@@ -1019,8 +1019,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                     <template v-else-if="currentTab === 'accueil'">
                         <section class="rounded-lg border border-gray-100 bg-white">
                             <header class="border-b border-gray-100 px-5 py-3">
-                                <h2 class="font-semibold text-gray-900">Parcours de l'appelant</h2>
-                                <p class="text-sm text-gray-500">Ce qu'entend chaque appel arrivant sur notre serveur, dans l'ordre, jusqu'à ce qu'un agent décroche, puis en cas de transfert.</p>
+                                <h2 class="font-semibold text-gray-900">Parcours du client</h2>
+                                <p class="text-sm text-gray-500">Ce qu'entend un client qui appelle sur notre serveur, dans l'ordre, jusqu'à ce qu'un agent décroche. Puis ce qu'il entend en cas de transfert.</p>
                             </header>
                             <ol class="px-5 py-2">
                                 <li class="relative border-l border-gray-200 pb-6 pl-6 pt-3">
@@ -1041,9 +1041,9 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <li class="relative border-l border-gray-200 pb-6 pl-6 pt-1">
                                     <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">2</span>
                                     <h3 class="text-sm font-semibold text-gray-900">Attente forcée</h3>
-                                    <p class="mt-0.5 text-sm text-gray-500">Avant d'arriver dans la file, chaque appelant écoute l'audio d'attente pendant une durée tirée au hasard entre le minimum et le maximum. Les appelants prioritaires (blacklist, ou appel récent) n'ont pas d'attente forcée.</p>
+                                    <p class="mt-0.5 text-sm text-gray-500">Avant d'entrer dans la file, chaque client écoute l'audio d'attente. La durée est tirée au hasard entre le minimum et le maximum. Par exemple, avec 30 et 90 s, un client peut attendre 47 s. Les clients prioritaires n'ont pas d'attente forcée. Ce sont les clients blacklistés et ceux qui ont appelé récemment.</p>
                                     <form class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-100 px-4 py-3 text-sm text-gray-700" @submit.prevent="saveWait">
-                                        Pour tous les appelants : entre
+                                        Pour tous les clients : entre
                                         <Input v-model.number="waitMin" type="number" min="0" max="1800" class="h-8 w-20 text-right tabular-nums" aria-label="Minimum en secondes" />
                                         et
                                         <Input v-model.number="waitMax" type="number" min="0" max="1800" class="h-8 w-20 text-right tabular-nums" aria-label="Maximum en secondes" />
@@ -1057,8 +1057,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
                                     <!-- Exceptions par opérateur de l'appelant -->
                                     <div v-if="carrierWaitAvailable" class="mt-3 rounded-lg border border-gray-100 px-4 py-3 text-sm text-gray-700">
-                                        <h4 class="font-medium text-gray-900">Selon l'opérateur de l'appelant</h4>
-                                        <p class="mt-0.5 text-xs text-gray-500">Remplace la durée de base pour les appelants de ces opérateurs. Les autres gardent la durée de base. 0 et 0 = pas d'attente forcée.</p>
+                                        <h4 class="font-medium text-gray-900">Selon l'opérateur du client</h4>
+                                        <p class="mt-0.5 text-xs text-gray-500">Les clients de ces opérateurs ont cette durée à la place de la durée de base. Les autres clients gardent la durée de base. Mettre 0 et 0 pour supprimer l'attente forcée.</p>
 
                                         <ul v-if="carrierRows.length" class="mt-3 divide-y divide-gray-100">
                                             <li v-for="(row, index) in carrierRows" :key="index" class="flex flex-wrap items-center gap-2 py-1.5 lg:grid lg:grid-cols-[minmax(0,1fr)_5.5rem_auto_auto]">
@@ -1086,7 +1086,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                                 </Button>
                                             </li>
                                         </ul>
-                                        <p v-else class="mt-3 text-xs text-gray-500">Aucun opérateur réglé : tout le monde a la durée de base.</p>
+                                        <p v-else class="mt-3 text-xs text-gray-500">Aucun opérateur réglé. Tous les clients ont la durée de base.</p>
 
                                         <Button type="button" variant="outline" size="sm" class="mt-2" :disabled="busy || carrierRows.length >= 50" @click="addCarrierRow">
                                             <Plus class="h-3.5 w-3.5" /> Ajouter un opérateur
@@ -1100,7 +1100,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </span>
                                         </div>
 
-                                        <p class="mt-3 text-xs text-gray-400">L'opérateur de l'appelant est recherché au moment de l'appel. Si ce service ne répond pas, on prend l'opérateur connu de ses appels précédents ; sinon la durée de base s'applique.</p>
+                                        <p class="mt-3 text-xs text-gray-400">L'opérateur du client est recherché au moment de l'appel. Si la recherche échoue, on reprend l'opérateur trouvé lors de ses appels précédents. Si on ne le connaît pas, la durée de base s'applique.</p>
                                     </div>
                                 </li>
                                 <li class="relative pb-6 pl-6 pt-1" :class="hasTransferAnnouncement && 'border-l border-gray-200'">
@@ -1110,7 +1110,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                         description="Joué en boucle pendant l'attente forcée, puis dans la file jusqu'à ce qu'un agent décroche."
                                         :names="sequences.hold"
                                         :library="sounds"
-                                        empty-text="Aucun son : musique d'attente par défaut du serveur."
+                                        empty-text="Aucun son choisi. Le client entend la musique d'attente par défaut."
                                         :playing="playing"
                                         :busy="busy"
                                         @change="(list, message) => saveSequence('hold', list, message)"
@@ -1122,7 +1122,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <span class="absolute -left-3 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-xs font-medium text-white">4</span>
                                     <SipSoundSequence
                                         title="Message avant transfert"
-                                        description="Joué en entier au client avant un transfert vers une marque (l'agent est libéré tout de suite). Il se règle marque par marque, dans la fiche de la marque. Il n'est pas joué pour le service interne, ni quand tous les transferts vont au service interne."
+                                        description="Joué en entier au client avant un transfert vers une marque. L'agent est libéré tout de suite. Le message se règle marque par marque, dans la fiche de la marque. Il n'est pas joué vers le service interne, ni quand tous les transferts vont au service interne."
                                         :names="sequences.transfer"
                                         :library="sounds"
                                         empty-text="Aucun message : le transfert est immédiat."
@@ -1138,13 +1138,13 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
 
                         <form v-if="priorityForm.available.length" class="rounded-lg border border-gray-100 bg-white" @submit.prevent="priorityForm.save()">
                             <header class="border-b border-gray-100 px-5 py-3">
-                                <h2 class="font-semibold text-gray-900">Appelants prioritaires</h2>
+                                <h2 class="font-semibold text-gray-900">Clients prioritaires</h2>
                                 <p class="text-sm text-gray-500">Ils sautent l'attente forcée et passent en tête de file.</p>
                             </header>
                             <p class="flex flex-wrap items-center gap-2 px-5 py-4 text-sm text-gray-700">
-                                Les blacklistés, et ceux qui ont eu un appel d'au moins
+                                Les clients blacklistés, et ceux qui ont déjà eu un appel d'au moins
                                 <Input v-model.number="priorityForm.values.priority_min_duration" type="number" min="1" max="3600" class="h-8 w-20 text-right tabular-nums" aria-label="Durée minimale d'appel en secondes" />
-                                s (attente comprise) dans les
+                                s, attente comprise, dans les
                                 <Input v-model.number="priorityForm.values.priority_window_hours" type="number" min="1" max="720" class="h-8 w-20 text-right tabular-nums" aria-label="Période en heures" />
                                 dernières heures.
                             </p>
@@ -1162,7 +1162,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                     <section v-else-if="currentTab === 'service-interne'" class="rounded-lg border border-gray-100 bg-white">
                         <header class="border-b border-gray-100 px-5 py-3">
                             <h2 class="font-semibold text-gray-900">Service interne</h2>
-                            <p class="text-sm text-gray-500">Ce qu'entend le client quand il est envoyé au service interne ({{ INTERNAL_SERVICE_NUMBER }}) : choix de l'agent, transfert vers une marque qui n'a pas abouti, ou tous les transferts si le réglage est actif. Joué jusqu'à la fin de l'appel (29 min 45 au plus depuis le décroché).</p>
+                            <p class="text-sm text-gray-500">Ce qu'entend le client envoyé au service interne, au {{ INTERNAL_SERVICE_NUMBER }}. Il y arrive si l'agent l'y envoie, si un transfert vers une marque n'a pas abouti, ou si tous les transferts vont au service interne. Les sons sont joués jusqu'à la fin de l'appel, au plus 29 min 45 après le décroché.</p>
                         </header>
                         <div class="px-5 py-4">
                             <SipSoundSequence
@@ -1170,7 +1170,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 description="L'un après l'autre, en boucle."
                                 :names="sequences.internal"
                                 :library="sounds"
-                                empty-text="Aucun son : musique d'attente par défaut du serveur."
+                                empty-text="Aucun son choisi. Le client entend la musique d'attente par défaut."
                                 :playing="playing"
                                 :busy="busy"
                                 @change="(list, message) => saveSequence('internal', list, message)"
@@ -1204,14 +1204,14 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <header class="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-3">
                             <div>
                                 <h2 class="font-semibold text-gray-900">IP autorisées · {{ trustedIps.length }}</h2>
-                                <p class="text-sm text-gray-500">Seuls ces serveurs de fournisseurs peuvent nous envoyer des appels. L'IP de Voxnode est exclue volontairement (Voxnode n'envoie jamais nos appels ici).</p>
+                                <p class="text-sm text-gray-500">Seuls les fournisseurs qui appellent depuis ces adresses IP peuvent envoyer des appels à notre serveur. L'IP de Voxnode n'est volontairement pas dans la liste, car Voxnode ne nous envoie jamais d'appels.</p>
                             </div>
                             <Button size="sm" variant="secondary" class="shrink-0" :disabled="busy" @click="openIpDialog">
                                 <Plus class="mr-1.5 h-4 w-4" />
                                 Ajouter
                             </Button>
                         </header>
-                        <p v-if="data?.['trusted-ips']?.ok === false" class="px-5 py-4 text-sm text-red-600">Liste indisponible : {{ data['trusted-ips'].error }}</p>
+                        <p v-if="data?.['trusted-ips']?.ok === false" class="px-5 py-4 text-sm text-red-600">Impossible de lire la liste. Erreur : {{ data['trusted-ips'].error }}</p>
                         <ul v-else class="grid gap-x-4 px-3 py-2 sm:grid-cols-2 xl:grid-cols-3">
                             <li v-for="ip in trustedIps" :key="ip" class="flex items-center justify-between rounded px-2 py-1 hover:bg-gray-50">
                                 <span class="font-mono text-sm text-gray-900">{{ ip }}</span>
@@ -1229,16 +1229,16 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                             <p class="text-sm text-gray-500">Toutes les 30 s, il envoie les agents automatiques là où sont les clients : chaque client qui appelle chez nous a un agent qui l'attend, et des agents partent en renfort du côté où les clients attendent le plus. Aucun agent n'est envoyé chez nous tant qu'aucun numéro n'y est.</p>
                         </header>
                         <p v-if="tel?.regulator" class="border-b px-5 py-3 text-sm" :class="regulatorStopped ? 'border-red-100 bg-red-50 text-red-700' : 'border-gray-100 text-gray-600'">
-                            <template v-if="regulatorStopped">Arrêté : dernière décision {{ lastRun?.at ? new Date(lastRun.at).toLocaleTimeString('fr-FR') : 'inconnue' }}.</template>
-                            <template v-else>Dernière décision il y a {{ regulatorAge }} s : {{ lastRun?.reason }}</template>
-                            <Link href="/sip-server" class="ml-2 underline">journal →</Link>
+                            <template v-if="regulatorStopped">Le régulateur est arrêté. {{ lastRun?.at ? `Dernière décision à ${new Date(lastRun.at).toLocaleTimeString('fr-FR')}.` : 'Aucune décision connue.' }}</template>
+                            <template v-else>Dernière décision il y a {{ regulatorAge }} s. {{ lastRun?.reason }}</template>
+                            <Link href="/sip-server" class="ml-2 underline">Voir le journal →</Link>
                         </p>
                         <div class="divide-y divide-gray-50">
                             <div
                                 v-for="f in [
                                     { key: 'regulator_max_moves', label: 'Agents déplacés à chaque passage', help: 'Nombre maximum d\'agents déplacés toutes les 30 s.', unit: 'agents', min: 1, max: 10 },
-                                    { key: 'regulator_cooldown_minutes', label: 'Délai avant de redéplacer un agent', help: 'Un agent qui vient de changer de plateforme n\'est pas redéplacé avant.', unit: 'min', min: 0, max: 60 },
-                                    { key: 'regulator_wait_seconds', label: 'Attente qui déclenche un renfort', help: 'Au-delà de cette attente dans notre file (après l\'attente forcée), un agent libre de Voxnode est envoyé en renfort.', unit: 's', min: 0, max: 600 },
+                                    { key: 'regulator_cooldown_minutes', label: 'Délai avant de redéplacer un agent', help: 'Un agent qui vient de changer de plateforme reste où il est pendant ce délai.', unit: 'min', min: 0, max: 60 },
+                                    { key: 'regulator_wait_seconds', label: 'Attente qui déclenche un renfort', help: 'Si un client attend plus longtemps que cela dans notre file, un agent libre de Voxnode vient en renfort. L\'attente forcée n\'est pas comptée.', unit: 's', min: 0, max: 600 },
                                 ]"
                                 :key="f.key"
                                 class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]"
@@ -1295,11 +1295,11 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             <span :class="cloud.stale ? 'font-medium text-red-600' : ''">{{ cloud.ago }}</span>
                                         </span>
                                     </div>
-                                    <p v-if="cloud.stale" class="mt-2 text-sm text-red-600">La taille n'est plus recalculée (normalement chaque jour à 05:17) : le chiffre peut être faux.</p>
+                                    <p v-if="cloud.stale" class="mt-2 text-sm text-red-600">La taille n'a pas été recalculée depuis plus de 26 h. Elle l'est normalement chaque jour à 05:17. Le chiffre affiché peut donc être faux.</p>
                                 </div>
                             </div>
                             <p class="border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
-                                Suppression automatique : enregistrements agent après 180 jours, transferts après 60 jours. Ceux des appelants blacklistés sont gardés.
+                                Les enregistrements des agents sont supprimés automatiquement après 180 jours, ceux des transferts après 60 jours. Les enregistrements des clients blacklistés sont gardés.
                                 <template v-if="usage?.computed_at">Détail calculé à {{ new Date(usage.computed_at).toLocaleTimeString('fr-FR') }}.</template>
                             </p>
                         </section>
@@ -1309,8 +1309,8 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <h2 class="font-semibold text-gray-900">Serveur</h2>
                             </header>
                             <dl class="divide-y divide-gray-50 text-sm">
-                                <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">IP à donner aux fournisseurs (SIP / RTP)</dt><dd class="font-mono text-gray-900">54.36.250.193</dd></div>
-                                <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Connexion des softphones (agents et panel)</dt><dd class="font-mono text-gray-900">wss://sip.118.ae/ws</dd></div>
+                                <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">IP à donner aux fournisseurs</dt><dd class="font-mono text-gray-900">54.36.250.193</dd></div>
+                                <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Adresse de connexion des téléphones des agents et du panel</dt><dd class="font-mono text-gray-900">wss://sip.118.ae/ws</dd></div>
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Machine</dt><dd class="text-gray-900">OVH RISE-2 · Gravelines</dd></div>
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">Système</dt><dd class="text-gray-900">Ubuntu 26.04 · Asterisk {{ version }}</dd></div>
                                 <div class="flex justify-between gap-4 px-5 py-2.5"><dt class="text-gray-500">En service depuis</dt><dd class="text-gray-900">{{ uptimeText }}</dd></div>
@@ -1357,7 +1357,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                         <div class="space-y-2">
                             <Label for="sound-file">Fichier audio</Label>
                             <Input id="sound-file" type="file" accept="audio/*" @change="onFile" />
-                            <p class="text-xs text-gray-500">mp3, wav, ogg… (50 Mo maximum), converti automatiquement au format téléphone.</p>
+                            <p class="text-xs text-gray-500">Formats mp3, wav, ogg… 50 Mo maximum. Le fichier est converti automatiquement au format téléphone.</p>
                         </div>
                         <!-- Progression de l'envoi, puis conversion sur le serveur SIP -->
                         <div v-if="uploadProgress !== null" class="space-y-1">
@@ -1365,13 +1365,13 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <div class="h-full rounded-full bg-gray-900 transition-all" :style="{ width: `${Math.round(uploadProgress * 100)}%` }" />
                             </div>
                             <p class="text-xs text-gray-500">
-                                {{ uploadProgress < 1 ? `Envoi : ${Math.round(uploadProgress * 100)} %` : 'Conversion sur le serveur SIP…' }}
+                                {{ uploadProgress < 1 ? `Envoi : ${Math.round(uploadProgress * 100)} %` : 'Conversion sur notre serveur…' }}
                             </p>
                         </div>
                         <div class="space-y-2">
-                            <Label for="sound-name">Nom (facultatif, nettoyé automatiquement)</Label>
+                            <Label for="sound-name">Nom, facultatif</Label>
                             <Input id="sound-name" v-model="soundName" type="text" placeholder="accueil été" />
-                            <p class="text-xs text-gray-500">Sans nom, celui du fichier est utilisé. Un suffixe unique est ajouté : un envoi n'écrase jamais un son existant.</p>
+                            <p class="text-xs text-gray-500">Sans nom, le nom du fichier est utilisé. Le nom est nettoyé automatiquement. Un code unique est ajouté à la fin, pour ne jamais écraser un son existant.</p>
                         </div>
                     </template>
                     <div v-else class="space-y-2">
@@ -1393,12 +1393,12 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
             <DialogContent class="max-w-md">
                 <DialogHeader>
                     <DialogTitle>Autoriser une IP de fournisseur</DialogTitle>
-                    <DialogDescription>Le fournisseur pourra nous envoyer des appels depuis cette IP, en environ 1 seconde.</DialogDescription>
+                    <DialogDescription>Le fournisseur pourra envoyer des appels depuis cette IP environ 1 seconde après l'ajout.</DialogDescription>
                 </DialogHeader>
                 <form id="ip-form" class="space-y-2" @submit.prevent="addIp">
-                    <Label for="new-ip">IP ou plage</Label>
+                    <Label for="new-ip">IP ou plage d'IP</Label>
                     <Input id="new-ip" v-model="newIp" type="text" placeholder="1.2.3.4 ou 1.2.3.0/24" class="font-mono" />
-                    <p v-if="newIpIsVoxnode" class="text-sm text-red-600">C'est l'IP de Voxnode : elle est exclue volontairement, elle ne doit pas être ajoutée.</p>
+                    <p v-if="newIpIsVoxnode" class="text-sm text-red-600">C'est l'IP de Voxnode. Elle est exclue volontairement et ne doit pas être ajoutée.</p>
                 </form>
                 <DialogFooter>
                     <Button variant="outline" @click="showIpDialog = false">Annuler</Button>
