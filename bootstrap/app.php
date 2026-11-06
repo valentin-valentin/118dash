@@ -14,6 +14,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['sidebar_state']);
 
+        // Le HTML du Superviseur (page de Fred) est stocké tel quel : pas d'espaces retirés en début ou fin
+        $middleware->trimStrings(except: ['html']);
+
         // Pas d'AddLinkHeadersForPreloadedAssets : son en-tête Link (une entrée par fichier JS/CSS)
         // dépassait les 4 Ko de tampon nginx par défaut et provoquait des 502 au chargement complet.
         // Les mêmes préchargements sont déjà dans le HTML (<link rel="modulepreload">).

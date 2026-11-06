@@ -483,6 +483,14 @@ const shareOurs = computed(() => {
     const m = shareFigure.value.value.match(/^(\d+) %$/)
     return m ? Number(m[1]) : null
 })
+// Ligne « Total » d'une section : somme des lignes chiffrées (hors durées), mise en gras
+function withTotalRow(section, label) {
+    const numeric = section.rows.filter((r) => !r.text)
+    const sum = (side) => (numeric.some((r) => r[side] === null) ? null : numeric.reduce((acc, r) => acc + r[side], 0))
+    const ours = sum('ours')
+    const theirs = sum('theirs')
+    return { ...section, rows: [...section.rows, { label, ours, theirs, total: ours === null || theirs === null ? null : ours + theirs, strong: true }] }
+}
 const overviewSections = computed(() => {
     const numbers = data.value?.numbers ?? null
     const agentsSplit = (list) => split(list) ?? { ours: list.filter((a) => a.current_platform === 'selfhosted').length, theirs: null }
@@ -510,7 +518,7 @@ const overviewSections = computed(() => {
                 },
             ],
         },
-        {
+        withTotalRow({
             title: 'Appels',
             note: callsNote.value,
             // Dans l'ordre du parcours de l'appel
@@ -531,7 +539,7 @@ const overviewSections = computed(() => {
                 row('Avec un agent', busy.ours, busy.theirs),
                 row('Transférés', splitCalls(byStage('transfer')).ours, splitCalls(byStage('transfer')).theirs, { title: 'Appels transférés vers une marque ou le service interne, encore en cours' }),
             ],
-        },
+        }, 'Total en cours'),
         {
             title: 'Agents',
             rows: [row('En ligne', online.ours, online.theirs), row('Libres', free.ours, free.theirs)],
@@ -710,7 +718,7 @@ const sinceLastRun = computed(() => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="r in section.rows" :key="r.label" class="border-t border-gray-50 hover:bg-gray-50" :title="r.title">
+                                <tr v-for="r in section.rows" :key="r.label" class="hover:bg-gray-50" :class="r.strong ? 'border-t border-gray-200 bg-gray-50/60 font-semibold' : 'border-t border-gray-50'" :title="r.title">
                                     <td class="px-3 py-1.5 whitespace-nowrap text-gray-700">
                                         {{ r.label }}
                                         <span v-if="r.note" class="block text-xs" :class="r.problem ? 'text-red-600' : 'text-gray-400'">{{ r.note }}</span>
@@ -731,7 +739,7 @@ const sinceLastRun = computed(() => {
                                         >
                                             {{ r.theirs ?? '—' }}
                                         </td>
-                                        <td class="px-2 py-1.5 pr-3 text-right whitespace-nowrap text-gray-500 tabular-nums">{{ r.total ?? '' }}</td>
+                                        <td class="px-2 py-1.5 pr-3 text-right whitespace-nowrap tabular-nums" :class="r.strong ? 'text-gray-900' : 'text-gray-500'">{{ r.total ?? '' }}</td>
                                     </template>
                                 </tr>
                             </tbody>

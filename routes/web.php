@@ -20,6 +20,7 @@ use App\Http\Controllers\SoftphoneController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\TelephonyController;
 use App\Http\Controllers\SourcePaymentController;
+use App\Http\Controllers\SuperviseurController;
 use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\BrandCheckController;
 use App\Http\Controllers\BrandController;
@@ -41,6 +42,10 @@ Route::prefix('partners/{sources}/{hash}/data')->group(function () {
     Route::get('/reconcile', [PartnerStatsController::class, 'reconcile']);
     Route::get('/filter-options', [PartnerStatsController::class, 'filterOptions']);
 });
+
+// Superviseur : page de Fred, accessible avec la session du panel ou ?key= (voir SuperviseurController)
+Route::get('/superviseur', [SuperviseurController::class, 'show'])->name('superviseur');
+Route::get('/superviseur/data', [SuperviseurController::class, 'data']);
 
 Route::redirect('/', '/dashboard');
 
@@ -94,6 +99,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/rejected-calls', [RejectedCallController::class, 'index'])->name('rejected-calls.index');
     Route::get('/wait-loss', [WaitLossController::class, 'index'])->name('wait-loss.index');
     Route::get('/assistant', [AssistantController::class, 'index'])->name('assistant.index');
+    Route::get('/superviseur/settings', [SuperviseurController::class, 'settings'])->name('superviseur.settings');
     Route::get('/brands', [BrandController::class, 'index'])->name('brands.index');
     Route::get('/brands/create', [BrandController::class, 'create'])->name('brands.create');
     Route::post('/brands', [BrandController::class, 'store'])->name('brands.store');
@@ -197,6 +203,8 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);
+        Route::put('/superviseur/html', [SuperviseurController::class, 'updateHtml']);
+        Route::put('/superviseur/key', [SuperviseurController::class, 'updateKey']);
         Route::get('/brands', [BrandController::class, 'data']);
         Route::get('/brands/stats', [BrandController::class, 'stats']);
         Route::get('/brand-checks', [BrandCheckController::class, 'data']);
