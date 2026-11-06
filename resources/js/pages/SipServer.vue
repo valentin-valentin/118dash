@@ -462,6 +462,37 @@ const shareOurs = computed(() => {
     const m = shareFigure.value.value.match(/^(\d+) %$/)
     return m ? Number(m[1]) : null
 })
+// Deux cartes (notre serveur, Voxnode) construites à partir des mêmes lignes
+const overviewCards = computed(() => {
+    const rows = Object.fromEntries(overviewSections.value.flatMap((sec) => sec.rows).map((r) => [r.label, r]))
+    const order = ['Numéros actifs', 'Part des nouveaux numéros', 'En ligne', 'Libres', 'Avec un agent', 'Introduction et attente forcée', "En attente d'un agent", 'Attente la plus longue']
+    // Libellés courts : ils tiennent sur une ligne au-dessus du chiffre
+    const labels = {
+        'Part des nouveaux numéros': 'Nouveaux numéros',
+        'En ligne': 'Agents en ligne',
+        Libres: 'Agents libres',
+        'Avec un agent': 'Avec un agent',
+        'Introduction et attente forcée': 'Intro et attente forcée',
+        "En attente d'un agent": 'Attendent un agent',
+        'Attente la plus longue': 'Attente la plus longue',
+    }
+    const tiles = (side) =>
+        order.map((label) => {
+            const r = rows[label]
+            const value = r[side]
+            return {
+                label: labels[label] ?? label,
+                value,
+                title: label === 'Part des nouveaux numéros' ? `Part des nouveaux numéros envoyée sur cette plateforme${r.note ? ` (${r.note})` : ''}` : r.title,
+                warn: r.warn && value > 0,
+                problem: side === 'ours' ? r.oursProblem || (r.problem && r.text) : r.theirsProblem,
+            }
+        })
+    return [
+        { key: 'ours', title: 'Notre serveur', note: '', tiles: tiles('ours') },
+        { key: 'theirs', title: 'Voxnode', note: callsNote.value, tiles: tiles('theirs') },
+    ]
+})
 const overviewSections = computed(() => {
     const numbers = data.value?.numbers ?? null
     const agentsSplit = (list) => split(list) ?? { ours: list.filter((a) => a.current_platform === 'selfhosted').length, theirs: null }
@@ -668,54 +699,22 @@ const sinceLastRun = computed(() => {
                     <p v-if="hoursProblem?.level === 'pending'" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">{{ hoursProblem.text }}</p>
                 </div>
 
-                <!-- En ce moment : notre serveur et Voxnode côte à côte -->
-                <div class="overflow-hidden rounded-lg border border-gray-100 bg-white">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-gray-100 text-xs text-gray-500">
-                                <th class="w-2/5 px-4 py-2 text-left font-medium" />
-                                <th class="w-1/5 px-4 py-2 text-right font-medium whitespace-nowrap">
-                                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-gray-900" />Notre serveur</span>
-                                </th>
-                                <th class="w-1/5 px-4 py-2 text-right font-medium whitespace-nowrap">
-                                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-gray-300" />Voxnode</span>
-                                </th>
-                                <th class="w-1/5 px-4 py-2 pr-5 text-right font-medium">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody v-for="section in overviewSections" :key="section.title">
-                            <tr class="border-t border-gray-100 bg-gray-50/60">
-                                <td colspan="4" class="px-4 py-1.5 text-xs font-medium tracking-wide text-gray-400 uppercase">
-                                    {{ section.title }}
-                                    <span v-if="section.note" class="ml-2 font-normal tracking-normal normal-case">{{ section.note }}</span>
-                                </td>
-                            </tr>
-                            <tr v-for="r in section.rows" :key="r.label" class="border-t border-gray-50" :title="r.title">
-                                <td class="px-4 py-1 text-gray-700">
-                                    {{ r.label }}
-                                    <span v-if="r.note" class="ml-1 text-xs" :class="r.problem ? 'text-red-600' : 'text-gray-400'">({{ r.note }})</span>
-                                </td>
-                                <template v-if="loading">
-                                    <td v-for="i in 3" :key="i" class="px-4 py-1.5"><div class="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" /></td>
-                                </template>
-                                <template v-else>
-                                    <td
-                                        class="px-4 py-1 text-right text-base font-semibold whitespace-nowrap tabular-nums"
-                                        :class="r.oursProblem || (r.problem && r.text) ? 'text-red-600' : r.warn && r.ours > 0 ? 'text-amber-700' : 'text-gray-900'"
-                                    >
-                                        {{ r.ours ?? '—' }}
-                                    </td>
-                                    <td
-                                        class="px-4 py-1 text-right text-base font-semibold whitespace-nowrap tabular-nums"
-                                        :class="r.theirsProblem ? 'text-red-600' : r.warn && r.theirs > 0 ? 'text-amber-700' : 'text-gray-900'"
-                                    >
-                                        {{ r.theirs ?? '—' }}
-                                    </td>
-                                    <td class="px-4 py-1 pr-5 text-right whitespace-nowrap text-gray-500 tabular-nums">{{ r.total ?? '' }}</td>
-                                </template>
-                            </tr>
-                        </tbody>
-                    </table>
+                <!-- En ce moment : une carte par plateforme, chaque chiffre sous son libellé -->
+                <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                    <div v-for="p in overviewCards" :key="p.key" class="rounded-lg border border-gray-100 bg-white">
+                        <div class="flex items-center gap-2 border-b border-gray-50 px-4 py-2.5">
+                            <span class="h-2.5 w-2.5 rounded-sm" :class="p.key === 'ours' ? 'bg-gray-900' : 'bg-gray-300'" />
+                            <span class="text-sm font-semibold text-gray-900">{{ p.title }}</span>
+                            <span v-if="p.note" class="ml-auto truncate text-xs text-gray-400">{{ p.note }}</span>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4">
+                            <div v-for="t in p.tiles" :key="t.label" class="px-4 py-2.5" :title="t.title">
+                                <p class="min-h-[2rem] text-xs leading-tight text-gray-500">{{ t.label }}</p>
+                                <div v-if="loading" class="mt-1 h-6 w-12 animate-pulse rounded bg-gray-100" />
+                                <p v-else class="text-xl font-semibold tabular-nums" :class="t.problem ? 'text-red-600' : t.warn ? 'text-amber-700' : 'text-gray-900'">{{ t.value ?? '—' }}</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Appels et agents, côte à côte -->
