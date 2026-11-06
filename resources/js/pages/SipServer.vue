@@ -304,7 +304,7 @@ const STAGES = {
     // Chez nous : le client écoute le message avant transfert de la marque
     announcement: { key: 'transfer', label: 'Message avant transfert' },
     // Voxnode : transfert sans plus de précision
-    transferred: { key: 'transfer', label: 'Transféré', title: 'Transféré (fin de l’appel connue avec quelques minutes de retard)' },
+    transferred: { key: 'transfer', label: 'Transféré' },
     // Voxnode tant qu'il n'envoie pas le statut « agent » : « transferred » couvre les deux
     agent_or_transferred: { key: 'agent_or_transfer', label: 'Avec un agent ou transféré' },
     panel: { key: 'panel', label: 'Softphone du panel' },
@@ -434,18 +434,6 @@ const countOn = (list, key) => list.filter((a) => a.current_platform === key).le
 // Répartition d'une liste d'agents entre les deux plateformes (null sans l'API voxnode118)
 const split = (list) => (tel.value ? { ours: countOn(list, 'selfhosted'), theirs: countOn(list, 'voxnode') } : null)
 
-const callFigures = computed(() => {
-    const queue = byStage('queue')
-    const welcome = [...byStage('welcome'), ...byStage('forced')]
-    // Le client qui attend un agent depuis le plus longtemps (durée depuis le début de son appel)
-    const longest = queue.reduce((a, b) => (!a || b.seconds > a.seconds ? b : a), null)
-    return [
-        { label: 'Avec un agent', value: busyAgents.value.length, split: split(busyAgents.value) },
-        { label: 'Introduction et attente forcée', value: welcome.length, split: splitCalls(welcome) },
-        { label: "En attente d'un agent", value: queue.length, split: splitCalls(queue) },
-        { label: 'Attente la plus longue', value: longest ? wait(longest.seconds) : '—', sub: longest ? `${PLATFORMS[longest.platform]}, depuis le début de l'appel` : "Personne n'attend", title: "Le client qui attend un agent depuis le plus longtemps. La durée est comptée depuis le début de son appel." },
-    ]
-})
 // Note du groupe Appels : Voxnode non branché, ou attentes sans détail d'étape
 const callsNote = computed(() => {
     if (voxnode.value && !voxnode.value.ok) return voxnode.value.configured === false ? 'Appels Voxnode non disponibles ici' : `Impossible de lire les appels Voxnode. Erreur : ${voxnode.value.error}`
@@ -464,11 +452,68 @@ const shareFigure = computed(() => {
     return { value: `${st.selfhosted_percent} %`, sub: 'des nouveaux numéros' }
 })
 
-const agentFigures = computed(() => [
-    { label: 'En ligne', value: onlineAgents.value.length, split: split(onlineAgents.value) },
-    { label: 'Libres', value: freeAgents.value.length, split: split(freeAgents.value) },
-    { label: 'Part des nouveaux numéros', ...shareFigure.value },
-])
+// Tableau du haut : notre serveur et Voxnode côte à côte, puis le total.
+// Une valeur null s'affiche « — » (donnée indisponible, par exemple sans les réglages de téléphonie).
+const longestWait = (platform) => {
+    const list = byStage('queue').filter((c) => c.platform === platform)
+    return list.length ? Math.max(...list.map((c) => c.seconds)) : null
+}
+const shareOurs = computed(() => {
+    const m = shareFigure.value.value.match(/^(\d+) %$/)
+    return m ? Number(m[1]) : null
+})
+const overviewSections = computed(() => {
+    const numbers = data.value?.numbers ?? null
+    const agentsSplit = (list) => split(list) ?? { ours: list.filter((a) => a.current_platform === 'selfhosted').length, theirs: null }
+    const welcome = [...byStage('welcome'), ...byStage('forced')]
+    const queue = byStage('queue')
+    const row = (label, ours, theirs, extra = {}) => ({ label, ours, theirs, total: ours === null || theirs === null ? null : ours + theirs, ...extra })
+    const busy = agentsSplit(busyAgents.value)
+    const online = agentsSplit(onlineAgents.value)
+    const free = agentsSplit(freeAgents.value)
+    const longOurs = longestWait('selfhosted')
+    const longTheirs = longestWait('voxnode')
+    return [
+        {
+            title: 'Numéros',
+            rows: [
+                row('Numéros actifs', numbers?.selfhosted ?? null, numbers?.voxnode ?? null, { title: 'Numéros routés en ce moment vers chaque plateforme' }),
+                {
+                    label: 'Part des nouveaux numéros',
+                    ours: shareOurs.value === null ? shareFigure.value.value : `${shareOurs.value} %`,
+                    theirs: shareOurs.value === null ? '—' : `${100 - shareOurs.value} %`,
+                    total: null,
+                    text: true,
+                    note: shareFigure.value.sub !== 'des nouveaux numéros' ? shareFigure.value.sub : '',
+                    problem: shareFigure.value.problem,
+                },
+            ],
+        },
+        {
+            title: 'Appels',
+            note: callsNote.value,
+            rows: [
+                row('Avec un agent', busy.ours, busy.theirs),
+                row('Introduction et attente forcée', splitCalls(welcome).ours, splitCalls(welcome).theirs),
+                row("En attente d'un agent", splitCalls(queue).ours, splitCalls(queue).theirs, { warn: true }),
+                {
+                    label: 'Attente la plus longue',
+                    ours: longOurs === null ? '—' : wait(longOurs),
+                    theirs: longTheirs === null ? '—' : wait(longTheirs),
+                    total: null,
+                    text: true,
+                    oursProblem: longOurs !== null && longOurs > 120,
+                    theirsProblem: longTheirs !== null && longTheirs > 120,
+                    title: "Client qui attend un agent depuis le plus longtemps, compté depuis le début de son appel",
+                },
+            ],
+        },
+        {
+            title: 'Agents',
+            rows: [row('En ligne', online.ours, online.theirs), row('Libres', free.ours, free.theirs)],
+        },
+    ]
+})
 
 // ─── 6. Mode des agents : forcer une plateforme (tous les agents, y compris hors ligne) ─
 const PIN_OPTIONS = [
@@ -623,30 +668,54 @@ const sinceLastRun = computed(() => {
                     <p v-if="hoursProblem?.level === 'pending'" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">{{ hoursProblem.text }}</p>
                 </div>
 
-                <!-- En ce moment : deux groupes, appels et agents -->
-                <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,4fr)_minmax(0,3fr)]">
-                    <div v-for="group in [
-                        { title: 'Appels', note: callsNote, figures: callFigures },
-                        { title: 'Agents', note: '', figures: agentFigures },
-                    ]" :key="group.title" class="rounded-lg border border-gray-100 bg-white">
-                        <div class="flex items-baseline justify-between gap-3 px-4 pt-3">
-                            <span class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ group.title }}</span>
-                            <span v-if="group.note" class="truncate text-xs text-gray-400">{{ group.note }}</span>
-                        </div>
-                        <div class="grid grid-cols-2 sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none">
-                            <div v-for="f in group.figures" :key="f.label" class="px-4 pb-3 pt-1.5">
-                                <p class="text-xs text-gray-500">{{ f.label }}</p>
-                                <div v-if="loading" class="mt-1 h-7 w-16 animate-pulse rounded bg-gray-100" />
-                                <p v-else class="truncate text-2xl font-semibold tabular-nums" :class="f.problem ? 'text-red-600' : 'text-gray-900'">{{ f.value }}</p>
-                                <!-- Répartition nous / Voxnode, avec les mêmes repères que la liste des agents -->
-                                <p v-if="f.split" class="flex items-center gap-3 whitespace-nowrap text-xs tabular-nums text-gray-500">
-                                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-900" />chez nous {{ f.split.ours }}</span>
-                                    <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-200" />Voxnode {{ f.split.theirs }}</span>
-                                </p>
-                                <p v-else-if="f.sub" :title="f.sub" class="truncate text-xs" :class="f.problem ? 'text-red-600' : 'text-gray-400'">{{ f.sub }}</p>
-                            </div>
-                        </div>
-                    </div>
+                <!-- En ce moment : notre serveur et Voxnode côte à côte -->
+                <div class="overflow-hidden rounded-lg border border-gray-100 bg-white">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-100 text-xs text-gray-500">
+                                <th class="w-2/5 px-4 py-2 text-left font-medium" />
+                                <th class="w-1/5 px-4 py-2 text-right font-medium whitespace-nowrap">
+                                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-gray-900" />Notre serveur</span>
+                                </th>
+                                <th class="w-1/5 px-4 py-2 text-right font-medium whitespace-nowrap">
+                                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-sm bg-gray-300" />Voxnode</span>
+                                </th>
+                                <th class="w-1/5 px-4 py-2 pr-5 text-right font-medium">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody v-for="section in overviewSections" :key="section.title">
+                            <tr class="border-t border-gray-100 bg-gray-50/60">
+                                <td colspan="4" class="px-4 py-1.5 text-xs font-medium tracking-wide text-gray-400 uppercase">
+                                    {{ section.title }}
+                                    <span v-if="section.note" class="ml-2 font-normal tracking-normal normal-case">{{ section.note }}</span>
+                                </td>
+                            </tr>
+                            <tr v-for="r in section.rows" :key="r.label" class="border-t border-gray-50" :title="r.title">
+                                <td class="px-4 py-1 text-gray-700">
+                                    {{ r.label }}
+                                    <span v-if="r.note" class="ml-1 text-xs" :class="r.problem ? 'text-red-600' : 'text-gray-400'">({{ r.note }})</span>
+                                </td>
+                                <template v-if="loading">
+                                    <td v-for="i in 3" :key="i" class="px-4 py-1.5"><div class="ml-auto h-5 w-10 animate-pulse rounded bg-gray-100" /></td>
+                                </template>
+                                <template v-else>
+                                    <td
+                                        class="px-4 py-1 text-right text-base font-semibold whitespace-nowrap tabular-nums"
+                                        :class="r.oursProblem || (r.problem && r.text) ? 'text-red-600' : r.warn && r.ours > 0 ? 'text-amber-700' : 'text-gray-900'"
+                                    >
+                                        {{ r.ours ?? '—' }}
+                                    </td>
+                                    <td
+                                        class="px-4 py-1 text-right text-base font-semibold whitespace-nowrap tabular-nums"
+                                        :class="r.theirsProblem ? 'text-red-600' : r.warn && r.theirs > 0 ? 'text-amber-700' : 'text-gray-900'"
+                                    >
+                                        {{ r.theirs ?? '—' }}
+                                    </td>
+                                    <td class="px-4 py-1 pr-5 text-right whitespace-nowrap text-gray-500 tabular-nums">{{ r.total ?? '' }}</td>
+                                </template>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
                 <!-- Appels et agents, côte à côte -->
@@ -657,7 +726,7 @@ const sinceLastRun = computed(() => {
                         </h2>
                         <!-- File Voxnode non lue : seuls les appels avec un agent ou transférés (connus par nos données) sont là -->
                         <p v-if="voxnode?.ok && voxnode.queue_known === false" class="mb-2 text-xs text-gray-500">
-                            File d’attente Voxnode illisible pour le moment : seuls les appels avec un agent ou transférés sont affichés.
+                            File d’attente Voxnode illisible pour le moment : seuls les appels avec un agent ou transférés sont affichés, et un transfert terminé peut rester affiché quelques minutes.
                         </p>
                         <div class="rounded-lg border border-gray-100 bg-white">
                             <DataTable

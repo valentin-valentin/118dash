@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -62,7 +63,28 @@ class SipServerController extends Controller
             ...$slow,
             // Appels en cours chez Voxnode (relus toutes les 10 s au plus)
             'voxnode' => Cache::remember('voxnode-cc:ongoing', 10, fn () => $this->voxnodeOngoingCalls()),
+            'numbers' => $this->activeNumbers(),
         ]);
+    }
+
+    /**
+     * Numéros actifs par plateforme : routés en ce moment vers notre serveur ou vers Voxnode
+     * (phonenumbers.current_endpoint, dernier routage réussi), hors numéros supprimés.
+     */
+    private function activeNumbers(): array
+    {
+        $endpoints = config('services.sip_endpoints');
+        $counts = DB::table('phonenumbers')
+            ->whereNull('deleted_at')
+            ->whereIn('current_endpoint', [$endpoints['selfhosted'], $endpoints['voxnode']])
+            ->groupBy('current_endpoint')
+            ->selectRaw('current_endpoint, COUNT(*) AS n')
+            ->pluck('n', 'current_endpoint');
+
+        return [
+            'selfhosted' => (int) ($counts[$endpoints['selfhosted']] ?? 0),
+            'voxnode' => (int) ($counts[$endpoints['voxnode']] ?? 0),
+        ];
     }
 
     /**
