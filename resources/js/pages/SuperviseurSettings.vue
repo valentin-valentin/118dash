@@ -157,7 +157,7 @@ const formatDate = (v) => (v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 
             <section class="rounded-lg border border-gray-100 bg-white">
                 <header class="border-b border-gray-100 px-5 py-3">
                     <h2 class="font-semibold text-gray-900">Clé d'accès</h2>
-                    <p class="text-sm text-gray-500">Changer la clé coupe tous les liens donnés avec l'ancienne.{{ customKey ? '' : ' La clé actuelle est celle par défaut.' }}</p>
+                    <p class="text-sm text-gray-500">Changer la clé coupe tous les liens donnés avec l'ancienne.</p>
                 </header>
                 <div class="flex flex-wrap items-center gap-2 px-5 py-4">
                     <Input v-model="keyInput" class="h-9 w-96 max-w-full font-mono text-xs" aria-label="Clé d'accès" />
