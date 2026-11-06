@@ -304,7 +304,7 @@ const STAGES = {
     // Chez nous : le client écoute le message avant transfert de la marque
     announcement: { key: 'transfer', label: 'Message avant transfert' },
     // Voxnode : transfert sans plus de précision
-    transferred: { key: 'transfer', label: 'Transféré' },
+    transferred: { key: 'transfer', label: 'Transféré', title: 'Transféré (fin de l’appel connue avec quelques minutes de retard)' },
     // Voxnode tant qu'il n'envoie pas le statut « agent » : « transferred » couvre les deux
     agent_or_transferred: { key: 'agent_or_transfer', label: 'Avec un agent ou transféré' },
     panel: { key: 'panel', label: 'Softphone du panel' },
@@ -655,6 +655,10 @@ const sinceLastRun = computed(() => {
                         <h2 class="mb-2 text-sm font-semibold text-gray-900">
                             Appels en cours <span class="ml-1 font-normal tabular-nums text-gray-400">{{ liveCalls.length }}</span>
                         </h2>
+                        <!-- File Voxnode non lue : seuls les appels avec un agent ou transférés (connus par nos données) sont là -->
+                        <p v-if="voxnode?.ok && voxnode.queue_known === false" class="mb-2 text-xs text-gray-500">
+                            File d’attente Voxnode illisible pour le moment : seuls les appels avec un agent ou transférés sont affichés.
+                        </p>
                         <div class="rounded-lg border border-gray-100 bg-white">
                             <DataTable
                                 :columns="callColumns"
@@ -673,7 +677,7 @@ const sinceLastRun = computed(() => {
                                 <template #exten="{ value }"><span class="font-mono text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #status="{ value, row }">
                                     <span v-if="value.key === 'ended'" class="whitespace-nowrap text-sm text-gray-500">Terminé <span class="text-gray-400">· {{ row.lastStatus.label }}</span></span>
-                                    <span v-else class="whitespace-nowrap text-sm" :class="value.key === 'queue' ? 'font-medium text-amber-700' : 'text-gray-700'">{{ value.label }}</span>
+                                    <span v-else class="whitespace-nowrap text-sm" :class="value.key === 'queue' ? 'font-medium text-amber-700' : 'text-gray-700'" :title="value.title">{{ value.label }}</span>
                                 </template>
                                 <template #agent="{ value }"><span class="text-sm text-gray-700">{{ value || '—' }}</span></template>
                                 <template #seconds="{ value }"><span class="text-sm tabular-nums text-gray-900">{{ wait(value) }}</span></template>
