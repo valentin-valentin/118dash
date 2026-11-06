@@ -492,8 +492,8 @@ const overviewSections = computed(() => {
         {
             title: 'Appels',
             note: callsNote.value,
+            // Dans l'ordre du parcours de l'appel
             rows: [
-                row('Avec un agent', busy.ours, busy.theirs),
                 row('Introduction et attente forcée', splitCalls(welcome).ours, splitCalls(welcome).theirs),
                 row("En attente d'un agent", splitCalls(queue).ours, splitCalls(queue).theirs, { warn: true }),
                 {
@@ -506,6 +506,8 @@ const overviewSections = computed(() => {
                     theirsProblem: longTheirs !== null && longTheirs > 120,
                     title: "Client qui attend un agent depuis le plus longtemps, compté depuis le début de son appel",
                 },
+                row('Avec un agent', busy.ours, busy.theirs),
+                row('Transférés', splitCalls(byStage('transfer')).ours, splitCalls(byStage('transfer')).theirs, { title: 'Appels transférés vers une marque ou le service interne, encore en cours' }),
             ],
         },
         {
@@ -722,10 +724,6 @@ const sinceLastRun = computed(() => {
                         <h2 class="mb-2 text-sm font-semibold text-gray-900">
                             Appels en cours <span class="ml-1 font-normal tabular-nums text-gray-400">{{ liveCalls.length }}</span>
                         </h2>
-                        <!-- File Voxnode non lue : seuls les appels avec un agent ou transférés (connus par nos données) sont là -->
-                        <p v-if="voxnode?.ok && voxnode.queue_known === false" class="mb-2 text-xs text-gray-500">
-                            File d’attente Voxnode illisible pour le moment : seuls les appels avec un agent ou transférés sont affichés, et un transfert terminé peut rester affiché quelques minutes.
-                        </p>
                         <div class="rounded-lg border border-gray-100 bg-white">
                             <DataTable
                                 :columns="callColumns"

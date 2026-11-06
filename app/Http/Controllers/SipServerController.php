@@ -101,7 +101,7 @@ class SipServerController extends Controller
                 $response = Http::withToken($token)->acceptJson()->timeout(5)->get($url . '/voxnode-calls');
                 if ($response->status() !== 404) {
                     return $response->successful() && is_array($response->json('calls'))
-                        ? ['ok' => true, 'calls' => $response->json('calls'), 'queue_known' => $response->json('queue_known') !== false]
+                        ? ['ok' => true, 'calls' => $response->json('calls')]
                         : ['ok' => false, 'error' => $response->json('error') ?? "Erreur HTTP {$response->status()}"];
                 }
             } catch (Throwable) {
@@ -123,7 +123,7 @@ class SipServerController extends Controller
             return ['ok' => false, 'error' => $response->json('error') ?? 'Réponse Voxnode inattendue'];
         }
 
-        return ['ok' => true, 'calls' => $response->json('calls'), 'queue_known' => true];
+        return ['ok' => true, 'calls' => $response->json('calls')];
     }
 
     /**
@@ -147,7 +147,6 @@ class SipServerController extends Controller
             'agent' => 'agent',
             'transferred' => 'transferred',
         ];
-        $queueKnown = $raw['queue_known'] ?? true;
         $raw = collect($raw['calls']);
         // Les appels avec un agent et transférés construits par voxnode118 depuis nos données (source « ours ») sont
         // fiables ; sinon, tant que Voxnode n'envoie pas « agent », « transferred » regroupe les deux cas
@@ -170,7 +169,7 @@ class SipServerController extends Controller
             ];
         })->values();
 
-        return ['ok' => true, 'calls' => $calls, 'queue_known' => $queueKnown];
+        return ['ok' => true, 'calls' => $calls];
     }
 
     /**
