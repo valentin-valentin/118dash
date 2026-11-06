@@ -524,7 +524,8 @@ const overviewSections = computed(() => {
                     label: 'Attente la plus longue',
                     ours: longOurs === null ? '—' : wait(longOurs),
                     theirs: longTheirs === null ? '—' : wait(longTheirs),
-                    total: null,
+                    // Total : le client qui attend depuis le plus longtemps, toutes plateformes confondues
+                    total: longOurs === null && longTheirs === null ? '—' : wait(Math.max(longOurs ?? 0, longTheirs ?? 0)),
                     text: true,
                     oursProblem: longOurs !== null && longOurs > 120,
                     theirsProblem: longTheirs !== null && longTheirs > 120,
