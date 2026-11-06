@@ -184,7 +184,7 @@ const formatDate = (v) => (v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 
                     </p>
                     <div class="flex flex-wrap items-center gap-2">
                         <label class="inline-flex cursor-pointer items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800" :class="uploading && 'pointer-events-none opacity-50'">
-                            <Upload class="h-4 w-4" /> Téléverser un index.html
+                            <Upload class="h-4 w-4" /> Upload un index.html
                             <input type="file" accept=".html,text/html" class="hidden" @change="onFile" />
                         </label>
                         <Button type="button" variant="outline" size="sm" @click="showPaste = !showPaste">Coller le HTML</Button>
