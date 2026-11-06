@@ -425,6 +425,30 @@ const pausedAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call 
 const BREAK_TYPES = { pause: 'Pause', lunch: 'Déjeuner', manager: 'Manager' }
 const breakLabel = (a) => (a.break_type ? (BREAK_TYPES[a.break_type] ?? a.break_type) : 'Pause')
 const breakSince = (a) => (a.break_since ? new Date(a.break_since).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null)
+// Tableau des agents : état de chaque agent, filtre par état, ordre stable (par nom)
+function agentState(a) {
+    if (a.in_call) return { key: 'call', label: 'En appel', class: 'text-gray-900', since: callSeconds.value[a.username] != null ? wait(callSeconds.value[a.username]) : null }
+    if (a.on_break === true) {
+        const seconds = a.break_since ? Math.max(0, Math.floor((nowTick.value - Date.parse(a.break_since)) / 1000)) : null
+        return { key: 'break', label: breakLabel(a), class: 'text-gray-500', since: seconds === null ? null : wait(seconds) }
+    }
+    if (!a.current_platform) return { key: 'nophone', label: 'Sans téléphone', class: 'text-red-600', since: null }
+    return { key: 'free', label: 'Libre', class: 'text-green-700', since: null }
+}
+const agentFilter = ref('')
+const agentFilters = computed(() => {
+    const count = (key) => onlineAgents.value.filter((a) => agentState(a).key === key).length
+    return [
+        { key: '', label: 'Tous', count: onlineAgents.value.length },
+        { key: 'call', label: 'En appel', count: count('call') },
+        { key: 'free', label: 'Libres', count: count('free') },
+        { key: 'break', label: 'En pause', count: count('break') },
+        ...(count('nophone') ? [{ key: 'nophone', label: 'Sans téléphone', count: count('nophone') }] : []),
+    ]
+})
+const agentRows = computed(() =>
+    onlineAgents.value.filter((a) => !agentFilter.value || agentState(a).key === agentFilter.value).sort(byName),
+)
 // Durée de l'appel en cours, connue pour les agents en conversation sur notre serveur
 const callSeconds = computed(() => Object.fromEntries(liveCalls.value.filter((c) => c.agent).map((c) => [c.agent, c.seconds])))
 const moving = (a) => !!a.current_platform && !!a.wanted_platform && a.current_platform !== a.wanted_platform
@@ -688,7 +712,7 @@ const sinceLastRun = computed(() => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="r in section.rows" :key="r.label" class="border-t border-gray-50" :title="r.title">
+                                <tr v-for="r in section.rows" :key="r.label" class="border-t border-gray-50 hover:bg-gray-50" :title="r.title">
                                     <td class="px-3 py-1.5 whitespace-nowrap text-gray-700">
                                         {{ r.label }}
                                         <span v-if="r.note" class="block text-xs" :class="r.problem ? 'text-red-600' : 'text-gray-400'">{{ r.note }}</span>
@@ -719,7 +743,7 @@ const sinceLastRun = computed(() => {
                 </div>
 
                 <!-- Appels et agents, côte à côte -->
-                <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+                <div class="grid grid-cols-1 items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_27rem]">
                     <section class="min-w-0">
                         <h2 class="mb-2 text-sm font-semibold text-gray-900">
                             Appels en cours <span class="ml-1 font-normal tabular-nums text-gray-400">{{ liveCalls.length }}</span>
@@ -745,67 +769,59 @@ const sinceLastRun = computed(() => {
                                     <span v-else class="whitespace-nowrap text-sm" :class="value.key === 'queue' ? 'font-medium text-amber-700' : 'text-gray-700'" :title="value.title">{{ value.label }}</span>
                                 </template>
                                 <template #agent="{ value }"><span class="text-sm text-gray-700">{{ value || '—' }}</span></template>
-                                <template #seconds="{ value }"><span class="text-sm tabular-nums text-gray-900">{{ wait(value) }}</span></template>
+                                <template #seconds="{ value }"><span class="whitespace-nowrap text-sm tabular-nums text-gray-900">{{ wait(value) }}</span></template>
                             </DataTable>
                         </div>
                     </section>
 
-                    <section class="min-w-0">
+                    <!-- Sous les appels sur les écrans moyens (largeur limitée), à côté sur les grands -->
+                    <section class="min-w-0 max-w-2xl 2xl:max-w-none">
                         <h2 class="mb-2 text-sm font-semibold text-gray-900">
                             Agents en ligne <span class="ml-1 font-normal tabular-nums text-gray-400">{{ onlineAgents.length }}</span>
                         </h2>
-                        <div class="rounded-lg border border-gray-100 bg-white text-sm">
+                        <!-- Filtre par état, avec le nombre d'agents de chaque état -->
+                        <div class="mb-2 flex flex-wrap gap-1">
+                            <button
+                                v-for="f in agentFilters"
+                                :key="f.key"
+                                type="button"
+                                class="h-7 rounded-md px-2.5 text-xs font-medium"
+                                :class="agentFilter === f.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'"
+                                @click="agentFilter = f.key"
+                            >
+                                {{ f.label }} <span class="tabular-nums opacity-70">{{ f.count }}</span>
+                            </button>
+                        </div>
+                        <!-- Une ligne par agent, triée par nom : chaque agent garde sa place quand son état change -->
+                        <div class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                             <div v-if="loading" class="h-24 animate-pulse" />
-                            <p v-else-if="!onlineAgents.length" class="px-4 py-6 text-center text-gray-400">Aucun agent en ligne</p>
-                            <template v-else>
-                                <!-- En appel : une ligne par agent, avec sa plateforme -->
-                                <div v-if="busyAgents.length" class="border-b border-gray-100 px-4 py-3">
-                                    <p class="mb-1.5 text-xs text-gray-500">En appel · {{ busyAgents.length }}</p>
-                                    <ul class="space-y-1">
-                                        <li v-for="a in busyAgents" :key="a.username" class="flex items-center justify-between gap-2">
-                                            <span class="truncate font-medium text-gray-900" :title="a.name">{{ a.username }}</span>
-                                            <span class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500">
-                                                <ArrowRightLeft v-if="moving(a)" class="h-3 w-3 text-amber-600" />
-                                                {{ PLATFORMS[a.current_platform] ?? '—' }}
-                                                <span v-if="callSeconds[a.username] != null" class="w-14 text-right tabular-nums text-gray-900">{{ wait(callSeconds[a.username]) }}</span>
+                            <p v-else-if="!agentRows.length" class="px-4 py-6 text-center text-sm text-gray-400">Aucun agent</p>
+                            <table v-else class="w-full text-sm">
+                                <thead class="border-b border-gray-100 text-left text-xs text-gray-400 uppercase">
+                                    <tr>
+                                        <th class="px-3 py-2 font-medium tracking-wide">Agent</th>
+                                        <th class="px-2 py-2 font-medium tracking-wide">Plateforme</th>
+                                        <th class="px-2 py-2 font-medium tracking-wide">État</th>
+                                        <th class="px-3 py-2 text-right font-medium tracking-wide" title="Durée de l’appel en cours ou de la pause">Durée</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="a in agentRows" :key="a.username" class="border-t border-gray-50 hover:bg-gray-50" :title="a.name">
+                                        <td class="px-3 py-1.5 font-medium whitespace-nowrap text-gray-900">{{ a.username }}</td>
+                                        <td class="px-2 py-1.5 whitespace-nowrap text-gray-600">
+                                            <span class="inline-flex items-center gap-1.5">
+                                                <span class="h-2 w-2 rounded-sm" :class="a.current_platform === 'selfhosted' ? 'bg-gray-900' : a.current_platform ? 'bg-gray-300' : 'bg-red-500'" />
+                                                {{ a.current_platform ? PLATFORMS[a.current_platform] : 'Aucune' }}
                                             </span>
-                                        </li>
-                                    </ul>
-                                </div>
-                                <!-- Libres : étiquettes compactes, foncées chez nous, claires chez Voxnode -->
-                                <div v-if="freeAgents.length" class="px-4 py-3">
-                                    <p class="mb-1.5 text-xs text-gray-500">Libres · {{ freeAgents.length }}</p>
-                                    <div class="flex flex-wrap gap-1">
-                                        <span
-                                            v-for="a in freeAgents"
-                                            :key="a.username"
-                                            class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs"
-                                            :class="a.current_platform === 'selfhosted' ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-800'"
-                                            :title="[a.name, PLATFORMS[a.current_platform] ?? 'plateforme inconnue', moving(a) ? `passe chez ${PLATFORMS[a.wanted_platform]}` : ''].filter(Boolean).join(' · ')"
-                                        >
-                                            {{ a.username }}
-                                            <ArrowRightLeft v-if="moving(a)" class="h-3 w-3 text-amber-500" />
-                                        </span>
-                                    </div>
-                                </div>
-                                <!-- En pause : déconnectés du SIP volontairement, ni libres ni en alerte -->
-                                <div v-if="pausedAgents.length" class="border-t border-gray-100 px-4 py-3">
-                                    <p class="mb-1.5 text-xs text-gray-500">En pause · {{ pausedAgents.length }}</p>
-                                    <ul class="space-y-1">
-                                        <li v-for="a in pausedAgents" :key="a.username" class="flex items-center justify-between gap-2">
-                                            <span class="truncate text-gray-700" :title="a.name">{{ a.username }}</span>
-                                            <span class="shrink-0 text-xs text-gray-500">
-                                                {{ breakLabel(a) }}<template v-if="breakSince(a)">, depuis {{ breakSince(a) }}</template>
+                                            <span v-if="moving(a)" class="ml-1 inline-flex items-center gap-0.5 text-xs text-amber-700">
+                                                <ArrowRightLeft class="h-3 w-3" />{{ PLATFORMS[a.wanted_platform] }}
                                             </span>
-                                        </li>
-                                    </ul>
-                                </div>
-                                <p v-if="tel" class="flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-100 px-4 py-2 text-xs text-gray-400">
-                                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-900" />Notre serveur</span>
-                                    <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-gray-200" />Voxnode</span>
-                                    <span class="flex items-center gap-1"><ArrowRightLeft class="h-3 w-3 text-amber-600" />change de plateforme</span>
-                                </p>
-                            </template>
+                                        </td>
+                                        <td class="px-2 py-1.5 whitespace-nowrap" :class="agentState(a).class">{{ agentState(a).label }}</td>
+                                        <td class="px-3 py-1.5 text-right whitespace-nowrap tabular-nums text-gray-700">{{ agentState(a).since ?? '—' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </section>
                 </div>
