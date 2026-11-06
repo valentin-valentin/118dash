@@ -197,21 +197,6 @@ const priorityForm = numberForm({
 // Test des agents IA : environ N appels par jour envoyés au prestataire, 0 = coupé
 const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.' } })
 
-// En cas de panne de notre serveur : bascule réelle ou simple journal (simulation)
-async function setFailoverMode(mode) {
-    if (mode === telSettings.value.pbx_failover_mode) return
-    const ok = await ask(
-        mode === 'simulate'
-            ? {
-                  title: 'Passer en simulation ?',
-                  body: "Si notre serveur tombe en panne, rien ne partira chez Voxnode. La panne sera seulement notée dans l'historique. Les appels envoyés chez nous pendant la panne seront perdus.",
-                  confirm: 'Passer en simulation',
-                  danger: true,
-              }
-            : { title: 'Réactiver la bascule automatique ?', body: 'Si notre serveur tombe en panne, ses numéros et ses agents partiront automatiquement chez Voxnode.', confirm: 'Réactiver' },
-    )
-    if (ok) saveTelephony({ pbx_failover_mode: mode }, mode === 'simulate' ? 'Mode simulation activé' : 'Bascule automatique réactivée')
-}
 
 // Transferts depuis notre serveur : vers la marque choisie, ou tous vers le service interne
 async function setTransfersInternal(internal) {
@@ -837,30 +822,6 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </p>
                                         </div>
                                     </div>
-                                    <!-- En cas de panne : bascule réelle ou simulation -->
-                                    <div v-if="'pbx_failover_mode' in telSettings" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                                        <div class="text-sm font-medium text-gray-900">En cas de panne</div>
-                                        <div>
-                                            <div class="inline-flex rounded-md border border-gray-200 p-0.5">
-                                                <button
-                                                    v-for="(label, key) in { active: 'Bascule automatique', simulate: 'Simulation' }"
-                                                    :key="key"
-                                                    type="button"
-                                                    class="rounded px-3 py-1.5 text-sm transition-colors"
-                                                    :class="telSettings.pbx_failover_mode === key ? (key === 'simulate' ? 'bg-amber-600 text-white' : 'bg-gray-900 text-white') : 'text-gray-600 hover:bg-gray-50'"
-                                                    :disabled="busy"
-                                                    @click="setFailoverMode(key)"
-                                                >
-                                                    {{ label }}
-                                                </button>
-                                            </div>
-                                            <p class="mt-2 text-sm" :class="telSettings.pbx_failover_mode === 'simulate' ? 'text-amber-700' : 'text-gray-500'">
-                                                {{ telSettings.pbx_failover_mode === 'simulate'
-                                                    ? 'Si notre serveur tombe en panne, la panne est seulement notée dans l’historique. Rien ne part chez Voxnode.'
-                                                    : 'Si notre serveur tombe en panne, ses numéros et ses agents partent automatiquement chez Voxnode.' }}
-                                            </p>
-                                        </div>
-                                    </div>
                                     <!-- Transferts depuis notre serveur -->
                                     <div v-if="'selfhosted_transfers_internal' in telSettings" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
                                         <div class="text-sm font-medium text-gray-900">Transferts depuis notre serveur</div>
@@ -913,7 +874,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                         <div>
                                             <Label for="recovery" class="text-gray-900">Retour après une panne</Label>
-                                            <p class="text-sm text-gray-500">Après une panne, notre serveur doit fonctionner sans problème pendant cette durée avant de recevoir de nouveau des numéros. Ce réglage ne sert qu'en mode Bascule automatique.</p>
+                                            <p class="text-sm text-gray-500">Après une panne, notre serveur doit fonctionner sans problème pendant cette durée avant de recevoir de nouveau des numéros.</p>
                                         </div>
                                         <div class="flex items-center gap-2 text-sm text-gray-600">
                                             <Input id="recovery" v-model.number="trafficForm.values.pbx_recovery_minutes" type="number" min="1" max="120" class="h-9 w-24 text-right tabular-nums" />

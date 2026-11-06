@@ -54,8 +54,6 @@ class TelephonyController extends Controller
             'selfhosted_manual_off' => 'sometimes|boolean',
             'voxnode_manual_off' => 'sometimes|boolean',
             'pbx_recovery_minutes' => 'sometimes|integer|between:1,120',
-            // En cas de panne : active = numéros et agents basculent sur Voxnode, simulate = journalisé seulement
-            'pbx_failover_mode' => 'sometimes|in:active,simulate',
             // Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)
             'selfhosted_transfers_internal' => 'sometimes|boolean',
             // Test des agents IA : environ N appels par jour envoyés au prestataire, 0 = coupé

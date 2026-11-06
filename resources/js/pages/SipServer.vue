@@ -103,6 +103,28 @@ const registrations = computed(() => Object.entries(health.value?.data?.registra
 const lineDown = computed(() => registrations.value.length > 0 && registrations.value.some(([, s]) => s !== 'Registered'))
 
 // Chaque élément dit son état en toutes lettres ; rouge seulement en cas de problème
+// Notre serveur en panne d'après la surveillance de voxnode118 (health.state), quel que soit le mode de bascule
+const ourHealthDown = computed(() => tel.value?.health?.state === 'down')
+
+// Voxnode injoignable : heure du premier échec de lecture de ses appels, effacée au premier succès.
+// Signalé après 1 min d'échecs sans interruption.
+const voxnodeFailingSince = ref(null)
+const nowTick = ref(Date.now())
+const nowTimer = setInterval(() => (nowTick.value = Date.now()), 15000)
+onUnmounted(() => clearInterval(nowTimer))
+watch(
+    () => data.value?.voxnode,
+    (v) => {
+        if (!v) return
+        if (v.ok === false) voxnodeFailingSince.value ??= Date.now()
+        else voxnodeFailingSince.value = null
+    },
+)
+const voxnodeDownMinutes = computed(() => {
+    if (voxnodeFailingSince.value === null || nowTick.value - voxnodeFailingSince.value < 60 * 1000) return null
+    return Math.max(1, Math.floor((nowTick.value - voxnodeFailingSince.value) / 60000))
+})
+
 const statusItems = computed(() => {
     if (!data.value) return []
     const st = telSettings.value
@@ -110,7 +132,8 @@ const statusItems = computed(() => {
     if (!serverUp.value) ours = { value: 'Ne répond pas', problem: true }
     else if (tel.value && !st.selfhosted_enabled) ours = { value: 'Désactivé', problem: false }
     else if (tel.value && st.selfhosted_manual_off) ours = { value: 'Désactivé', problem: false }
-    else if (tel.value && !tel.value.available?.selfhosted) ours = { value: 'En panne', problem: true }
+    // Panne vue par la surveillance de voxnode118
+    else if (ourHealthDown.value) ours = { value: 'En panne', problem: true }
 
     const items = []
     if (hoursNow.value) items.push({ label: 'Horaires (notre serveur)', value: hoursNow.value.text, problem: false })
@@ -136,8 +159,8 @@ const statusItems = computed(() => {
     if (tel.value) {
         items.push({
             label: 'Voxnode',
-            value: st.voxnode_manual_off ? 'Désactivé' : !tel.value.available?.voxnode ? 'Indisponible' : 'Actif',
-            problem: !st.voxnode_manual_off && !tel.value.available?.voxnode,
+            value: st.voxnode_manual_off ? 'Désactivé' : voxnodeDownMinutes.value !== null ? 'Injoignable' : !tel.value.available?.voxnode ? 'Indisponible' : 'Actif',
+            problem: !st.voxnode_manual_off && (voxnodeDownMinutes.value !== null || !tel.value.available?.voxnode),
         })
     }
     items.push({
@@ -195,12 +218,8 @@ const alerts = computed(() => {
     const list = []
     const st = telSettings.value
     if (data.value && !serverUp.value) list.push('Notre serveur ne répond pas.')
-    if (tel.value && st.selfhosted_enabled && !st.selfhosted_manual_off && !tel.value.available?.selfhosted) {
-        list.push(
-            st.pbx_failover_mode === 'simulate'
-                ? 'Notre serveur est en panne. Mode simulation : rien ne part chez Voxnode, les appels envoyés chez nous pendant la panne sont perdus.'
-                : `Notre serveur est en panne. Tout part chez Voxnode. Notre serveur recevra de nouveau des numéros après ${st.pbx_recovery_minutes} min sans problème.`,
-        )
+    if (tel.value && st.selfhosted_enabled && !st.selfhosted_manual_off && ourHealthDown.value) {
+        list.push(`Notre serveur est en panne. Tout part chez Voxnode. Notre serveur recevra de nouveau des numéros après ${st.pbx_recovery_minutes} min sans problème.`)
     }
     // Redémarrage récent d'Asterisk : les appels en cours ont été coupés
     const restart = (tel.value?.health?.events ?? []).find((e) => e.state === 'restart' && Date.now() - new Date(e.at).getTime() < 30 * 60 * 1000)
@@ -208,15 +227,29 @@ const alerts = computed(() => {
     if (lineDown.value) list.push('La ligne OVH est déconnectée. Le softphone du panel ne peut plus appeler l’extérieur.')
     if (diskLow('disk_data', DATA_LOW_BYTES) || diskLow('disk_root', ROOT_LOW_BYTES)) list.push('Le disque de notre serveur est presque plein. Le détail est dans Configuration, onglet Serveur et stockage.')
     if (hoursProblem.value?.level === 'error') list.push(hoursProblem.value.text)
-    if (regulatorStale.value) list.push(`Le régulateur est arrêté. ${lastRun.value?.at ? `Dernière décision à ${formatTime(lastRun.value.at)}.` : 'Aucune décision connue.'}`)
-    const failed = (telAgents.value ?? []).filter((a) => a.online && a.switch_failed)
+    if (regulatorStale.value) {
+        list.push(`Le régulateur est arrêté : les agents ne sont plus déplacés entre notre serveur et Voxnode. ${lastRun.value?.at ? `Dernière décision à ${formatTime(lastRun.value.at)}.` : 'Aucune décision connue.'}`)
+    }
+    // switch_failed reste en base jusqu'à la bascule réussie suivante : seulement les échecs de moins de 15 min
+    const failed = (telAgents.value ?? []).filter(
+        (a) => a.online && a.switch_failed && a.switch_failed_at && Date.now() - new Date(a.switch_failed_at).getTime() < 15 * 60 * 1000,
+    )
     // switch_failed : la plateforme visée par la bascule ratée (« selfhosted » ou « voxnode »)
     const failedTo = (platform) => failed.filter((a) => a.switch_failed === platform).map((a) => a.username).join(', ')
     const failedOurs = failedTo('selfhosted')
     const failedVoxnode = failedTo('voxnode')
     if (failedOurs) list.push(`Ces agents n’ont pas pu passer sur notre serveur : ${failedOurs}. Un nouvel essai aura lieu automatiquement dans quelques minutes.`)
     if (failedVoxnode) list.push(`Ces agents n’ont pas pu repasser chez Voxnode : ${failedVoxnode}. Nouvel essai dans 2 min.`)
-    if (lostAgents.value.length) list.push(`Ces agents sont connectés, mais leur téléphone n’est relié ni à notre serveur ni à Voxnode depuis plus de 30 s : ${lostAgents.value.map((a) => a.username).join(', ')}.`)
+    if (lostAgents.value.length) {
+        list.push(`Ces agents sont connectés au panel mais leur téléphone n’est relié à aucune plateforme depuis plus de 30 s (téléphone pas allumé, déconnecté après un appel manqué, ou problème de connexion) : ${lostAgents.value.map((a) => a.username).join(', ')}.`)
+    }
+    // Voxnode ne répond plus (lecture de ses appels en échec depuis au moins 1 min)
+    if (voxnodeDownMinutes.value !== null && !st?.voxnode_manual_off) {
+        list.push(`Voxnode ne répond plus depuis ${voxnodeDownMinutes.value} min. Les transferts de ses agents et la connexion de ses agents ne marchent probablement plus. Si ça dure, désactivez Voxnode dans Configuration.`)
+    }
+    // Client qui attend un agent sur notre serveur depuis plus de 2 min (hors introduction et attente forcée)
+    const ourLongest = byStage('queue').filter((c) => c.platform === 'selfhosted').reduce((max, c) => Math.max(max, c.seconds), 0)
+    if (ourLongest > 120) list.push(`Un client attend un agent depuis ${Math.floor(ourLongest / 60)} min sur notre serveur.`)
     return list
 })
 
@@ -710,7 +743,6 @@ const sinceLastRun = computed(() => {
                                     <template v-else>non mesurée</template>
                                 </dd>
                             </div>
-                            <p v-if="telSettings.pbx_failover_mode === 'simulate'" class="pt-1 text-xs text-amber-700">Mode simulation activé. Si notre serveur tombe en panne, rien ne part chez Voxnode. La panne est seulement notée dans l'historique. Les déplacements d'agents ci-dessus, eux, sont bien réels.</p>
                         </dl>
                         <ul v-if="regulatorEvents.length" class="space-y-1">
                             <li v-for="(e, i) in regulatorEvents" :key="i" class="flex gap-3">
@@ -835,7 +867,6 @@ const sinceLastRun = computed(() => {
                             <span class="shrink-0 tabular-nums text-gray-400">{{ formatDateTime(e.at) }}</span>
                             <span :class="HEALTH_EVENTS[e.state]?.class ?? 'text-gray-700'">{{ HEALTH_EVENTS[e.state]?.label ?? e.state }}</span>
                             <span class="min-w-0 truncate text-gray-500" :title="e.reason">{{ e.reason }}</span>
-                            <span v-if="e.simulated" class="text-gray-400">Simulation, rien n’est parti chez Voxnode</span>
                         </li>
                     </ul>
                 </details>
