@@ -174,7 +174,7 @@ const formatDate = (v) => (v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 
                 <header class="border-b border-gray-100 px-5 py-3">
                     <h2 class="font-semibold text-gray-900">Page de supervision</h2>
                     <p class="text-sm text-gray-500">
-                        Le fichier index.html de Fred, servi tel quel. Un nouveau fichier remplace le précédent et est en ligne immédiatement.
+                        Le fichier template, servi tel quel. Un nouveau fichier remplace le précédent et est en ligne immédiatement.
                     </p>
                 </header>
                 <div class="space-y-3 px-5 py-4 text-sm">
