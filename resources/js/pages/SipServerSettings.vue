@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertTriangle, ArrowLeft, Pause, Play, Plus, Trash2 } from 'lucide-vue-next'
 import { xsrfToken } from '@/lib/csrf'
@@ -195,6 +196,18 @@ const priorityForm = numberForm({
     priority_window_hours: { min: 1, max: 720, error: 'La période doit être entre 1 et 720 heures.' },
 })
 // Test des agents IA : environ N appels par jour envoyés au prestataire, 0 = coupé
+// Panne de Voxnode : délais de désactivation et de réactivation automatiques (les interrupteurs s'enregistrent tout de suite)
+const voxnodeAutoForm = numberForm({
+    voxnode_auto_off_minutes: { min: 1, max: 120, error: 'Délai avant de désactiver Voxnode : entre 1 et 120 minutes.' },
+    voxnode_auto_on_minutes: { min: 1, max: 120, error: 'Délai avant de réactiver Voxnode : entre 1 et 120 minutes.' },
+})
+function setVoxnodeAuto(key, value) {
+    const messages = {
+        voxnode_auto_off: value ? 'Désactivation automatique de Voxnode activée' : 'Désactivation automatique de Voxnode arrêtée',
+        voxnode_auto_on: value ? 'Réactivation automatique de Voxnode activée' : 'Réactivation automatique de Voxnode arrêtée',
+    }
+    saveTelephony({ [key]: value }, messages[key])
+}
 const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.' } })
 
 
@@ -822,6 +835,42 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                             </p>
                                         </div>
                                     </div>
+                                    <!-- Panne de Voxnode : désactivation et réactivation automatiques -->
+                                    <form v-if="'voxnode_auto_off' in telSettings" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]" @submit.prevent="voxnodeAutoForm.save()">
+                                        <div class="text-sm font-medium text-gray-900">Si Voxnode ne répond plus</div>
+                                        <div class="space-y-3 text-sm text-gray-700">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <Switch :checked="!!telSettings.voxnode_auto_off" :disabled="busy" @update:checked="(v) => setVoxnodeAuto('voxnode_auto_off', v)" />
+                                                Désactiver Voxnode automatiquement s'il ne répond plus,
+                                                <span class="inline-flex items-center gap-2 whitespace-nowrap">
+                                                    après
+                                                    <Input v-model.number="voxnodeAutoForm.values.voxnode_auto_off_minutes" type="number" min="1" max="120" class="h-8 w-16 text-right tabular-nums" aria-label="Minutes sans réponse" />
+                                                    min sans réponse
+                                                </span>
+                                            </div>
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <Switch :checked="!!telSettings.voxnode_auto_on" :disabled="busy" @update:checked="(v) => setVoxnodeAuto('voxnode_auto_on', v)" />
+                                                Le réactiver automatiquement quand il répond de nouveau,
+                                                <span class="inline-flex items-center gap-2 whitespace-nowrap">
+                                                    après
+                                                    <Input v-model.number="voxnodeAutoForm.values.voxnode_auto_on_minutes" type="number" min="1" max="120" class="h-8 w-16 text-right tabular-nums" aria-label="Minutes de bon fonctionnement" />
+                                                    min de bon fonctionnement
+                                                </span>
+                                            </div>
+                                            <p class="text-gray-500">
+                                                Voxnode est considéré en panne quand son site (cc.voxnode.com) ne répond plus : ni la liste des appels, ni la page de connexion des agents.
+                                                Une alerte SMS part vers les numéros d'alerte à la panne et au retour. La réactivation automatique ne concerne qu'un Voxnode désactivé automatiquement.
+                                                Sans elle, le SMS vous prévient et vous le réactivez ici.
+                                            </p>
+                                            <div v-if="voxnodeAutoForm.dirty || voxnodeAutoForm.error" class="flex items-center justify-end gap-3">
+                                                <span v-if="voxnodeAutoForm.error" class="mr-auto text-red-600">{{ voxnodeAutoForm.error }}</span>
+                                                <template v-if="voxnodeAutoForm.dirty">
+                                                    <Button type="button" variant="outline" size="sm" :disabled="busy" @click="voxnodeAutoForm.reset()">Annuler</Button>
+                                                    <Button type="submit" size="sm" :disabled="busy || !!voxnodeAutoForm.error">Enregistrer</Button>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </form>
                                     <!-- Transferts depuis notre serveur -->
                                     <div v-if="'selfhosted_transfers_internal' in telSettings" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
                                         <div class="text-sm font-medium text-gray-900">Transferts depuis notre serveur</div>

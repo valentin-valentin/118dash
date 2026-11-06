@@ -120,10 +120,17 @@ watch(
         else voxnodeFailingSince.value = null
     },
 )
+// Depuis quand : la surveillance de voxnode118 (voxnode_health.down_since) si elle le dit, sinon la lecture des appels ici
 const voxnodeDownMinutes = computed(() => {
-    if (voxnodeFailingSince.value === null || nowTick.value - voxnodeFailingSince.value < 60 * 1000) return null
-    return Math.max(1, Math.floor((nowTick.value - voxnodeFailingSince.value) / 60000))
+    const vh = tel.value?.voxnode_health
+    const since = vh?.state === 'down' && vh.down_since ? new Date(vh.down_since).getTime() : voxnodeFailingSince.value
+    if (since === null || nowTick.value - since < 60 * 1000) return null
+    return Math.max(1, Math.floor((nowTick.value - since) / 60000))
 })
+
+// Trunk vers les marques (transferts de notre serveur) : état vu par le serveur SIP
+const trunkState = computed(() => health.value?.data?.trunks?.['voxnode-trunk'] ?? null)
+
 
 const statusItems = computed(() => {
     if (!data.value) return []
@@ -163,6 +170,12 @@ const statusItems = computed(() => {
             problem: !st.voxnode_manual_off && (voxnodeDownMinutes.value !== null || !tel.value.available?.voxnode),
         })
     }
+    items.push({
+        label: 'Trunk marques',
+        value: trunkState.value === 'Avail' ? 'Joignable' : trunkState.value === 'Unavail' ? 'Injoignable' : '—',
+        problem: trunkState.value === 'Unavail',
+        title: 'Ligne par laquelle notre serveur appelle les marques lors d’un transfert',
+    })
     items.push({
         label: 'Ligne OVH',
         value: !registrations.value.length ? '—' : lineDown.value ? 'Déconnectée' : 'Connectée',
@@ -224,6 +237,20 @@ const alerts = computed(() => {
     // Redémarrage récent d'Asterisk : les appels en cours ont été coupés
     const restart = (tel.value?.health?.events ?? []).find((e) => e.state === 'restart' && Date.now() - new Date(e.at).getTime() < 30 * 60 * 1000)
     if (restart) list.push(`Notre serveur a redémarré à ${formatTime(restart.at)}. Les appels en cours à ce moment-là ont été coupés. ${restart.reason ?? ''}`.trim())
+    // Lecture des réglages de téléphonie impossible : les alertes qui en dépendent ne peuvent plus s'afficher
+    if (telephony.value?.ok === false) {
+        list.push(`La page ne peut plus afficher les alertes de Voxnode, du trunk et du régulateur. Impossible de lire les réglages de téléphonie. Seuls les agents connectés à notre serveur sont affichés. Erreur : ${telephony.value.error}`)
+    }
+    // Voxnode désactivé automatiquement par voxnode118 parce qu'il ne répondait plus
+    const vh = tel.value?.voxnode_health
+    if (st?.voxnode_manual_off && vh?.auto_disabled_at) {
+        const back =
+            vh.state === 'up'
+                ? `Il répond de nouveau depuis ${vh.up_since ? formatTime(vh.up_since) : '—'}.${st.voxnode_auto_on ? '' : ' Réactivez-le dans Configuration si tout est normal.'}`
+                : 'Il ne répond toujours pas.'
+        list.push(`Voxnode a été désactivé automatiquement à ${formatTime(vh.auto_disabled_at)} car il ne répondait plus. ${back}`)
+    }
+    if (trunkState.value === 'Unavail') list.push('Le trunk vers les marques ne répond plus : les transferts vont au service interne.')
     if (lineDown.value) list.push('La ligne OVH est déconnectée. Le softphone du panel ne peut plus appeler l’extérieur.')
     if (diskLow('disk_data', DATA_LOW_BYTES) || diskLow('disk_root', ROOT_LOW_BYTES)) list.push('Le disque de notre serveur est presque plein. Le détail est dans Configuration, onglet Serveur et stockage.')
     if (hoursProblem.value?.level === 'error') list.push(hoursProblem.value.text)
@@ -531,6 +558,8 @@ const HEALTH_EVENTS = {
     down: { label: 'Panne', class: 'text-red-600' },
     up: { label: 'Rétabli', class: 'text-gray-700' },
     restart: { label: 'Redémarrage', class: 'text-amber-700' },
+    trunk_down: { label: 'Trunk vers les marques injoignable', class: 'text-red-600' },
+    trunk_up: { label: 'Trunk vers les marques de nouveau joignable', class: 'text-gray-700' },
 }
 const healthEvents = computed(() => [...(tel.value?.health?.events ?? [])].sort((a, b) => (b.at ?? '').localeCompare(a.at ?? '')).slice(0, 10))
 
@@ -586,13 +615,10 @@ const sinceLastRun = computed(() => {
                 </div>
 
                 <!-- Alertes : seulement en cas de problème -->
-                <div v-if="alerts.length || hoursProblem?.level === 'pending' || telephony?.ok === false" class="space-y-2">
+                <div v-if="alerts.length || hoursProblem?.level === 'pending'" class="space-y-2">
                     <p v-for="text in alerts" :key="text" class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                         <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" />
                         {{ text }}
-                    </p>
-                    <p v-if="telephony?.ok === false" class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                        Impossible de lire les réglages de téléphonie. Seuls les agents connectés à notre serveur sont affichés. Erreur : {{ telephony.error }}
                     </p>
                     <p v-if="hoursProblem?.level === 'pending'" class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">{{ hoursProblem.text }}</p>
                 </div>

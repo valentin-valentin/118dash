@@ -53,6 +53,11 @@ class TelephonyController extends Controller
             'selfhosted_percent' => 'sometimes|integer|between:0,100',
             'selfhosted_manual_off' => 'sometimes|boolean',
             'voxnode_manual_off' => 'sometimes|boolean',
+            // Panne de Voxnode : désactivation automatique s'il ne répond plus, réactivation automatique au retour
+            'voxnode_auto_off' => 'sometimes|boolean',
+            'voxnode_auto_off_minutes' => 'sometimes|integer|between:1,120',
+            'voxnode_auto_on' => 'sometimes|boolean',
+            'voxnode_auto_on_minutes' => 'sometimes|integer|between:1,120',
             'pbx_recovery_minutes' => 'sometimes|integer|between:1,120',
             // Tout transfert sur notre serveur part au service interne (la marque choisie reste enregistrée)
             'selfhosted_transfers_internal' => 'sometimes|boolean',
@@ -79,6 +84,8 @@ class TelephonyController extends Controller
                 }
             }],
         ], [
+            'voxnode_auto_off_minutes.between' => 'Délai avant de désactiver Voxnode : entre 1 et 120 minutes.',
+            'voxnode_auto_on_minutes.between' => 'Délai avant de réactiver Voxnode : entre 1 et 120 minutes.',
             'selfhosted_percent.between' => 'La part des nouveaux numéros doit être entre 0 et 100 %.',
             'pbx_recovery_minutes.between' => 'Le délai de retour après une panne doit être entre 1 et 120 minutes.',
             'ai_daily_calls.between' => 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.',
