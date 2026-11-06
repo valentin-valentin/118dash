@@ -274,9 +274,6 @@ const alerts = computed(() => {
     if (voxnodeDownMinutes.value !== null && !st?.voxnode_manual_off) {
         list.push(`Voxnode ne répond plus depuis ${voxnodeDownMinutes.value} min. Les transferts de ses agents et la connexion de ses agents ne marchent probablement plus. Si ça dure, désactivez Voxnode dans Configuration.`)
     }
-    // Client qui attend un agent sur notre serveur depuis plus de 2 min (hors introduction et attente forcée)
-    const ourLongest = byStage('queue').filter((c) => c.platform === 'selfhosted').reduce((max, c) => Math.max(max, c.seconds), 0)
-    if (ourLongest > 120) list.push(`Un client attend un agent depuis ${Math.floor(ourLongest / 60)} min sur notre serveur.`)
     return list
 })
 
