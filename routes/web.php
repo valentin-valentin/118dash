@@ -12,6 +12,7 @@ use App\Http\Controllers\PartnerStatsController;
 use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RejectedCallController;
+use App\Http\Controllers\StaffingController;
 use App\Http\Controllers\WaitLossController;
 use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\RsvaAuditController;
@@ -98,6 +99,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/rejected-calls', [RejectedCallController::class, 'index'])->name('rejected-calls.index');
     Route::get('/wait-loss', [WaitLossController::class, 'index'])->name('wait-loss.index');
+    Route::get('/staffing', [StaffingController::class, 'index'])->name('staffing.index');
     Route::get('/assistant', [AssistantController::class, 'index'])->name('assistant.index');
     Route::get('/superviseur/settings', [SuperviseurController::class, 'settings'])->name('superviseur.settings');
     Route::get('/brands', [BrandController::class, 'index'])->name('brands.index');
@@ -204,6 +206,7 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);
+        Route::get('/staffing', [StaffingController::class, 'data']);
         Route::put('/superviseur/html', [SuperviseurController::class, 'updateHtml']);
         Route::put('/superviseur/key', [SuperviseurController::class, 'updateKey']);
         Route::get('/brands', [BrandController::class, 'data']);
