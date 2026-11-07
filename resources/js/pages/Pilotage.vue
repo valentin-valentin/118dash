@@ -188,26 +188,38 @@ const bucketLabel = (b) => {
     if (b.from < 60 && b.to <= 60) return b.to === 60 ? `${b.from} s – 1 min` : `${b.from} – ${b.to} s`
     return `${b.from / 60} – ${b.to / 60} min`
 }
+// Un petit tableau par plateforme : perdus par temps passé avant de raccrocher, dont en attente d'un agent, barre
 const hangups = computed(() => {
     const H = data.value?.hangups
     const F = data.value?.fate
     if (!H || !F) return null
     const total = (s) => (s ? (s.forced ?? 0) + (s.queue ?? 0) + (s.unknown ?? 0) : 0)
+    // Même échelle de barres pour les trois tableaux : part des appels de la plateforme
     const max = Math.max(1e-9, ...COLS.flatMap(([k]) => (H[k] ?? []).map((s) => (F[k]?.calls ? total(s) / F[k].calls : 0))))
     return {
-        heads: COLS.map(([k, label]) => `${label} · ${fmt(F[k]?.lost)} perdus sur ${fmt(F[k]?.calls)} appels`),
-        rows: H.buckets.map((b, i) => ({
-            label: bucketLabel(b),
-            mark: b.from === 240,
-            cols: COLS.map(([k]) => {
-                const s = H[k]?.[i] ?? {}
-                const calls = F[k]?.calls ?? 0
-                const t = total(s)
-                const w = (v) => `${calls ? (v / calls / max) * 100 : 0}%`
-                return { parts: ['forced', 'queue', 'unknown'].filter((c) => s[c]).map((c) => ({ c, width: w(s[c]), n: s[c] })), total: t, pct: t ? pct(t, calls) : '', queue: s.queue ?? 0 }
-            }),
-        })),
-        markText: `Voxnode : l'accueil et l'attente forcée durent environ 4 min (attente médiane des décrochés : ${mmss(F.voxnode?.answerWaitMedianSec)}). Notre serveur : attente forcée médiane ${mmss(F.server?.forcedWaitMedianSec)}.`,
+        tables: COLS.map(([k, label]) => {
+            const calls = F[k]?.calls ?? 0
+            return {
+                key: k,
+                title: label,
+                note: `${fmt(F[k]?.lost)} perdus sur ${fmt(calls)} appels`,
+                rows: H.buckets.map((b, i) => {
+                    const sl = H[k]?.[i] ?? {}
+                    const t = total(sl)
+                    // Étape inconnue pour tous les perdus de la tranche : « dont en attente d'un agent » non mesuré
+                    const unmeasured = (sl.unknown ?? 0) > 0 && !sl.forced && !sl.queue
+                    return {
+                        label: bucketLabel(b),
+                        mark: b.from === 240,
+                        total: t,
+                        pct: t ? pct(t, calls) : '',
+                        queue: unmeasured ? null : (sl.queue ?? 0),
+                        parts: ['forced', 'queue', 'unknown'].filter((c) => sl[c]).map((c) => ({ c, width: `${calls ? (sl[c] / calls / max) * 100 : 0}%`, n: sl[c] })),
+                    }
+                }),
+            }
+        }),
+        markText: `Ligne pointillée : 4 min. Voxnode : l'accueil et l'attente forcée durent environ 4 min (attente médiane des décrochés : ${mmss(F.voxnode?.answerWaitMedianSec)}). Notre serveur : attente forcée médiane ${mmss(F.server?.forcedWaitMedianSec)}.`,
     }
 })
 
@@ -296,16 +308,16 @@ const STAT_CLASS = { short: 'queue', warn: 'late', ok: 'free', over: 'over', non
 // ─── 4. Heure par heure ───────────────────────────────────────────────────────
 const NEED_MODES = ['gap', 'need']
 const MODES = [
-    { key: 'gap', label: 'Agents en trop ou manquants', value: (f) => gapTxt(f.gap), agents: true },
-    { key: 'need', label: 'Agents nécessaires', value: (f) => fmt(f.need), agents: true },
-    { key: 'lq', label: "Perdus en attente d'un agent", value: (f) => fmt(f.lq) },
-    { key: 'lost', label: 'Perdus (tous)', value: (f) => fmt(f.lost) },
-    { key: 'calls', label: 'Appels', value: (f) => fmt(f.calls) },
-    { key: 'realWait', label: 'Vraie attente moyenne', value: (f) => (f.realWait == null ? '–' : mmss(f.realWait)) },
-    { key: 'free', label: 'Agents libres', value: (f) => fmt1(f.free), agents: true },
-    { key: 'present', label: 'Agents présents', value: (f) => fmt1(f.present), agents: true },
-    { key: 'breaks', label: 'En pause ou déjeuner', value: (f) => fmt1((f.pause ?? 0) + (f.lunch ?? 0)), agents: true },
-    { key: 'missed', label: 'Sonnés sans réponse', value: (f) => fmt(f.missed), agents: true },
+    { key: 'gap', label: 'En trop ou manquants', name: 'agents en trop ou manquants', value: (f) => gapTxt(f.gap), agents: true },
+    { key: 'need', label: 'Nécessaires', name: 'agents nécessaires', value: (f) => fmt(f.need), agents: true },
+    { key: 'free', label: 'Libres', name: 'agents libres', value: (f) => fmt1(f.free), agents: true },
+    { key: 'present', label: 'Présents', name: 'agents présents', value: (f) => fmt1(f.present), agents: true },
+    { key: 'breaks', label: 'En pause ou déjeuner', name: 'agents en pause ou déjeuner', value: (f) => fmt1((f.pause ?? 0) + (f.lunch ?? 0)), agents: true },
+    { key: 'missed', label: 'Sonnés sans réponse', name: 'appels sonnés chez un agent sans réponse', value: (f) => fmt(f.missed), agents: true },
+    { key: 'lq', label: "Perdus en attente d'un agent", name: "appels perdus en attente d'un agent", value: (f) => fmt(f.lq) },
+    { key: 'lost', label: 'Perdus (tous)', name: 'appels perdus', value: (f) => fmt(f.lost) },
+    { key: 'calls', label: 'Reçus', name: 'appels reçus', value: (f) => fmt(f.calls) },
+    { key: 'realWait', label: 'Vraie attente moyenne', name: "vraie attente moyenne d'un agent", value: (f) => (f.realWait == null ? '–' : mmss(f.realWait)) },
 ]
 const gPlat = ref('all')
 const mode = ref('gap')
@@ -464,30 +476,34 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                         </div>
                     </section>
 
-                    <!-- ─── 2. Quand les appelants raccrochent ──────────────── -->
+                    <!-- ─── 2. Quand les appelants raccrochent : un tableau par plateforme ─── -->
                     <section v-if="hangups" class="card">
-                        <header><h2>Quand les appelants raccrochent</h2><span class="sub">Appels perdus selon le temps passé avant de raccrocher · en % de tous les appels de la colonne</span></header>
-                        <div class="body scroll">
-                            <div class="hist">
-                                <div />
-                                <div v-for="h in hangups.heads" :key="h" class="h">{{ h }}</div>
-                                <template v-for="row in hangups.rows" :key="row.label">
-                                    <div v-if="row.mark" class="mark4">{{ hangups.markText }}</div>
-                                    <div class="h">{{ row.label }}</div>
-                                    <div v-for="(c, i) in row.cols" :key="i" class="bar">
-                                        <div class="track"><div v-for="p in c.parts" :key="p.c" :class="p.c" :style="{ width: p.width }" :title="fmt(p.n)" /></div>
-                                        <span class="val">
-                                            {{ c.total ? fmt(c.total) : '–' }}<span class="pct">{{ c.pct }}</span>
-                                            <template v-if="c.queue"><br /><span class="red" style="font-weight: 400">dont {{ fmt(c.queue) }} attente agent</span></template>
-                                        </span>
-                                    </div>
-                                </template>
+                        <header><h2>Quand les appelants raccrochent</h2><span class="sub">Appels perdus selon le temps passé avant de raccrocher, en % de tous les appels de la plateforme</span></header>
+                        <div class="body">
+                            <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
+                                <div v-for="t in hangups.tables" :key="t.key" class="mini fit">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="title">{{ t.title }}<span class="note">{{ t.note }}</span></th>
+                                                <th>Perdus</th>
+                                                <th class="wrap">dont en attente d'un agent</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="r in t.rows" :key="r.label" :class="r.mark && 'mark'">
+                                                <td>{{ r.label }}</td>
+                                                <td>{{ r.total ? fmt(r.total) : '–' }}<span class="pct">{{ r.pct }}</span></td>
+                                                <td>
+                                                    <span v-if="r.queue === null" class="pct">non mesuré</span>
+                                                    <span v-else :class="r.queue > 0 ? 'red' : 'text-gray-300'">{{ r.queue ? fmt(r.queue) : '–' }}</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                            <div class="legend">
-                                <span><i class="sw forced" />pendant l'accueil ou l'attente forcée</span>
-                                <span><i class="sw queue" />en attente d'un agent</span>
-                                <span><i class="sw unknown" />étape non mesurée</span>
-                            </div>
+                            <p class="legend">{{ hangups.markText }}</p>
                         </div>
                     </section>
 
@@ -495,13 +511,17 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                     <section v-if="ov" class="card">
                         <header>
                             <h2>Vue d'ensemble</h2><span class="sub">Appels et agents demi-heure par demi-heure, sur les mêmes colonnes</span>
-                            <div class="chips ml-auto">
+                        </header>
+                        <div class="toolbar">
+                            <span class="tl">Jour</span>
+                            <div class="chips">
                                 <button v-for="r in allRows" :key="r.key" type="button" class="chip" :aria-pressed="ovDay === r.key" @click="ovDay = r.key">{{ r.label }}</button>
                             </div>
-                            <div class="chips sep-l">
+                            <span class="tl">Appels de</span>
+                            <div class="chips">
                                 <button v-for="[k, l] in PLATS" :key="k" type="button" class="chip" :aria-pressed="ovPlat === k" @click="ovPlat = k">{{ l }}</button>
                             </div>
-                        </header>
+                        </div>
                         <div class="body scroll">
                             <div class="ov" :style="{ '--n': ovCols.length }">
                                 <div class="lab hd" />
@@ -552,13 +572,13 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                     <!-- ─── 4. Heure par heure ──────────────────────────────── -->
                     <section class="card">
                         <header>
-                            <h2>Heure par heure</h2><span class="sub">Chiffre : {{ currentMode.label.toLowerCase() }}</span>
-                            <div class="chips ml-auto">
-                                <button v-for="[k, l] in PLATS" :key="k" type="button" class="chip" :aria-pressed="gPlat === k" @click="gPlat = k">{{ l }}</button>
-                            </div>
-                            <div class="chips sep-l">
+                            <h2>Heure par heure</h2><span class="sub">Chiffre : {{ currentMode.name }}</span>
+                        </header>
+                        <div class="toolbar rows">
+                            <span class="tl">Agents</span>
+                            <div class="chips">
                                 <button
-                                    v-for="m in MODES"
+                                    v-for="m in MODES.filter((x) => x.agents)"
                                     :key="m.key"
                                     type="button"
                                     class="chip"
@@ -570,7 +590,16 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                     {{ m.label }}
                                 </button>
                             </div>
-                        </header>
+                            <span class="tl">Appels</span>
+                            <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+                                <div class="chips">
+                                    <button v-for="m in MODES.filter((x) => !x.agents)" :key="m.key" type="button" class="chip" :aria-pressed="mode === m.key" @click="mode = m.key">{{ m.label }}</button>
+                                </div>
+                                <div class="chips">
+                                    <button v-for="[k, l] in PLATS" :key="k" type="button" class="chip" :aria-pressed="gPlat === k" @click="gPlat = k">{{ l }}</button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="body">
                             <div class="scroll">
                                 <table id="pilotage-grid" class="hgrid">
@@ -624,24 +653,30 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
 
                             <div v-if="detail" class="detail">
                                 <h3>{{ detail.title }}<span v-if="detail.avg" class="sub"> · moyenne par jour</span></h3>
-                                <div>
+                                <div class="mini">
                                     <table>
                                         <thead>
-                                            <tr><th />
-                                                <th v-for="[k, l] in PLATS" :key="k">{{ l }}</th>
+                                            <tr>
+                                                <th class="title">Appels</th>
+                                                <th v-for="[k, l] in PLATS" :key="k" :class="k === 'all' && 'total'">{{ l }}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr v-for="r in detail.calls" :key="r.label">
                                                 <td>{{ r.label }}</td>
-                                                <td v-for="(c, i) in r.cells" :key="i" :class="c.red && 'red'">{{ c.text }}<span v-if="c.pct" class="pct">{{ c.pct }}</span></td>
+                                                <td v-for="(c, i) in r.cells" :key="i" :class="i === 0 && 'total'"><span :class="c.red && 'red'">{{ c.text }}</span><span v-if="c.pct" class="pct">{{ c.pct }}</span></td>
                                             </tr>
                                         </tbody>
                                     </table>
                                 </div>
-                                <div>
-                                    <div class="sub" style="margin-bottom: 4px">Agents, {{ data.team === 'all' ? 'les deux plateformes' : teamName }} (moyenne sur la demi-heure)</div>
+                                <div class="mini">
                                     <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="title">Agents<span class="note">{{ data.team === 'all' ? 'les deux plateformes' : teamName }}, moyenne sur la demi-heure</span></th>
+                                                <th />
+                                            </tr>
+                                        </thead>
                                         <tbody>
                                             <tr v-for="[label, c] in detail.agents" :key="label">
                                                 <td>{{ label }}</td>
@@ -994,6 +1029,8 @@ tr.sep td {
 }
 .mini thead th .note {
     display: block;
+    white-space: normal;
+    max-width: 150px;
     font-size: 11px;
     font-weight: 400;
     color: var(--muted);
@@ -1027,6 +1064,39 @@ tr.sep td {
 }
 .mini .total {
     background: #fafafa;
+}
+/* Barre d'outils sous l'en-tête d'une section */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+}
+.toolbar .tl {
+    font-size: 12px;
+    color: var(--muted);
+}
+.toolbar:not(.rows) .tl:not(:first-child) {
+    margin-left: 10px;
+}
+/* Une ligne par groupe de boutons, libellés alignés */
+.toolbar.rows {
+    display: grid;
+    grid-template-columns: auto 1fr;
+}
+.mini th.wrap {
+    white-space: normal;
+    max-width: 110px;
+    line-height: 1.2;
+}
+.mini td.barcell {
+    width: 40%;
+    min-width: 90px;
+}
+.mini tr.mark {
+    border-top: 1px dashed var(--muted);
 }
 /* Raccrochés */
 .hist {
