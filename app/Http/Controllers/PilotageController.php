@@ -11,10 +11,9 @@ use Inertia\Response;
 use Throwable;
 
 /**
- * Pilotage des effectifs (GET /pilotage de voxnode118) : par demi-heure, clients pénalisés faute d'agent libre,
- * cause (effectif, répartition entre les plateformes, agents qui ne décrochent pas), agents libres ou en trop,
- * phrases de synthèse et recommandations. Périodes : aujourd'hui (en direct), un jour, 7 derniers jours,
- * ou moyennes sur 4 à 26 semaines.
+ * Pilotage des effectifs (GET /pilotage de voxnode118) : devenir des appels par plateforme, moment où les appelants
+ * raccrochent, appels et agents demi-heure par demi-heure (agents nécessaires calculés par l'API pour décrocher 90 %
+ * des appels en moins de « within » secondes), créneaux à revoir et jour par jour. Aucun calcul côté page.
  */
 class PilotageController extends Controller
 {
@@ -30,6 +29,7 @@ class PilotageController extends Controller
             'date' => 'nullable|required_if:period,day|date_format:Y-m-d',
             'weeks' => 'nullable|integer|in:4,8,12,26',
             'team' => ['nullable', 'string', 'regex:/^[a-z0-9_-]{1,40}$/'],
+            'within' => 'nullable|integer|between:10,300',
         ]);
         abort_unless(config('services.telephony_api.url') && config('services.telephony_api.token'), 404);
 
@@ -39,7 +39,11 @@ class PilotageController extends Controller
             $params['date'] = $validated['date'];
         }
         if ($period === 'weeks') {
-            $params['weeks'] = (int) ($validated['weeks'] ?? 8);
+            $params['weeks'] = (int) ($validated['weeks'] ?? 4);
+        }
+        // Attente maximale visée pour le calcul des agents nécessaires
+        if (isset($validated['within'])) {
+            $params['within'] = (int) $validated['within'];
         }
 
         // Courte durée : « Aujourd'hui » est relu toutes les 5 min
