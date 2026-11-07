@@ -210,8 +210,6 @@ function setVoxnodeAuto(key, value) {
 }
 // Bloc « Pauses » de la page Serveur SIP : agents libres en plus des appelants pour « bon moment pour une pause »
 const breakForm = numberForm({ break_advice_ok_margin: { min: 0, max: 20, error: 'La marge pour « bon moment pour une pause » doit être entre 0 et 20 agents.' } })
-// Page Affluence et effectifs : agents nécessaires = agents en appel / occupation visée
-const staffingForm = numberForm({ staffing_target_occupancy: { min: 50, max: 95, error: "L'occupation visée des agents doit être entre 50 et 95 %." } })
 const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.' } })
 
 
@@ -982,27 +980,6 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <template v-if="breakForm.dirty">
                                         <Button type="button" variant="outline" size="sm" :disabled="busy" @click="breakForm.reset()">Annuler</Button>
                                         <Button type="submit" size="sm" :disabled="busy || !!breakForm.error">Enregistrer</Button>
-                                    </template>
-                                </footer>
-                            </form>
-
-                            <!-- Page Affluence et effectifs -->
-                            <form v-if="staffingForm.available.length" class="rounded-lg border border-gray-100 bg-white" @submit.prevent="staffingForm.save()">
-                                <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
-                                    <div>
-                                        <Label for="staffing-target" class="text-gray-900">Occupation visée des agents (%)</Label>
-                                        <p class="text-sm text-gray-500">Sur la page <Link href="/staffing" class="underline">Affluence et effectifs</Link>, les agents nécessaires sont les agents en appel divisés par cette occupation : à {{ telSettings.staffing_target_occupancy }} %, 8 agents en appel demandent {{ Math.ceil(8 / ((telSettings.staffing_target_occupancy || 100) / 100)) }} agents au travail.</p>
-                                    </div>
-                                    <div class="flex items-center gap-2 text-sm text-gray-600">
-                                        <Input id="staffing-target" v-model.number="staffingForm.values.staffing_target_occupancy" type="number" min="50" max="95" class="h-9 w-24 text-right tabular-nums" />
-                                        %
-                                    </div>
-                                </div>
-                                <footer v-if="staffingForm.dirty || staffingForm.error" class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
-                                    <span v-if="staffingForm.error" class="mr-auto text-sm text-red-600">{{ staffingForm.error }}</span>
-                                    <template v-if="staffingForm.dirty">
-                                        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="staffingForm.reset()">Annuler</Button>
-                                        <Button type="submit" size="sm" :disabled="busy || !!staffingForm.error">Enregistrer</Button>
                                     </template>
                                 </footer>
                             </form>

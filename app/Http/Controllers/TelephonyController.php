@@ -92,8 +92,6 @@ class TelephonyController extends Controller
             'regulator_wait_seconds' => 'sometimes|integer|between:0,600',
             // Bloc « Pauses » : agents libres en plus des appelants pour afficher « bon moment pour une pause »
             'break_advice_ok_margin' => 'sometimes|integer|between:0,20',
-            // Page Affluence et effectifs : agents nécessaires = agents en appel / occupation visée
-            'staffing_target_occupancy' => 'sometimes|integer|between:50,95',
             // Appelants prioritaires : pas d'attente forcée
             'priority_min_duration' => 'sometimes|integer|between:1,3600',
             'priority_window_hours' => 'sometimes|integer|between:1,720',
@@ -120,7 +118,6 @@ class TelephonyController extends Controller
             'regulator_cooldown_minutes.between' => 'Le délai avant de redéplacer un agent doit être entre 0 et 60 minutes.',
             'regulator_wait_seconds.between' => "L'attente qui déclenche un renfort doit être entre 0 et 600 secondes.",
             'break_advice_ok_margin.between' => 'La marge pour « bon moment pour une pause » doit être entre 0 et 20 agents.',
-            'staffing_target_occupancy.between' => "L'occupation visée des agents doit être entre 50 et 95 %.",
             'priority_min_duration.between' => 'La durée minimale d\'appel doit être entre 1 et 3 600 secondes.',
             'priority_window_hours.between' => 'La période doit être entre 1 et 720 heures.',
         ]);

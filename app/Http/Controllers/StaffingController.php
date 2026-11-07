@@ -11,8 +11,8 @@ use Inertia\Response;
 use Throwable;
 
 /**
- * Affluence et effectifs : par jour de semaine et par demi-heure, agents au travail face aux agents nécessaires
- * (GET /staffing de voxnode118, statistiques calculées chaque nuit jusqu'à la veille).
+ * Affluence et effectifs : par demi-heure, attente des clients et agents au travail (GET /staffing de voxnode118).
+ * Périodes : aujourd'hui (en direct), un jour, 7 derniers jours, ou moyennes sur 4 à 26 semaines.
  */
 class StaffingController extends Controller
 {
@@ -24,14 +24,23 @@ class StaffingController extends Controller
     public function data(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'weeks' => 'nullable|integer|between:1,26',
+            'period' => 'nullable|in:today,day,week,weeks',
+            'date' => 'nullable|required_if:period,day|date_format:Y-m-d',
+            'weeks' => 'nullable|integer|in:4,8,12,26',
             'team' => ['nullable', 'string', 'regex:/^[a-z0-9_-]{1,40}$/'],
         ]);
         abort_unless(config('services.telephony_api.url') && config('services.telephony_api.token'), 404);
 
-        $params = ['weeks' => (int) ($validated['weeks'] ?? 8), 'team' => $validated['team'] ?? 'all'];
+        $period = $validated['period'] ?? 'today';
+        $params = ['period' => $period, 'team' => $validated['team'] ?? 'all'];
+        if ($period === 'day') {
+            $params['date'] = $validated['date'];
+        }
+        if ($period === 'weeks') {
+            $params['weeks'] = (int) ($validated['weeks'] ?? 8);
+        }
 
-        // Courte durée : un changement de l'occupation visée doit se voir vite
+        // Courte durée : « Aujourd'hui » est relu toutes les 5 min
         $result = Cache::remember('telephony-api:staffing:'.http_build_query($params), 60, function () use ($params) {
             try {
                 $response = Http::withToken(config('services.telephony_api.token'))

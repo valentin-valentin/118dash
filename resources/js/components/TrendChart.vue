@@ -14,6 +14,7 @@ import VueApexCharts from 'vue3-apexcharts'
  * @prop {Boolean}  legend      Légende Apex (désactivée quand la légende est faite à côté en HTML)
  * @prop {String}   fontFamily  Police des axes (par défaut celle de la page)
  * @prop {Boolean}  dataLabels  Valeur affichée sur chaque point (séries pleines uniquement)
+ * @prop {Number}   ticks       Nombre maximum de libellés sur l'axe X (moins pour un graphique étroit)
  */
 const props = defineProps({
     categories: { type: Array, default: () => [] },
@@ -24,6 +25,7 @@ const props = defineProps({
     legend: { type: Boolean, default: true },
     fontFamily: { type: String, default: 'inherit' },
     dataLabels: { type: Boolean, default: false },
+    ticks: { type: Number, default: 12 },
 })
 
 // ApexCharts perd les formateurs de l'axe lors d'une mise à jour : on recrée le graphique
@@ -67,7 +69,7 @@ const options = computed(() => ({
     },
     xaxis: {
         categories: props.categories,
-        tickAmount: Math.min(props.categories.length, 12),
+        tickAmount: Math.min(props.categories.length, props.ticks),
         labels: { rotate: 0, hideOverlappingLabels: true, style: { colors: '#6b7280', fontSize: '11px' } },
         axisBorder: { color: '#e5e7eb' },
         axisTicks: { show: false },

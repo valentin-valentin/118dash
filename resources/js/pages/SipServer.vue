@@ -483,6 +483,14 @@ function breakDuration(seconds) {
     return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`
 }
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`
+// « Habituellement calme : 16:00–18:00 · Pic : 10:00–12:30 » (plages fusionnées ; ancienne liste de créneaux en attendant)
+function usualLine(usual) {
+    if (!usual) return null
+    if (!Array.isArray(usual.quietRanges)) return `Habituellement calme : ${usual.quietest?.length ? usual.quietest.join(', ') : '—'}`
+    const calm = `Habituellement calme : ${usual.quietRanges.length ? usual.quietRanges.join(', ') : '—'}`
+    return usual.busyRanges?.length ? `${calm} · Pic : ${usual.busyRanges.join(', ')}` : calm
+}
+const SLOT_LEVELS = { calm: { bar: 'bg-emerald-200', label: 'calme' }, normal: { bar: 'bg-gray-200', label: 'normal' }, busy: { bar: 'bg-gray-500', label: 'chargé' } }
 const parisHm = () => new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(now.value)
 const pauses = computed(() => {
     const d = breakAdvice.value?.ok ? breakAdvice.value.data : null
@@ -508,7 +516,6 @@ const pauses = computed(() => {
                 ? `${plural(agents.free, 'agent libre', 'agents libres')} pour ${plural(waiting.total + intro.total, 'appelant', 'appelants')} en attente ou dans l'accueil`
                 : null,
         callersTitle: `En attente d'un agent : ${side(waiting.server)} chez nous, ${side(waiting.voxnode)} chez Voxnode. Dans l'accueil ou l'attente forcée : ${side(intro.server)} chez nous, ${side(intro.voxnode)} chez Voxnode.`,
-        okMargin: live.okMargin,
         breaksLine:
             agents.online != null
                 ? `${agents.onBreak ?? 0} en pause sur ${agents.online} connectés${agents.lunch ? ` (dont ${agents.lunch} en déjeuner)` : ''}`
@@ -520,8 +527,10 @@ const pauses = computed(() => {
         }),
         requested: [...requested],
         usual: d.usual ?? null,
-        quietest: d.usual?.quietest ?? [],
-        slots: (d.usual?.slots ?? []).map((sl) => ({ ...sl, current: sl.slot <= hm && hm < sl.end })),
+        // Service fermé ou aucun agent : seulement la pastille et les créneaux habituels
+        live: !['closed', 'nobody'].includes(live.verdict),
+        usualLine: usualLine(d.usual),
+        slots: (d.usual?.slots ?? []).map((sl) => ({ ...sl, current: sl.slot <= hm && hm < sl.end, tick: /^(\d\d):00$/.test(sl.slot) && Number(sl.slot.slice(0, 2)) % 2 === 0 })),
     }
 })
 
@@ -835,9 +844,9 @@ const sinceLastRun = computed(() => {
                         </template>
                         <span v-else class="text-sm text-red-600">Impossible de lire le conseil de pause. Erreur : {{ breakAdvice.error }}</span>
                     </header>
-                    <div v-if="pauses" class="grid grid-cols-1 items-start gap-x-6 gap-y-4 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                        <div class="min-w-0 space-y-3">
-                            <table class="text-sm">
+                    <div v-if="pauses" class="grid grid-cols-1 items-start gap-x-6 gap-y-4 px-3 py-3" :class="pauses.live && pauses.breaks.length && 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'">
+                        <div class="min-w-0 space-y-3" :class="!(pauses.live && pauses.breaks.length) && 'lg:max-w-[calc(50%-0.75rem)]'">
+                            <table v-if="pauses.live" class="text-sm">
                                 <tbody>
                                     <tr class="hover:bg-gray-50">
                                         <td class="py-1 pr-4 whitespace-nowrap text-gray-500">En pause</td>
@@ -850,10 +859,6 @@ const sinceLastRun = computed(() => {
                                             <template v-else>—</template>
                                         </td>
                                     </tr>
-                                    <tr v-if="pauses.okMargin != null" class="hover:bg-gray-50">
-                                        <td class="py-1 pr-4 whitespace-nowrap text-gray-500">Bon moment si</td>
-                                        <td class="py-1 text-gray-900">au moins {{ pauses.okMargin }} agent{{ pauses.okMargin > 1 ? 's' : '' }} libre{{ pauses.okMargin > 1 ? 's' : '' }} en plus des appelants</td>
-                                    </tr>
                                 </tbody>
                             </table>
 
@@ -861,33 +866,30 @@ const sinceLastRun = computed(() => {
                             <div v-if="pauses.usual">
                                 <p v-if="pauses.usual.closedToday" class="text-sm text-gray-600">Fermé aujourd'hui</p>
                                 <template v-else>
-                                    <p class="text-sm text-gray-600">
-                                        <span class="text-gray-500">Habituellement calme :</span>&#32;<span class="text-gray-900">{{ pauses.quietest.length ? pauses.quietest.join(', ') : '—' }}</span>
-                                    </p>
+                                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                                        <p class="text-sm text-gray-900">{{ pauses.usualLine }}</p>
+                                        <span v-if="pauses.slots.length" class="flex items-center gap-3 text-xs text-gray-400">
+                                            <span v-for="(l, key) in SLOT_LEVELS" :key="key" class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm" :class="l.bar" />{{ l.label.charAt(0).toUpperCase() + l.label.slice(1) }}</span>
+                                        </span>
+                                    </div>
                                     <div v-if="pauses.slots.length" class="mt-2">
-                                        <div class="flex h-12 items-end gap-0.5">
+                                        <div class="flex h-8 items-end gap-0.5">
                                             <div
                                                 v-for="sl in pauses.slots"
                                                 :key="sl.slot"
-                                                class="flex h-full min-w-0 flex-1 items-end rounded-sm"
-                                                :class="sl.current ? 'bg-gray-100 ring-1 ring-gray-900' : ''"
-                                                :title="`${sl.slot}–${sl.end} · ${String(sl.share).replace('.', ',')} % des appels de la journée · ${{ calm: 'calme', normal: 'normal', busy: 'chargé' }[sl.level] ?? sl.level}${sl.current ? ' · en cours' : ''}`"
+                                                class="flex h-full min-w-0 flex-1 items-end"
+                                                :title="`${sl.slot}–${sl.end} · ${String(sl.share).replace('.', ',')} % des appels de la journée · ${SLOT_LEVELS[sl.level]?.label ?? sl.level}${sl.current ? ' · en cours' : ''}`"
                                             >
                                                 <div
                                                     class="w-full rounded-t-sm"
-                                                    :class="{ calm: 'bg-emerald-400', normal: 'bg-gray-300', busy: 'bg-amber-500' }[sl.level] ?? 'bg-gray-300'"
-                                                    :style="{ height: `${Math.max(8, (sl.share / Math.max(...pauses.slots.map((x) => x.share), 1)) * 100)}%` }"
+                                                    :class="[SLOT_LEVELS[sl.level]?.bar ?? 'bg-gray-200', sl.current && 'ring-1 ring-gray-900']"
+                                                    :style="{ height: `${Math.max(10, (sl.share / Math.max(...pauses.slots.map((x) => x.share), 1)) * 100)}%` }"
                                                 />
                                             </div>
                                         </div>
-                                        <div class="mt-1 flex justify-between text-xs tabular-nums text-gray-400">
-                                            <span>{{ pauses.slots[0].slot }}</span>
-                                            <span class="flex items-center gap-3">
-                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-emerald-400" />Calme</span>
-                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-300" />Normal</span>
-                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-amber-500" />Chargé</span>
-                                            </span>
-                                            <span>{{ pauses.slots[pauses.slots.length - 1].end }}</span>
+                                        <!-- Repères toutes les 2 h, sous la demi-heure qui commence à l'heure -->
+                                        <div class="mt-1 flex gap-0.5 text-xs tabular-nums text-gray-400">
+                                            <div v-for="sl in pauses.slots" :key="sl.slot" class="min-w-0 flex-1 overflow-visible whitespace-nowrap">{{ sl.tick ? sl.slot : '' }}</div>
                                         </div>
                                     </div>
                                     <p v-if="pauses.usual.basedOn?.length" class="mt-1 text-xs text-gray-400">
@@ -897,8 +899,8 @@ const sinceLastRun = computed(() => {
                             </div>
                         </div>
 
-                        <!-- Agents en pause, du plus ancien au plus récent -->
-                        <div class="min-w-0 overflow-hidden rounded-lg border border-gray-100">
+                        <!-- Agents en pause, du plus ancien au plus récent (masqué s'il n'y a personne) -->
+                        <div v-if="pauses.live && pauses.breaks.length" class="min-w-0 overflow-hidden rounded-lg border border-gray-100">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="border-b border-gray-100 text-xs text-gray-500">
@@ -918,9 +920,6 @@ const sinceLastRun = computed(() => {
                                         >
                                             {{ b.since }}
                                         </td>
-                                    </tr>
-                                    <tr v-if="!pauses.breaks.length">
-                                        <td colspan="3" class="px-3 py-2 text-gray-400">Aucun agent en pause</td>
                                     </tr>
                                 </tbody>
                             </table>
