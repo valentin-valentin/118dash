@@ -37,7 +37,7 @@ const preset = ref('7d')
 const customFrom = ref(iso(addDays(new Date(), -30)))
 const customTo = ref(iso(new Date()))
 const compare = ref(true)
-// dedi014 / dedi015 dans un groupe à part (config/callcenters.php)
+// dedi005 / dedi015 dans un groupe à part (config/callcenters.php)
 const splitRemote = ref(false)
 
 // Centres : ceux de la config cochés par défaut, les autres décochés.

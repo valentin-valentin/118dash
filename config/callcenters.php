@@ -28,7 +28,7 @@ return [
     'madagascar_remote' => [
         'label' => 'Madagascar Remote',
         'color' => '#eda100',
-        'agents' => ['dedi014', 'dedi015'],
+        'agents' => ['dedi005', 'dedi015'],
         'optional' => true,
         'costs' => ['2020-01' => 0],
     ],

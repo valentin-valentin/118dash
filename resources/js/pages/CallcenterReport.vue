@@ -510,14 +510,15 @@ const ready = computed(() => !!data.value)
                     </thead>
                     <tbody v-for="s in SECTIONS" :key="s.title">
                         <tr>
-                            <td :colspan="columns.length + 1" class="pb-0.5 pt-2.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ s.title }}</td>
+                            <td :colspan="columns.length + 1" class="pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500">{{ s.title }}</td>
                         </tr>
                         <tr v-for="r in s.rows" :key="s.title + r.key" class="border-b border-gray-100">
-                            <td class="py-[3px] text-gray-700" :class="{ 'pl-4 text-gray-500': r.indent }">{{ r.label }}</td>
+                            <!-- Lignes serrées : la synthèse (finance comprise) tient sur la première page A4 -->
+                            <td class="py-px text-gray-700" :class="{ 'pl-4 text-gray-500': r.indent }">{{ r.label }}</td>
                             <td
                                 v-for="c in columns"
                                 :key="c.id"
-                                class="py-[3px] pl-4 pr-3 text-right tabular-nums"
+                                class="py-px pl-4 pr-3 text-right tabular-nums"
                                 :class="{ 'border-l border-gray-200 bg-gray-50': c.id === '_all' }"
                             >
                                 <span class="font-medium" :class="c.id === '_all' ? 'text-gray-600' : 'text-gray-900'">{{ cell(c, r) }}</span>

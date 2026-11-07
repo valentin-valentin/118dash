@@ -208,6 +208,8 @@ function setVoxnodeAuto(key, value) {
     }
     saveTelephony({ [key]: value }, messages[key])
 }
+// Bloc « Pauses » de la page Serveur SIP : agents libres en plus des appelants pour « bon moment pour une pause »
+const breakForm = numberForm({ break_advice_ok_margin: { min: 0, max: 20, error: 'La marge pour « bon moment pour une pause » doit être entre 0 et 20 agents.' } })
 const aiForm = numberForm({ ai_daily_calls: { min: 0, max: 1000, error: 'Le test des agents IA accepte entre 0 et 1 000 appels par jour.' } })
 
 
@@ -957,6 +959,27 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                     <template v-if="aiForm.dirty">
                                         <Button type="button" variant="outline" size="sm" :disabled="busy" @click="aiForm.reset()">Annuler</Button>
                                         <Button type="submit" size="sm" :disabled="busy || !!aiForm.error">Enregistrer</Button>
+                                    </template>
+                                </footer>
+                            </form>
+
+                            <!-- Bloc « Pauses » de la page Serveur SIP -->
+                            <form v-if="breakForm.available.length" class="rounded-lg border border-gray-100 bg-white" @submit.prevent="breakForm.save()">
+                                <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
+                                    <div>
+                                        <Label for="break-margin" class="text-gray-900">Marge pour « bon moment pour une pause » (agents libres en plus des appelants)</Label>
+                                        <p class="text-sm text-gray-500">La page Serveur SIP affiche « Bon moment pour une pause » quand il y a au moins {{ telSettings.break_advice_ok_margin }} agents libres de plus que d'appelants en attente ou dans l'accueil. Indication seulement : une pause n'est jamais bloquée.</p>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-sm text-gray-600">
+                                        <Input id="break-margin" v-model.number="breakForm.values.break_advice_ok_margin" type="number" min="0" max="20" class="h-9 w-24 text-right tabular-nums" />
+                                        agents
+                                    </div>
+                                </div>
+                                <footer v-if="breakForm.dirty || breakForm.error" class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
+                                    <span v-if="breakForm.error" class="mr-auto text-sm text-red-600">{{ breakForm.error }}</span>
+                                    <template v-if="breakForm.dirty">
+                                        <Button type="button" variant="outline" size="sm" :disabled="busy" @click="breakForm.reset()">Annuler</Button>
+                                        <Button type="submit" size="sm" :disabled="busy || !!breakForm.error">Enregistrer</Button>
                                     </template>
                                 </footer>
                             </form>

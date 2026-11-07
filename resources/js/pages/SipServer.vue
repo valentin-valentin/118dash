@@ -451,6 +451,79 @@ const callSeconds = computed(() => Object.fromEntries(liveCalls.value.filter((c)
 const moving = (a) => !!a.current_platform && !!a.wanted_platform && a.current_platform !== a.wanted_platform
 const countOn = (list, key) => list.filter((a) => a.current_platform === key).length
 
+// ─── Pauses : bon moment ou non pour qu'un agent parte en pause (indication seulement) ───
+// GET /data/telephony/break-advice (API voxnode118), relu toutes les 15 s
+const BREAK_ADVICE_MS = 15000
+const breakAdvice = ref(null)
+const breakAdviceAt = ref(0)
+async function loadBreakAdvice() {
+    const res = await fetch('/data/telephony/break-advice', { headers: { Accept: 'application/json' } }).catch(() => null)
+    if (res?.status === 404) return (breakAdvice.value = null)
+    breakAdvice.value = res?.ok ? await res.json() : { ok: false, error: res ? `Erreur HTTP ${res.status}` : 'Serveur injoignable' }
+    breakAdviceAt.value = Date.now()
+}
+let breakTimer = null
+onMounted(() => {
+    loadBreakAdvice()
+    breakTimer = setInterval(() => document.visibilityState === 'visible' && loadBreakAdvice(), BREAK_ADVICE_MS)
+})
+onUnmounted(() => clearInterval(breakTimer))
+
+const BREAK_VERDICTS = {
+    ok: { dot: 'bg-emerald-500', text: 'text-emerald-700', box: 'border-emerald-200 bg-emerald-50' },
+    tight: { dot: 'bg-amber-500', text: 'text-amber-800', box: 'border-amber-200 bg-amber-50' },
+    busy: { dot: 'bg-red-500', text: 'text-red-700', box: 'border-red-200 bg-red-50' },
+    unknown: { dot: 'bg-gray-400', text: 'text-gray-600', box: 'border-gray-200 bg-gray-50' },
+}
+// Au-delà de ces durées, une pause est mise en évidence (sans doute un oubli)
+const BREAK_LIMITS = { lunch: 60 * 60, pause: 20 * 60 }
+// « 2 h 16 », « 9 min »
+function breakDuration(seconds) {
+    const m = Math.floor(seconds / 60)
+    return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`
+}
+const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`
+const parisHm = () => new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(now.value)
+const pauses = computed(() => {
+    const d = breakAdvice.value?.ok ? breakAdvice.value.data : null
+    if (!d) return null
+    const live = d.live ?? {}
+    const verdict = BREAK_VERDICTS[live.verdict] ? live.verdict : 'unknown'
+    const callers = live.callers ?? {}
+    const waiting = callers.waiting ?? {}
+    const intro = callers.introOrForced ?? {}
+    const agents = live.agents ?? {}
+    const elapsed = Math.max(0, Math.floor((now.value - breakAdviceAt.value) / 1000))
+    const requested = new Set(live.breaksRequested ?? [])
+    const hm = parisHm()
+    const side = (v) => (v === null || v === undefined ? '—' : v)
+    return {
+        verdict,
+        style: BREAK_VERDICTS[verdict],
+        message: live.message,
+        // Agents libres face aux appelants qui auront besoin d'un agent maintenant ou sous 2-3 min
+        callersLine:
+            agents.free != null && waiting.total != null && intro.total != null
+                ? `${plural(agents.free, 'agent libre', 'agents libres')} pour ${plural(waiting.total + intro.total, 'appelant', 'appelants')} en attente ou dans l'accueil`
+                : null,
+        callersTitle: `En attente d'un agent : ${side(waiting.server)} chez nous, ${side(waiting.voxnode)} chez Voxnode. Dans l'accueil ou l'attente forcée : ${side(intro.server)} chez nous, ${side(intro.voxnode)} chez Voxnode.`,
+        okMargin: live.okMargin,
+        breaksLine:
+            agents.online != null
+                ? `${agents.onBreak ?? 0} en pause sur ${agents.online} connectés${agents.lunch ? ` (dont ${agents.lunch} en déjeuner)` : ''}`
+                : null,
+        breaks: (live.breaks ?? []).map((b) => {
+            const seconds = b.sinceSec + elapsed
+            const limit = BREAK_LIMITS[b.type]
+            return { ...b, kind: b.type, label: b.name ? `${b.id} · ${b.name}` : b.id, type: BREAK_TYPES[b.type] ?? b.type, since: breakDuration(seconds), long: !!limit && seconds > limit }
+        }),
+        requested: [...requested],
+        usual: d.usual ?? null,
+        quietest: d.usual?.quietest ?? [],
+        slots: (d.usual?.slots ?? []).map((sl) => ({ ...sl, current: sl.slot <= hm && hm < sl.end })),
+    }
+})
+
 // ─── 3. En ce moment : appels, puis agents ────────────────────────────────────
 // Répartition d'une liste d'agents entre les deux plateformes (null sans l'API voxnode118)
 const split = (list) => (tel.value ? { ours: countOn(list, 'selfhosted'), theirs: countOn(list, 'voxnode') } : null)
@@ -747,6 +820,113 @@ const sinceLastRun = computed(() => {
                         <p v-if="section.note" class="border-t border-gray-50 px-3 py-1.5 text-xs text-gray-400">{{ section.note }}</p>
                     </div>
                 </div>
+
+                <!-- Pauses : bon moment ou non pour qu'un agent parte en pause -->
+                <section v-if="breakAdvice" class="rounded-lg border border-gray-100 bg-white">
+                    <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-100 px-3 py-2">
+                        <h2 class="text-sm font-semibold text-gray-900">Pauses</h2>
+                        <template v-if="pauses">
+                            <span class="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm font-medium" :class="[pauses.style.box, pauses.style.text]">
+                                <span class="h-2 w-2 rounded-full" :class="pauses.style.dot" />
+                                {{ pauses.message || '—' }}
+                            </span>
+                            <span v-if="pauses.callersLine" class="text-sm text-gray-600" :title="pauses.callersTitle">{{ pauses.callersLine }}</span>
+                        </template>
+                        <span v-else class="text-sm text-red-600">Impossible de lire le conseil de pause. Erreur : {{ breakAdvice.error }}</span>
+                    </header>
+                    <div v-if="pauses" class="grid grid-cols-1 items-start gap-x-6 gap-y-4 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                        <div class="min-w-0 space-y-3">
+                            <table class="text-sm">
+                                <tbody>
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="py-1 pr-4 whitespace-nowrap text-gray-500">En pause</td>
+                                        <td class="py-1 text-gray-900">{{ pauses.breaksLine ?? '—' }}</td>
+                                    </tr>
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="py-1 pr-4 whitespace-nowrap text-gray-500">Pauses demandées</td>
+                                        <td class="py-1 text-gray-900">
+                                            <template v-if="pauses.requested.length">{{ pauses.requested.join(', ') }} <span class="text-gray-400">· commenceront à la fin de leur appel</span></template>
+                                            <template v-else>—</template>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="pauses.okMargin != null" class="hover:bg-gray-50">
+                                        <td class="py-1 pr-4 whitespace-nowrap text-gray-500">Bon moment si</td>
+                                        <td class="py-1 text-gray-900">au moins {{ pauses.okMargin }} agent{{ pauses.okMargin > 1 ? 's' : '' }} libre{{ pauses.okMargin > 1 ? 's' : '' }} en plus des appelants</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- Journée habituelle : forme des 4 derniers mêmes jours de semaine, sans nombre d'appels prévu -->
+                            <div v-if="pauses.usual">
+                                <p v-if="pauses.usual.closedToday" class="text-sm text-gray-600">Fermé aujourd'hui</p>
+                                <template v-else>
+                                    <p class="text-sm text-gray-600">
+                                        <span class="text-gray-500">Habituellement calme :</span>&#32;<span class="text-gray-900">{{ pauses.quietest.length ? pauses.quietest.join(', ') : '—' }}</span>
+                                    </p>
+                                    <div v-if="pauses.slots.length" class="mt-2">
+                                        <div class="flex h-12 items-end gap-0.5">
+                                            <div
+                                                v-for="sl in pauses.slots"
+                                                :key="sl.slot"
+                                                class="flex h-full min-w-0 flex-1 items-end rounded-sm"
+                                                :class="sl.current ? 'bg-gray-100 ring-1 ring-gray-900' : ''"
+                                                :title="`${sl.slot}–${sl.end} · ${String(sl.share).replace('.', ',')} % des appels de la journée · ${{ calm: 'calme', normal: 'normal', busy: 'chargé' }[sl.level] ?? sl.level}${sl.current ? ' · en cours' : ''}`"
+                                            >
+                                                <div
+                                                    class="w-full rounded-t-sm"
+                                                    :class="{ calm: 'bg-emerald-400', normal: 'bg-gray-300', busy: 'bg-amber-500' }[sl.level] ?? 'bg-gray-300'"
+                                                    :style="{ height: `${Math.max(8, (sl.share / Math.max(...pauses.slots.map((x) => x.share), 1)) * 100)}%` }"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div class="mt-1 flex justify-between text-xs tabular-nums text-gray-400">
+                                            <span>{{ pauses.slots[0].slot }}</span>
+                                            <span class="flex items-center gap-3">
+                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-emerald-400" />Calme</span>
+                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-gray-300" />Normal</span>
+                                                <span class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm bg-amber-500" />Chargé</span>
+                                            </span>
+                                            <span>{{ pauses.slots[pauses.slots.length - 1].end }}</span>
+                                        </div>
+                                    </div>
+                                    <p v-if="pauses.usual.basedOn?.length" class="mt-1 text-xs text-gray-400">
+                                        D'après les {{ pauses.usual.basedOn.length }} derniers {{ new Date(pauses.usual.basedOn[0]).toLocaleDateString('fr-FR', { weekday: 'long' }) }}s
+                                    </p>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Agents en pause, du plus ancien au plus récent -->
+                        <div class="min-w-0 overflow-hidden rounded-lg border border-gray-100">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-gray-100 text-xs text-gray-500">
+                                        <th class="px-3 py-1.5 text-left font-medium">Agent en pause</th>
+                                        <th class="px-2 py-1.5 text-left font-medium">Type</th>
+                                        <th class="px-3 py-1.5 text-right font-medium">Depuis</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="b in pauses.breaks" :key="b.id" class="border-t border-gray-50 hover:bg-gray-50">
+                                        <td class="px-3 py-1 whitespace-nowrap text-gray-900">{{ b.label }}</td>
+                                        <td class="px-2 py-1 whitespace-nowrap text-gray-600">{{ b.type }}</td>
+                                        <td
+                                            class="px-3 py-1 text-right whitespace-nowrap tabular-nums"
+                                            :class="b.long ? 'font-semibold text-red-600' : 'text-gray-900'"
+                                            :title="b.long ? (b.kind === 'lunch' ? 'Déjeuner de plus de 60 min' : 'Pause de plus de 20 min') : undefined"
+                                        >
+                                            {{ b.since }}
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!pauses.breaks.length">
+                                        <td colspan="3" class="px-3 py-2 text-gray-400">Aucun agent en pause</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <p class="border-t border-gray-50 px-3 py-1.5 text-xs text-gray-400">Indication seulement : une pause n'est jamais bloquée.</p>
+                </section>
 
                 <!-- Appels et agents, côte à côte -->
                 <div class="grid grid-cols-1 items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_27rem]">

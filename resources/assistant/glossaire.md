@@ -91,10 +91,14 @@ Les pages du panel comportent quelques incohérences de fuseau (signalées ci-de
 | Coût mensuel d'un centre | `config/callcenters.php` → `costs` : Madagascar 13 000 €, Madagascar Remote 0 €, Lamia 10 000 €, Maroc 400 € (effet `2020-01`). Pour un mois M : dernière entrée dont la clé `YYYY-MM` ≤ M | n'existe pas en base |
 | Coût alloué sur une période | mois entier : coût mensuel ; mois partiel : `coût_mensuel × jours_couverts / jours_du_mois` (jours de Paris), marqué « estimé ». Somme sur les mois. NULL si aucune entrée | Performance |
 | Coût d'un agent | `coût_centre × jours_actifs_agent / journées_agent_du_centre` | Performance (prorata jours) |
-| **Marge** (Performance) | `payout - coût_centre` | **ne déduit pas payout_source** (≠ Bénéfice du Dashboard) |
-| Taux de marge | `marge / payout` | |
-| Payout / coût | `payout / coût` | |
-| Coût par appel, marge par appel | `coût / appels`, `marge / appels` | |
+| **Coût sources** (Performance) | `COALESCE(SUM(payout_source),0)` | mêmes appels que le payout (global, centre, agent, jour) |
+| **Marge nette** (Performance) | `payout - payout_source - coût_centre` | marge mise en avant. Pour un agent : coût d'agent (prorata jours) |
+| Taux de marge nette | `marge_nette / payout` | |
+| Marge nette par appel | `marge_nette / appels` | |
+| **Marge après coût centre (hors sources)** (Performance) | `payout - coût_centre` | ancienne « Marge » : **ne déduit pas payout_source** (≠ Bénéfice du Dashboard) |
+| Taux de marge (hors sources) | `marge_hors_sources / payout` | |
+| Payout / coût | `payout / coût_centre` | |
+| Coût par appel, marge par appel (hors sources) | `coût_centre / appels`, `marge_hors_sources / appels` | |
 | Payout / appel | `payout / appels` | |
 | Payout / heure agent | `payout / (SUM(duration_agent)/3600)` | |
 | Payout / journée-agent | `payout / agent_days` | |
@@ -121,7 +125,7 @@ Ordre d'affichage : madagascar, madagascar_remote, lamia, maroc.
 | Clé | Libellé | Règle | Couleur |
 |---|---|---|---|
 | `madagascar` | Madagascar | préfixe `dedi` | #2a78d6 |
-| `madagascar_remote` | Madagascar Remote | noms exacts `dedi014`, `dedi015`, **optional** : seulement si la case « Séparer Madagascar Remote » est cochée (`split_remote=1`), sinon ils restent dans Madagascar | #eda100 |
+| `madagascar_remote` | Madagascar Remote | noms exacts `dedi005`, `dedi015`, **optional** : seulement si la case « Séparer Madagascar Remote » est cochée (`split_remote=1`), sinon ils restent dans Madagascar | #eda100 |
 | `lamia` | Lamia | préfixe `prepose` | #eb6834 |
 | `maroc` | Maroc | nom exact `prepose9TEST` | #1baf7a |
 
@@ -132,7 +136,7 @@ CASE WHEN calls.agent_name = 'prepose9TEST' THEN 'maroc'
      WHEN calls.agent_name LIKE 'prepose%' THEN 'lamia'
      WHEN calls.agent_name LIKE 'dedi%'    THEN 'madagascar' END
 ```
-Avec `split_remote` = 1, ajouter en tête `WHEN calls.agent_name IN ('dedi014','dedi015') THEN 'madagascar_remote'`.
+Avec `split_remote` = 1, ajouter en tête `WHEN calls.agent_name IN ('dedi005','dedi015') THEN 'madagascar_remote'`.
 - Agent = `calls.agent_name` (nom de ligne : dedi003, prepose995…). `agents.voxnode_username = calls.agent_name` (= `agents.name`) permet la jointure vers `agents`.
 - Non attribués : `CASE … END IS NULL` → `COUNT(*)`, `SUM(payout)` affichés à part (« appels sans agent dedi… ou prepose… »). Cela inclut les appels perdus (`agent_name=''`), `'ai'` et `+33118500999@…` (observé).
 - Collation `utf8mb4_unicode_ci` : en SQL, `=` et `LIKE` ignorent la casse ; le code PHP (`centerLabel`) est sensible à la casse.
@@ -140,7 +144,8 @@ Avec `split_remote` = 1, ajouter en tête `WHEN calls.agent_name IN ('dedi014','
 
 ### Agrégats de la page Performance (toutes les sommes)
 ```sql
-COUNT(*) calls, COALESCE(SUM(payout),0) payout, COALESCE(SUM(total_duration),0) total_s,
+COUNT(*) calls, COALESCE(SUM(payout),0) payout, COALESCE(SUM(payout_source),0) payout_source,
+COALESCE(SUM(total_duration),0) total_s,
 COALESCE(SUM(duration_agent),0) agent_s, COALESCE(SUM(duration_transfer),0) transfer_s,
 COALESCE(SUM(total_duration-duration_agent-duration_transfer),0) wait_s,
 COALESCE(SUM(phone_duration_agent),0) talk_s, COALESCE(SUM(phone_duration_pause),0) pause_s,

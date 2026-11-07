@@ -46,6 +46,29 @@ class TelephonyController extends Controller
         return response()->json(['configured' => true, 'fetched_at' => now()->toIso8601String(), ...$result]);
     }
 
+    /**
+     * Conseil de pause (GET /break-advice de voxnode118) : situation en direct et créneaux habituellement calmes du jour.
+     * Indication seulement, aucune pause n'est bloquée.
+     */
+    public function breakAdvice(): JsonResponse
+    {
+        abort_unless($this->configured(), 404);
+
+        $result = Cache::remember('telephony-api:break-advice', 10, function () {
+            try {
+                $response = $this->client()->get('break-advice');
+            } catch (Throwable $e) {
+                return ['ok' => false, 'error' => 'Impossible de joindre le serveur des réglages de téléphonie.'];
+            }
+
+            return $response->successful()
+                ? ['ok' => true, 'data' => $response->json()]
+                : ['ok' => false, 'error' => $response->json('message') ?? $response->json('error') ?? "Erreur HTTP {$response->status()}"];
+        });
+
+        return response()->json($result);
+    }
+
     public function updateSettings(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -67,6 +90,8 @@ class TelephonyController extends Controller
             'regulator_max_moves' => 'sometimes|integer|between:1,10',
             'regulator_cooldown_minutes' => 'sometimes|integer|between:0,60',
             'regulator_wait_seconds' => 'sometimes|integer|between:0,600',
+            // Bloc « Pauses » : agents libres en plus des appelants pour afficher « bon moment pour une pause »
+            'break_advice_ok_margin' => 'sometimes|integer|between:0,20',
             // Appelants prioritaires : pas d'attente forcée
             'priority_min_duration' => 'sometimes|integer|between:1,3600',
             'priority_window_hours' => 'sometimes|integer|between:1,720',
@@ -92,6 +117,7 @@ class TelephonyController extends Controller
             'regulator_max_moves.between' => "Le nombre d'agents déplacés toutes les 30 s doit être entre 1 et 10.",
             'regulator_cooldown_minutes.between' => 'Le délai avant de redéplacer un agent doit être entre 0 et 60 minutes.',
             'regulator_wait_seconds.between' => "L'attente qui déclenche un renfort doit être entre 0 et 600 secondes.",
+            'break_advice_ok_margin.between' => 'La marge pour « bon moment pour une pause » doit être entre 0 et 20 agents.',
             'priority_min_duration.between' => 'La durée minimale d\'appel doit être entre 1 et 3 600 secondes.',
             'priority_window_hours.between' => 'La période doit être entre 1 et 720 heures.',
         ]);

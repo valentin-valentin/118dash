@@ -184,6 +184,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/telephony', [TelephonyController::class, 'status']);
         Route::get('/telephony/network', [TelephonyController::class, 'network']);
         Route::get('/telephony/carriers', [TelephonyController::class, 'carriers']);
+        Route::get('/telephony/break-advice', [TelephonyController::class, 'breakAdvice']);
         Route::put('/telephony/settings', [TelephonyController::class, 'updateSettings']);
         Route::put('/telephony/agents/{agent}', [TelephonyController::class, 'updateAgent'])->whereNumber('agent');
 
