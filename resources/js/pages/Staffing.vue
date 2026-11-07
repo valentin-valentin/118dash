@@ -13,8 +13,8 @@ import { addDays, iso } from '@/lib/performance'
  * Affluence et effectifs (GET /staffing de voxnode118).
  *   1. Grille par demi-heure : une ligne par jour (aujourd'hui, un jour) ou par jour de semaine (moyennes)
  *   2. Évolution jour par jour (7 derniers jours et semaines)
- * Le manque d'agents se mesure à l'attente des clients : décrochés après plus de longWaitMinutes (8 min),
- * l'accueil et l'attente forcée (environ 3 min) étant voulus.
+ * Le manque d'agents se mesure aux clients pénalisés : perdus en attente d'un agent + décrochés après plus de
+ * longWaitMinutes (8 min), l'accueil et l'attente forcée (environ 3 min) étant voulus. Mêmes définitions que Attente et pertes.
  */
 const PERIODS = [
     { key: 'today', label: "Aujourd'hui" },
@@ -65,9 +65,9 @@ async function load() {
 }
 watch(query, (q, old) => JSON.stringify(q) !== JSON.stringify(old) && load(), { immediate: true })
 
-// Aujourd'hui : relu toutes les 5 min
+// Relu toutes les 5 min dès qu'une ligne est en direct (aujourd'hui, ou dernière ligne des 7 derniers jours)
 let timer = null
-onMounted(() => (timer = setInterval(() => preset.value === 'today' && document.visibilityState === 'visible' && load(), 5 * 60 * 1000)))
+onMounted(() => (timer = setInterval(() => live.value && document.visibilityState === 'visible' && load(), 5 * 60 * 1000)))
 onUnmounted(() => clearInterval(timer))
 
 // Gardées d'un chargement à l'autre : le filtre reste utilisable si un chargement échoue
@@ -90,14 +90,16 @@ const longDate = (d) => {
 
 // ─── Grille ───────────────────────────────────────────────────────────────────
 const MODES = [
-    // Clients décrochés après plus de 8 min : rien quand il n'y en a pas ; rouge seulement en manque d'agents
-    { key: 'wait', label: 'Attente', value: (c) => (c.longWaits > 0 ? num(c.longWaits) : '') },
+    // Clients pénalisés faute d'agent libre : rien quand il n'y en a pas ; rouge seulement en manque d'agents
+    { key: 'suffered', label: 'Clients pénalisés', value: (c) => (c.suffered > 0 ? num(c.suffered) : '') },
+    { key: 'lost', label: 'Perdus %', value: (c) => `${fmt(c.lostPct)} %` },
+    { key: 'wait', label: 'Attente moyenne', value: (c) => mmss(c.avgWaitSec) },
     { key: 'occupancy', label: 'Occupation', value: (c) => `${fmt(c.occupancyPct)} %` },
     { key: 'calls', label: 'Appels', value: (c) => num(c.calls) },
     { key: 'agents', label: 'Agents', value: (c) => num(c.agents) },
     { key: 'breaks', label: 'Pauses + déjeuner', value: (c) => fmt((c.onPause ?? 0) + (c.onLunch ?? 0), 1) },
 ]
-const mode = ref('wait')
+const mode = ref('suffered')
 const currentMode = computed(() => MODES.find((m) => m.key === mode.value))
 
 const LEVELS = {
@@ -123,9 +125,12 @@ const slotEnd = (slot) => {
 const details = (c) => [
     ['Appels', num(c.calls)],
     ['Décrochés', num(c.answered)],
-    ['Non décrochés', `${fmt(c.notAnsweredPct)} %`],
+    ['Perdus', `${num(c.lost)} (${fmt(c.lostPct)} %)`],
+    ["dont en attente d'un agent", num(c.lostQueue)],
     ['Attente moyenne avant décroché', mmss(c.avgWaitSec)],
-    [`Attente de plus de ${longWait.value} min`, `${num(c.longWaits)} (${fmt(c.longWaitPct, 1)} %)`],
+    [`Décrochés après plus de ${longWait.value} min`, num(c.longWaits)],
+    ['Temps moyen avant de raccrocher (perdus)', mmss(c.avgAbandonSec)],
+    null,
     ['Agents au travail', num(c.agents)],
     ['En appel ou pause après appel', num(c.busy)],
     ['En pause', num(c.onPause)],
@@ -169,9 +174,12 @@ const evoCharts = computed(() => [
         ],
     },
     {
-        title: `Clients ayant attendu plus de ${longWait.value} min`,
+        title: 'Clients pénalisés',
         format: (v) => fmt(v),
-        series: [{ name: 'Clients', color: '#111827', data: evolution.value.map((d) => d.longWaits) }],
+        series: [
+            { name: 'Clients pénalisés', color: '#111827', data: evolution.value.map((d) => d.suffered) },
+            { name: 'dont perdus en attente', color: '#9ca3af', data: evolution.value.map((d) => d.lostQueue) },
+        ],
     },
 ])
 </script>
@@ -263,7 +271,7 @@ const evoCharts = computed(() => [
                                         <TooltipTrigger as-child>
                                             <div
                                                 class="flex h-9 cursor-default items-center justify-center rounded-sm text-sm font-semibold tabular-nums"
-                                                :class="[(LEVELS[r.bySlot[s].level] ?? LEVELS.none).cell, mode === 'wait' && r.bySlot[s].level !== 'short' && 'text-gray-600']"
+                                                :class="[(LEVELS[r.bySlot[s].level] ?? LEVELS.none).cell, mode === 'suffered' && r.bySlot[s].level !== 'short' && 'text-gray-600']"
                                             >
                                                 {{ currentMode.value(r.bySlot[s]) }}
                                             </div>
@@ -272,10 +280,13 @@ const evoCharts = computed(() => [
                                             <p class="mb-1 font-semibold">{{ r.label }}, {{ s }}–{{ slotEnd(s) }}</p>
                                             <table class="text-xs">
                                                 <tbody>
-                                                    <tr v-for="[label, value] in details(r.bySlot[s])" :key="label">
-                                                        <td class="pr-3 opacity-70">{{ label }}</td>
-                                                        <td class="text-right tabular-nums">{{ value }}</td>
-                                                    </tr>
+                                                    <template v-for="(line, i) in details(r.bySlot[s])" :key="i">
+                                                        <tr v-if="line">
+                                                            <td class="pr-3 opacity-70">{{ line[0] }}</td>
+                                                            <td class="text-right tabular-nums">{{ line[1] }}</td>
+                                                        </tr>
+                                                        <tr v-else><td colspan="2" class="py-1"><div class="border-t border-white/20" /></td></tr>
+                                                    </template>
                                                 </tbody>
                                             </table>
                                         </TooltipContent>
@@ -304,9 +315,11 @@ const evoCharts = computed(() => [
                         </span>
                     </div>
                     <p>
-                        Manque d'agents : au moins 2 % des clients décrochés après plus de {{ longWait }} minutes d'attente (l'accueil et l'attente forcée, environ 3 minutes, sont voulus).
-                        Trop d'agents : aucune attente anormale et des agents en appel moins de la moitié du temps. Fermé : hors des horaires.
+                        Clients pénalisés : perdus en attente d'un agent (notre serveur : exact ; Voxnode : raccrochés après 4 min, une fois l'accueil et l'attente forcée passés)
+                        + décrochés après plus de {{ longWait }} minutes. Manque d'agents : au moins 3 % des appels. Trop d'agents : aucun client pénalisé et des agents en appel
+                        moins de la moitié du temps. Fermé : hors des horaires. Mêmes définitions que la page Attente et pertes.
                     </p>
+                    <p v-if="data?.team && data.team !== 'all'">Par équipe : seuls les appels décrochés par ses agents sont comptés ; les perdus n'appartiennent à aucune équipe.</p>
                 </div>
             </section>
 
