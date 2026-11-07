@@ -22,7 +22,8 @@ use Throwable;
  * - Accès : session du panel, ou ?key= égal au réglage superviseur_key (clé par défaut ci-dessous).
  * - Le HTML de Fred n'est jamais modifié : un script de liaison est seulement ajouté avant le dernier </body>.
  *   Il pose les données du moment (window.__SUPERVISEUR_INITIAL__), appelle window.updateDashboard, puis relit
- *   /superviseur/data toutes les 5 s.
+ *   /superviseur/data toutes les 5 s. Pour l'historique, il répond à window.onVoxnodeHistoryRequested(date)
+ *   en lisant /superviseur/data?date= puis en appelant window.updateDashboardHistory(date, archive).
  * - Isolement : la page est servie avec « Content-Security-Policy: sandbox allow-scripts » (sans allow-same-origin).
  *   Ses scripts tournent normalement (y compris en ligne) mais dans une origine à part : ils n'ont accès ni à la
  *   session ni aux cookies du panel. C'est pourquoi le script de liaison relit les données avec la clé.
@@ -59,9 +60,15 @@ class SuperviseurController extends Controller
      * Données au format de window.updateDashboard, relayées depuis voxnode118 (5 s de cache).
      * Lue par la page isolée (origine à part) : accès par la clé, réponse ouverte aux autres origines (CORS).
      */
-    public function data(Request $request): JsonResponse
+    public function data(Request $request): HttpResponse|JsonResponse
     {
         abort_unless($this->allowed($request), 403);
+
+        // Archive d'une journée (?date=AAAA-MM-JJ) : 2 à 3 Mo, relayée sans être décodée
+        if ($request->has('date')) {
+            return $this->archive((string) $request->query('date'));
+        }
+
         $data = $this->supervisorData();
 
         $response = $data['ok']
@@ -69,6 +76,44 @@ class SuperviseurController extends Controller
             : response()->json(['error' => $data['error']], 502);
 
         return $response->header('Access-Control-Allow-Origin', '*')->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Archive d'une journée, relayée depuis voxnode118 (?date=), gardée 10 min. Le corps est renvoyé tel quel :
+     * pas de décodage ni ré-encodage d'un JSON de plusieurs Mo.
+     */
+    private function archive(string $date): HttpResponse|JsonResponse
+    {
+        $cors = ['Access-Control-Allow-Origin' => '*', 'Cache-Control' => 'no-store'];
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return response()->json(['error' => 'Date invalide (AAAA-MM-JJ attendu).'], 422, $cors);
+        }
+
+        $cached = Cache::get("superviseur:archive:{$date}");
+        if (is_string($cached)) {
+            return response($cached, 200, ['Content-Type' => 'application/json', ...$cors]);
+        }
+
+        $url = config('services.telephony_api.url');
+        $token = config('services.telephony_api.token');
+        if (!$url || !$token) {
+            return response()->json(['error' => 'Archive indisponible'], 502, $cors);
+        }
+        try {
+            $response = Http::withToken($token)->acceptJson()->timeout(60)->get($url . '/supervisor', ['date' => $date]);
+        } catch (Throwable) {
+            return response()->json(['error' => 'Archive indisponible'], 502, $cors);
+        }
+        if (!$response->successful()) {
+            // Message de l'API (422 : date future ou mal formée), sinon message générique
+            $message = $response->json('error') ?? $response->json('message') ?? 'Archive indisponible';
+
+            return response()->json(['error' => $message], $response->status() === 422 ? 422 : 502, $cors);
+        }
+
+        Cache::put("superviseur:archive:{$date}", $response->body(), 600);
+
+        return response($response->body(), 200, ['Content-Type' => 'application/json', ...$cors]);
     }
 
     // ─── Réglages (page du panel) ─────────────────────────────────────────────────
@@ -224,6 +269,22 @@ class SuperviseurController extends Controller
     showCover(false);
     return true;
   }
+  // Archives : le template demande une journée, on la lit avec la clé puis on la lui rend (une requête à la fois par date)
+  var pendingDays = {};
+  window.onVoxnodeHistoryRequested = function (day) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || pendingDays[day]) return;
+    pendingDays[day] = true;
+    fetch('/superviseur/data?date=' + encodeURIComponent(day) + '&key=' + encodeURIComponent(KEY), { cache: 'no-store', credentials: 'omit' })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.error || 'Archive indisponible');
+          return body;
+        });
+      })
+      .then(function (snapshot) { window.updateDashboardHistory(day, snapshot); })
+      .catch(function (err) { window.updateDashboardHistory(day, null, (err && err.message) || 'Archive indisponible'); })
+      .then(function () { delete pendingDays[day]; });
+  };
   window.__SUPERVISEUR_INITIAL__ = {$data};
   if (!apply(window.__SUPERVISEUR_INITIAL__)) showCover(true);
   setInterval(function () {

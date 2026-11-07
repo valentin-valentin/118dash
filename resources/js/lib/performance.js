@@ -4,7 +4,7 @@ import { formatQuality } from '@/lib/quality'
 // Les ratios sont toujours calculés à partir des sommes, jamais en moyennant des ratios.
 
 const SUM_FIELDS = [
-    'calls', 'payout', 'total_s', 'agent_s', 'transfer_s', 'wait_s',
+    'calls', 'payout', 'payout_source', 'total_s', 'agent_s', 'transfer_s', 'wait_s',
     'talk_s', 'pause_s', 'phone_calls', 'anomalies', 'agents', 'agent_days', 'days',
     'quality_calls', 'quality_sum', 'quality_degraded',
 ]
@@ -31,7 +31,12 @@ export function metrics(s) {
     const n = (f) => Number(s[f] ?? 0)
     const payout = n('payout')
     const cost = s.cost === null || s.cost === undefined ? null : Number(s.cost)
+    // Reversé aux sources des numéros, sur les mêmes appels que le payout
+    const sourceCost = n('payout_source')
+    // Marge après coût centre, hors sources
     const margin = cost === null ? null : payout - cost
+    // Marge nette : payout - coût sources - coût centre
+    const netMargin = cost === null ? null : payout - sourceCost - cost
 
     // Part conversation / pause du temps agent, mesurée sur les appels qui ont le détail.
     // Appliquée à la durée agent pour que conversation + pause = durée agent.
@@ -49,6 +54,10 @@ export function metrics(s) {
         payout,
         cost,
         cost_estimated: !!s.cost_estimated,
+        source_cost: sourceCost,
+        net_margin: netMargin,
+        net_margin_rate: netMargin === null ? null : div(netMargin, payout),
+        net_margin_per_call: netMargin === null ? null : div(netMargin, n('calls')),
         margin,
         margin_rate: margin === null ? null : div(margin, payout),
         payout_over_cost: cost === null ? null : div(payout, cost),

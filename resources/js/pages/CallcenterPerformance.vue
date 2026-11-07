@@ -21,6 +21,8 @@ const TALK_COST_HINT =
     'Coût du centre sur la période divisé par les minutes de conversation (pause et transfert exclus). ' +
     'Pour un agent : part du coût du centre au prorata de ses jours travaillés.'
 
+const NET_MARGIN_HINT = 'Payout − coût sources − coût du centre'
+
 // ─── Période ──────────────────────────────────────────────────────────────────
 const PRESETS = [
     { key: 'today', label: "Aujourd'hui" },
@@ -186,7 +188,7 @@ function variationClass() {
 const KPIS = [
     { key: 'calls', label: 'Appels', format: fmt.int, better: 'up', sub: (t) => `${fmt.int(t.calls_per_day)} par jour` },
     { key: 'payout', label: 'Payout', format: (v) => fmt.eur(v), better: 'up', sub: (t) => `${fmt.eur(t.payout_per_day)} par jour` },
-    { key: 'margin', label: 'Marge après coût', format: (v) => fmt.eur(v), better: 'up', sub: (t) => (t.cost === null ? 'coût non renseigné' : `${fmt.pct(t.margin_rate)} du payout${t.cost_estimated ? ' · coût estimé' : ''}`) },
+    { key: 'net_margin', label: 'Marge nette', format: (v) => fmt.eur(v), better: 'up', sub: (t) => (t.cost === null ? 'coût non renseigné' : `${fmt.pct(t.net_margin_rate)} du payout · ${fmt.eur(t.margin)} hors sources${t.cost_estimated ? ' · coût estimé' : ''}`) },
     { key: 'payout_per_agent_day', label: 'Payout / journée-agent', format: (v) => fmt.eur(v), better: 'up', sub: (t) => `${fmt.dec(t.calls_per_agent_day)} appels par journée-agent` },
     { key: 'payout_per_agent_hour', label: 'Payout / heure agent', format: (v) => fmt.eur(v, 2), better: 'up', sub: (t) => `${fmt.hours(t.agent_hours)} de temps agent` },
     { key: 'agent_ratio', label: 'Ratio temps agent', format: (v) => fmt.pct(v), better: 'down', sub: (t) => `agent ${fmt.dur(t.avg_agent)} sur ${fmt.dur(t.avg_total)} par appel` },
@@ -208,9 +210,12 @@ const CARD_GROUPS = [
         title: 'Finance',
         rows: [
             { key: 'payout', label: 'Payout', format: (v) => fmt.eur(v) },
-            { key: 'cost', label: 'Coût', format: (v) => fmt.eur(v) },
-            { key: 'margin', label: 'Marge', format: (v) => fmt.eur(v), best: 'max' },
-            { key: 'margin_rate', label: 'Taux de marge', format: (v) => fmt.pct(v), best: 'max' },
+            { key: 'source_cost', label: 'Coût sources', format: (v) => fmt.eur(v) },
+            { key: 'cost', label: 'Coût centre', format: (v) => fmt.eur(v) },
+            { key: 'net_margin', label: 'Marge nette', format: (v) => fmt.eur(v), best: 'max', hint: NET_MARGIN_HINT },
+            { key: 'net_margin_rate', label: 'Taux de marge nette', format: (v) => fmt.pct(v), best: 'max' },
+            { key: 'margin', label: 'Marge après coût centre (hors sources)', format: (v) => fmt.eur(v), best: 'max' },
+            { key: 'margin_rate', label: 'Taux de marge (hors sources)', format: (v) => fmt.pct(v), best: 'max' },
             { key: 'cost_per_talk_minute', label: 'Coût / minute parlée', format: (v) => fmt.eur(v, 3), best: 'min', hint: TALK_COST_HINT },
         ],
     },
@@ -267,12 +272,16 @@ const TABLE = [
         rows: [
             { key: 'payout', label: 'Payout', format: (v) => fmt.eur(v) },
             { key: 'payout_per_call', label: 'Payout par appel', format: (v) => fmt.eur(v, 2), best: 'max' },
+            { key: 'source_cost', label: 'Coût sources', format: (v) => fmt.eur(v) },
             { key: 'cost', label: 'Coût du centre', format: (v) => fmt.eur(v), cost: true },
-            { key: 'margin', label: 'Marge après coût', format: (v) => fmt.eur(v), best: 'max', cost: true },
-            { key: 'margin_rate', label: 'Taux de marge', format: (v) => fmt.pct(v), best: 'max', cost: true },
+            { key: 'net_margin', label: 'Marge nette', format: (v) => fmt.eur(v), best: 'max', cost: true, hint: NET_MARGIN_HINT },
+            { key: 'net_margin_rate', label: 'Taux de marge nette', format: (v) => fmt.pct(v), best: 'max', cost: true },
+            { key: 'margin', label: 'Marge après coût centre (hors sources)', format: (v) => fmt.eur(v), best: 'max', cost: true },
+            { key: 'margin_rate', label: 'Taux de marge (hors sources)', format: (v) => fmt.pct(v), best: 'max', cost: true },
             { key: 'payout_over_cost', label: 'Payout / coût', format: fmt.mult, best: 'max', secondary: true },
             { key: 'cost_per_call', label: 'Coût par appel', format: (v) => fmt.eur(v, 2), best: 'min', secondary: true },
-            { key: 'margin_per_call', label: 'Marge par appel', format: (v) => fmt.eur(v, 2), best: 'max', secondary: true },
+            { key: 'net_margin_per_call', label: 'Marge nette par appel', format: (v) => fmt.eur(v, 2), best: 'max', secondary: true },
+            { key: 'margin_per_call', label: 'Marge par appel (hors sources)', format: (v) => fmt.eur(v, 2), best: 'max', secondary: true },
             { key: 'cost_per_talk_minute', label: 'Coût par minute parlée', format: (v) => fmt.eur(v, 3), best: 'min', cost: true, hint: TALK_COST_HINT },
             { key: 'talk_minutes_per_agent_day', label: 'Minutes parlées par journée-agent', format: (v) => fmt.int(v), best: 'max', secondary: true },
             { key: 'payout_per_agent_hour', label: 'Payout / heure agent', format: (v) => fmt.eur(v, 2), best: 'max' },
@@ -457,6 +466,7 @@ const AGENT_COLUMNS = [
     { key: 'calls_per_day', label: 'Appels par jour', format: (v) => fmt.dec(v) },
     { key: 'payout', label: 'Payout', format: (v) => fmt.eur(v) },
     { key: 'payout_per_day', label: '€/jour', format: (v) => fmt.eur(v) },
+    { key: 'net_margin', label: 'Marge nette', format: (v) => fmt.eur(v), hint: 'Payout − coût sources − part du coût du centre (au prorata des jours travaillés)' },
     { key: 'vs_center', label: 'vs centre', format: (v) => fmt.variation(v), hint: '€ / jour de l\'agent comparé au payout / journée-agent de son centre' },
     { key: 'payout_per_agent_hour', label: '€/h agent', format: (v) => fmt.eur(v, 2) },
     { key: 'payout_per_call', label: '€/appel', format: (v) => fmt.eur(v, 2) },

@@ -112,6 +112,7 @@ class CallcenterPerformanceController extends Controller
     {
         $calls = (int) $r->calls;
         $payout = (float) $r->payout;
+        $sourceCost = (float) $r->payout_source;
         $agentS = (int) $r->agent_s;
         $totalS = (int) $r->total_s;
         $phone = (int) $r->talk_s + (int) $r->pause_s;
@@ -129,6 +130,11 @@ class CallcenterPerformanceController extends Controller
             'jours_actifs' => $r->days ?? '',
             'payout_eur' => round($payout, 2),
             'cout_eur' => $cost === null ? '' : round($cost, 2),
+            'cout_sources' => round($sourceCost, 2),
+            // Marge nette : payout - reversé aux sources - coût du centre
+            'marge_nette' => $cost === null ? '' : round($payout - $sourceCost - $cost, 2),
+            'taux_marge_nette' => $cost === null ? '' : $div($payout - $sourceCost - $cost, $payout, 4),
+            // Marge après coût centre, hors sources
             'marge_eur' => $cost === null ? '' : round($payout - $cost, 2),
             'duree_totale_s' => $totalS,
             'attente_s' => (int) $r->wait_s,
@@ -356,6 +362,7 @@ class CallcenterPerformanceController extends Controller
 
     /**
      * Sommes communes à toutes les agrégations.
+     * payout_source = ce qui est reversé aux sources des numéros, sur les mêmes appels que payout.
      * Attente = total - agent - transfert, sans correction : les appels où elle est
      * négative (durées incohérentes) sont comptés dans `anomalies`.
      * Qualité audio (calls.audio_quality, score MOS 1-5, NULL si non mesuré) : somme et nombre
@@ -366,6 +373,7 @@ class CallcenterPerformanceController extends Controller
         return '
             COUNT(*) AS calls,
             COALESCE(SUM(payout), 0) AS payout,
+            COALESCE(SUM(payout_source), 0) AS payout_source,
             COALESCE(SUM(total_duration), 0) AS total_s,
             COALESCE(SUM(duration_agent), 0) AS agent_s,
             COALESCE(SUM(duration_transfer), 0) AS transfer_s,
