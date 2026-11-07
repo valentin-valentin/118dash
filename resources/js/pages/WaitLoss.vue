@@ -11,7 +11,7 @@ import { addDays, iso } from '@/lib/performance'
 /**
  * Attente et appels perdus, Voxnode et notre serveur côte à côte.
  *   1. Vue d'ensemble : appels, décrochés, perdus, attentes médianes
- *   2. Notre serveur : à quelle étape les appels sont perdus (accueil, attente forcée, faute d'agent)
+ *   2. À quelle étape les appels sont perdus (accueil, attente forcée, faute d'agent), par plateforme
  *   3. Quand les clients raccrochent : abandons par tranche d'attente
  *   4. Par heure, puis jour par jour
  * Les attentes sont comptées depuis le début de l'appel : accueil et attente forcée compris.
@@ -106,14 +106,14 @@ const bucketMax = computed(() =>
     Math.max(0.0001, ...(data.value?.buckets ?? []).flatMap((b) => GROUPS.map((p) => (lostTotal(p.key) ? b[p.key] / lostTotal(p.key) : 0)))),
 )
 
-// ─── Notre serveur : où les appels sont perdus ────────────────────────────────
-const detail = computed(() => data.value?.selfhosted_detail ?? null)
+// ─── À quel moment les appels sont perdus (appels où l'attente forcée et la vraie attente sont connues) ───
+const detailOf = (key) => data.value?.detail?.[key] ?? null
+const hasDetail = computed(() => GROUPS.some((g) => detailOf(g.key)))
 const LOSS_STAGES = [
     { key: 'lost_welcome', label: "Pendant l'accueil", hint: "Raccroché avant la fin de l'accueil", color: '#d1d5db' },
     { key: 'lost_forced', label: "Pendant l'attente forcée", hint: "Raccroché pendant l'attente que nous imposons", color: '#f59e0b' },
     { key: 'lost_queue', label: "Faute d'agent", hint: "Raccroché pendant la vraie attente, aucun agent libre", color: '#dc2626' },
 ]
-const detailLost = computed(() => (detail.value ? LOSS_STAGES.reduce((n, s) => n + detail.value[s.key], 0) : 0))
 
 // ─── Par heure et par jour ────────────────────────────────────────────────────
 // Heures utiles : au moins 1 % de l'heure la plus chargée (la nuit, quelques appels isolés)
@@ -218,57 +218,66 @@ const dayMax = computed(() => maxLoss(days.value))
                 </div>
             </section>
 
-            <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-                <!-- ─── 2. Notre serveur : où les appels sont perdus ─────── -->
+            <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
+                <!-- ─── 2. À quel moment les appels sont perdus, par plateforme ─────── -->
                 <section class="min-w-0 rounded-lg border border-gray-200 bg-white">
                     <header class="border-b border-gray-100 px-4 py-3">
-                        <h2 class="text-sm font-semibold text-gray-900">Notre serveur : à quel moment les appels sont perdus</h2>
-                        <p class="text-xs text-gray-500">Mesuré à chaque étape de l'appel, seulement sur notre serveur.</p>
+                        <h2 class="text-sm font-semibold text-gray-900">À quel moment les appels sont perdus</h2>
+                        <p class="text-xs text-gray-500">Sur les appels où l'attente forcée et la vraie attente d'un agent sont connues : chaque étape sur notre serveur, relevé toutes les 10 s chez Voxnode.</p>
                     </header>
-                    <p v-if="!detail" class="px-4 py-4 text-sm text-gray-400">Aucun appel de notre serveur avec ce détail sur la période.</p>
-                    <div v-else class="space-y-4 px-4 py-4">
-                        <div>
-                            <div class="flex h-5 gap-px overflow-hidden rounded-sm bg-gray-100">
-                                <Tooltip v-for="s in LOSS_STAGES.filter((s) => detail[s.key])" :key="s.key">
-                                    <TooltipTrigger as-child>
-                                        <div class="h-full cursor-help" :style="{ width: `${(detail[s.key] / detailLost) * 100}%`, background: s.color, minWidth: '3px' }" />
-                                    </TooltipTrigger>
-                                    <TooltipContent>{{ s.hint }} : {{ int(detail[s.key]) }} appels</TooltipContent>
-                                </Tooltip>
-                            </div>
-                            <table class="mt-3 w-full text-sm">
-                                <tbody>
-                                    <tr v-for="s in LOSS_STAGES" :key="s.key" class="border-b border-gray-50 last:border-b-0">
-                                        <td class="py-1.5">
-                                            <span class="flex items-center gap-2 text-gray-700">
-                                                <span class="h-2.5 w-2.5 rounded-[2px]" :style="{ background: s.color }" />
-                                                {{ s.label }}
+                    <p v-if="!hasDetail" class="px-4 py-4 text-sm text-gray-400">Aucun appel avec ce détail sur la période.</p>
+                    <table v-else class="w-full text-sm">
+                        <thead>
+                            <tr class="text-xs text-gray-500">
+                                <th class="px-4 pb-1.5 pt-3 text-left font-normal" />
+                                <th v-for="p in GROUPS" :key="p.key" class="whitespace-nowrap px-3 pb-1.5 pt-3 text-right font-normal" :class="p.total && 'bg-gray-50/70 font-medium text-gray-700'">
+                                    <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-[2px]" :class="p.color" />{{ p.label }}</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-t border-gray-50 hover:bg-gray-50/60">
+                                <td class="px-4 py-1.5 text-gray-700">Appels mesurés</td>
+                                <td v-for="p in GROUPS" :key="p.key" class="px-3 py-1.5 text-right tabular-nums text-gray-900" :class="p.total && 'bg-gray-50/70 font-medium'">{{ int(detailOf(p.key)?.calls) }}</td>
+                            </tr>
+                            <tr v-for="st in LOSS_STAGES" :key="st.key" class="border-t border-gray-50 hover:bg-gray-50/60">
+                                <td class="px-4 py-1.5">
+                                    <Tooltip>
+                                        <TooltipTrigger as-child>
+                                            <span class="flex cursor-help items-center gap-2 text-gray-700">
+                                                <span class="h-2.5 w-2.5 rounded-[2px]" :style="{ background: st.color }" />
+                                                Perdus {{ st.label.charAt(0).toLowerCase() + st.label.slice(1) }}
                                             </span>
-                                        </td>
-                                        <td class="py-1.5 text-right tabular-nums text-gray-900">{{ int(detail[s.key]) }}</td>
-                                        <td class="w-32 whitespace-nowrap py-1.5 pl-3 text-right tabular-nums text-gray-400">{{ pct(detail[s.key], detail.calls) }} des appels</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <dl class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-100 bg-gray-100 text-sm sm:grid-cols-3">
-                            <div class="bg-white px-3 py-2.5">
-                                <dt class="text-xs text-gray-500">Vraie attente médiane</dt>
-                                <dd class="text-base font-semibold tabular-nums text-gray-900">{{ dur(detail.queue_wait_median) }}</dd>
-                                <dd class="text-xs text-gray-400">avant qu'un agent décroche</dd>
-                            </div>
-                            <div class="bg-white px-3 py-2.5">
-                                <dt class="text-xs text-gray-500">Décrochés en moins de 30 s</dt>
-                                <dd class="text-base font-semibold tabular-nums text-gray-900">{{ pct(detail.answered_within_30, detail.answered, 0) }}</dd>
-                                <dd class="text-xs text-gray-400">{{ pct(detail.answered_within_60, detail.answered, 0) }} en moins d'1 min</dd>
-                            </div>
-                            <div class="bg-white px-3 py-2.5">
-                                <dt class="text-xs text-gray-500">Attente forcée médiane</dt>
-                                <dd class="text-base font-semibold tabular-nums text-gray-900">{{ dur(detail.forced_wait_median) }}</dd>
-                                <dd class="text-xs text-gray-400">hors appelants prioritaires</dd>
-                            </div>
-                        </dl>
-                    </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>{{ st.hint }}</TooltipContent>
+                                    </Tooltip>
+                                </td>
+                                <td v-for="p in GROUPS" :key="p.key" class="whitespace-nowrap px-3 py-1.5 text-right tabular-nums" :class="p.total && 'bg-gray-50/70'">
+                                    <template v-if="detailOf(p.key)">
+                                        <span class="font-semibold text-gray-900">{{ pct(detailOf(p.key)[st.key], detailOf(p.key).calls) }}</span>
+                                        <span class="ml-1.5 inline-block w-10 text-gray-400">{{ int(detailOf(p.key)[st.key]) }}</span>
+                                    </template>
+                                    <span v-else class="text-gray-300">—</span>
+                                </td>
+                            </tr>
+                            <tr class="border-t border-gray-100 hover:bg-gray-50/60">
+                                <td class="px-4 py-1.5 text-gray-700">Vraie attente médiane avant décroché</td>
+                                <td v-for="p in GROUPS" :key="p.key" class="px-3 py-1.5 text-right tabular-nums text-gray-900" :class="p.total && 'bg-gray-50/70 font-medium'">{{ dur(detailOf(p.key)?.queue_wait_median) }}</td>
+                            </tr>
+                            <tr class="border-t border-gray-50 hover:bg-gray-50/60">
+                                <td class="px-4 py-1.5 text-gray-700">Décrochés en moins de 30 s</td>
+                                <td v-for="p in GROUPS" :key="p.key" class="px-3 py-1.5 text-right tabular-nums text-gray-900" :class="p.total && 'bg-gray-50/70 font-medium'">{{ detailOf(p.key) ? pct(detailOf(p.key).answered_within_30, detailOf(p.key).answered, 0) : '—' }}</td>
+                            </tr>
+                            <tr class="border-t border-gray-50 hover:bg-gray-50/60">
+                                <td class="px-4 py-1.5 text-gray-700">Décrochés en moins d'1 min</td>
+                                <td v-for="p in GROUPS" :key="p.key" class="px-3 py-1.5 text-right tabular-nums text-gray-900" :class="p.total && 'bg-gray-50/70 font-medium'">{{ detailOf(p.key) ? pct(detailOf(p.key).answered_within_60, detailOf(p.key).answered, 0) : '—' }}</td>
+                            </tr>
+                            <tr class="border-t border-gray-50 hover:bg-gray-50/60">
+                                <td class="px-4 py-1.5 text-gray-700">Attente forcée médiane <span class="text-gray-400">(hors prioritaires)</span></td>
+                                <td v-for="p in GROUPS" :key="p.key" class="px-3 py-1.5 text-right tabular-nums text-gray-900" :class="p.total && 'bg-gray-50/70 font-medium'">{{ dur(detailOf(p.key)?.forced_wait_median) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </section>
 
                 <!-- ─── 3. Quand les clients raccrochent ──────────────────── -->

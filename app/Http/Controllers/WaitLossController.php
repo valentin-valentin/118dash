@@ -18,8 +18,9 @@ use Inertia\Response;
  *   - perdu : aucun agent (duration_agent nul ou 0), le client a raccroché avant ;
  *   - attente avant décroché = total - durée agent - durée transfert ;
  *   - attente avant abandon = durée totale de l'appel perdu.
- * Ces attentes comprennent l'accueil et l'attente forcée. Pour nos appels, forced_wait et queue_wait
- * (renseignés depuis fin octobre 2026) séparent l'attente forcée de la vraie attente faute d'agent.
+ * Ces attentes comprennent l'accueil et l'attente forcée. forced_wait et queue_wait séparent l'attente forcée
+ * de la vraie attente faute d'agent : notre serveur depuis fin octobre 2026, Voxnode depuis le 07/11/2026
+ * (relevé toutes les 10 s). Le détail par étape ne porte que sur les appels où ces deux colonnes sont renseignées.
  * Les appels envoyés aux agents IA (agent_name = 'ai', tests) sont exclus.
  * Jours et heures en heure de Paris.
  */
@@ -52,8 +53,9 @@ class WaitLossController extends Controller
         $hours = [];
         $days = [];
         $buckets = array_fill_keys(['all', 'voxnode', 'selfhosted'], array_fill(0, count(self::BUCKETS), 0));
-        // Nos appels détaillés (forced_wait / queue_wait renseignés)
-        $detail = ['calls' => 0, 'answered' => 0, 'lost_welcome' => 0, 'lost_forced' => 0, 'lost_queue' => 0, 'queue_waits' => [], 'forced_waits' => []];
+        // Appels détaillés (forced_wait / queue_wait renseignés), par plateforme et tous ensemble
+        $emptyDetail = fn () => ['calls' => 0, 'answered' => 0, 'lost_welcome' => 0, 'lost_forced' => 0, 'lost_queue' => 0, 'queue_waits' => [], 'forced_waits' => []];
+        $details = ['all' => $emptyDetail(), 'voxnode' => $emptyDetail(), 'selfhosted' => $emptyDetail()];
 
         // Instants exacts (epoch) : called_at est un TIMESTAMP que MySQL renvoie dans le fuseau de son serveur ;
         // UNIX_TIMESTAMP / FROM_UNIXTIME donnent le bon résultat quel que soit ce fuseau.
@@ -91,22 +93,27 @@ class WaitLossController extends Controller
                 $buckets['all'][$bucket]++;
             }
 
-            if ($platform === 'selfhosted' && $r->forced_wait !== null && $r->queue_wait !== null) {
-                $detail['calls']++;
+            // Notre serveur : mesuré à chaque étape ; Voxnode : relevé toutes les 10 s (appels sans ces colonnes : pas de détail)
+            if ($r->forced_wait !== null && $r->queue_wait !== null) {
                 $queue = (int) $r->queue_wait;
                 $forced = (int) $r->forced_wait;
-                if (!$lost) {
-                    $detail['answered']++;
-                    $detail['queue_waits'][] = $queue;
-                } elseif ($queue > 0) {
-                    $detail['lost_queue']++;
-                } elseif ($forced > 0) {
-                    $detail['lost_forced']++;
-                } else {
-                    $detail['lost_welcome']++;
-                }
-                if ($forced > 0) {
-                    $detail['forced_waits'][] = $forced;
+                foreach (['all', $platform] as $key) {
+                    $detail = &$details[$key];
+                    $detail['calls']++;
+                    if (!$lost) {
+                        $detail['answered']++;
+                        $detail['queue_waits'][] = $queue;
+                    } elseif ($queue > 0) {
+                        $detail['lost_queue']++;
+                    } elseif ($forced > 0) {
+                        $detail['lost_forced']++;
+                    } else {
+                        $detail['lost_welcome']++;
+                    }
+                    if ($forced > 0) {
+                        $detail['forced_waits'][] = $forced;
+                    }
+                    unset($detail);
                 }
             }
         }
@@ -148,7 +155,7 @@ class WaitLossController extends Controller
             ], self::BUCKETS, array_keys(self::BUCKETS)),
             'hours' => array_map(fn ($h, $v) => ['hour' => $h, ...$v], array_keys($byHour), $byHour),
             'days' => array_map(fn ($d, $v) => ['date' => $d, ...$v], array_keys($byDay), $byDay),
-            'selfhosted_detail' => $detail['calls'] ? [
+            'detail' => array_map(fn ($detail) => $detail['calls'] ? [
                 'calls' => $detail['calls'],
                 'answered' => $detail['answered'],
                 'lost_welcome' => $detail['lost_welcome'],
@@ -158,7 +165,7 @@ class WaitLossController extends Controller
                 'answered_within_30' => count(array_filter($detail['queue_waits'], fn ($w) => $w <= 30)),
                 'answered_within_60' => count(array_filter($detail['queue_waits'], fn ($w) => $w <= 60)),
                 'forced_wait_median' => $this->median($detail['forced_waits']),
-            ] : null,
+            ] : null, $details),
         ]);
     }
 

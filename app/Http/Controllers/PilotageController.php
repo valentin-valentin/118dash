@@ -11,14 +11,16 @@ use Inertia\Response;
 use Throwable;
 
 /**
- * Affluence et effectifs : par demi-heure, attente des clients et agents au travail (GET /staffing de voxnode118).
- * Périodes : aujourd'hui (en direct), un jour, 7 derniers jours, ou moyennes sur 4 à 26 semaines.
+ * Pilotage des effectifs (GET /pilotage de voxnode118) : par demi-heure, clients pénalisés faute d'agent libre,
+ * cause (effectif, répartition entre les plateformes, agents qui ne décrochent pas), agents libres ou en trop,
+ * phrases de synthèse et recommandations. Périodes : aujourd'hui (en direct), un jour, 7 derniers jours,
+ * ou moyennes sur 4 à 26 semaines.
  */
-class StaffingController extends Controller
+class PilotageController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('Staffing');
+        return Inertia::render('Pilotage');
     }
 
     public function data(Request $request): JsonResponse
@@ -41,12 +43,12 @@ class StaffingController extends Controller
         }
 
         // Courte durée : « Aujourd'hui » est relu toutes les 5 min
-        $result = Cache::remember('telephony-api:staffing:'.http_build_query($params), 60, function () use ($params) {
+        $result = Cache::remember('telephony-api:pilotage:'.http_build_query($params), 60, function () use ($params) {
             try {
                 $response = Http::withToken(config('services.telephony_api.token'))
                     ->acceptJson()
                     ->timeout(30)
-                    ->get(rtrim(config('services.telephony_api.url'), '/').'/staffing', $params);
+                    ->get(rtrim(config('services.telephony_api.url'), '/').'/pilotage', $params);
             } catch (Throwable $e) {
                 return ['ok' => false, 'error' => 'Impossible de joindre le serveur des réglages de téléphonie.'];
             }
