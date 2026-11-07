@@ -128,29 +128,55 @@ const COLS = [
 
 // ─── 1. Devenir des appels ────────────────────────────────────────────────────
 const ANSWER_WAITS = ['en moins de 30 s', 'de 30 s à 1 min', 'de 1 à 3 min', 'de 3 à 5 min', 'de 5 à 8 min', 'après plus de 8 min']
-const fateRows = computed(() => {
+// Quatre petits tableaux côte à côte (notre serveur, Voxnode, ensemble) : vue générale, puis le détail des décrochés,
+// des perdus et des attentes mesurées
+const fateGroups = computed(() => {
     const F = data.value?.fate
     if (!F) return []
     const est = (x) => (x.lostEstimated > 0 ? '≈ ' : '')
     // Vraie attente : mesurée seulement sur une partie des appels (notre serveur, Voxnode suivi en direct)
     const real = (f) => (x) => (x.realWaitMeasured ? f(x) : { text: 'non mesuré', muted: true })
     return [
-        { label: 'Appels', cls: 'grp', cell: (x) => ({ text: fmt(x.calls) }) },
-        { label: 'Décrochés par un agent', cls: 'grp sep', cell: (x) => ({ text: fmt(x.answered), pct: pct(x.answered, x.calls) }) },
-        ...ANSWER_WAITS.map((label, i) => ({ label, cls: 'lvl1', cell: (x) => ({ text: fmt(x.answeredByWait?.[i]?.calls ?? 0), pct: pct(x.answeredByWait?.[i]?.calls ?? 0, x.answered) }) })),
-        { label: 'Attente avant décroché, médiane', cls: 'lvl1', cell: (x) => ({ text: mmss(x.answerWaitMedianSec) }) },
-        { label: 'Perdus (raccrochés avant un agent)', cls: 'grp sep', cell: (x) => ({ text: fmt(x.lost), pct: pct(x.lost, x.calls) }) },
-        { label: "pendant l'accueil ou l'attente forcée", cls: 'lvl1', cell: (x) => ({ est: est(x), text: fmt(x.lostForced), pct: pct(x.lostForced, x.lost) }) },
-        { label: "en attente d'un agent", cls: 'lvl1', cell: (x) => ({ est: est(x), text: fmt(x.lostQueue), red: true, pct: x.calls ? `${pct(x.lostQueue, x.calls)} des appels` : '' }) },
-        { label: 'Temps avant de raccrocher, médiane', cls: 'lvl1', cell: (x) => ({ text: mmss(x.lostWaitMedianSec) }) },
-        { label: 'Attente forcée réellement faite, médiane', cls: 'sep', cell: (x) => (x.forcedWaitMedianSec == null ? { text: 'non mesuré', muted: true } : { text: mmss(x.forcedWaitMedianSec) }) },
         {
-            label: "Vraie attente d'un agent (après l'attente forcée), médiane",
-            cell: real((x) => ({ text: mmss(x.realWaitMedianSec), pct: x.realWaitMeasured < x.answered ? `mesurée sur ${fmt(x.realWaitMeasured)} appels` : '' })),
+            title: 'Appels',
+            rows: [
+                { label: 'Appels', strong: true, cell: (x) => ({ text: fmt(x.calls) }) },
+                { label: 'Décrochés par un agent', cell: (x) => ({ text: fmt(x.answered), pct: pct(x.answered, x.calls) }) },
+                { label: 'Perdus', cell: (x) => ({ text: fmt(x.lost), pct: pct(x.lost, x.calls) }) },
+                { label: "dont en attente d'un agent", sub: true, cell: (x) => ({ est: est(x), text: fmt(x.lostQueue), red: true, pct: pct(x.lostQueue, x.calls) }) },
+            ],
         },
-        { label: 'Décrochés en moins de 30 s de vraie attente', cell: real((x) => ({ text: fmt(x.realWithin30), pct: pct(x.realWithin30, x.realWaitMeasured) })) },
-        { label: 'Décrochés en moins de 1 min de vraie attente', cell: real((x) => ({ text: fmt(x.realWithin60), pct: pct(x.realWithin60, x.realWaitMeasured) })) },
-        { label: 'Décrochés après plus de 5 min de vraie attente', cell: real((x) => ({ text: fmt(x.realOver300), pct: pct(x.realOver300, x.realWaitMeasured) })) },
+        {
+            title: 'Perdus, selon le moment',
+            note: 'raccrochés avant un agent, en % des perdus',
+            rows: [
+                { label: "Pendant l'accueil ou l'attente forcée", cell: (x) => ({ est: est(x), text: fmt(x.lostForced), pct: pct(x.lostForced, x.lost) }) },
+                { label: "En attente d'un agent", cell: (x) => ({ est: est(x), text: fmt(x.lostQueue), red: true, pct: pct(x.lostQueue, x.lost) }) },
+                { label: 'Temps avant de raccrocher, médiane', sep: true, cell: (x) => ({ text: mmss(x.lostWaitMedianSec) }) },
+            ],
+        },
+        {
+            title: 'Décrochés, selon l\'attente',
+            note: 'accueil et attente forcée compris, en % des décrochés',
+            rows: [
+                ...ANSWER_WAITS.map((label, i) => ({ label, cell: (x) => ({ text: fmt(x.answeredByWait?.[i]?.calls ?? 0), pct: pct(x.answeredByWait?.[i]?.calls ?? 0, x.answered) }) })),
+                { label: 'Attente médiane', sep: true, cell: (x) => ({ text: mmss(x.answerWaitMedianSec) }) },
+            ],
+        },
+        {
+            title: 'Attentes mesurées',
+            note: "en % des décrochés mesurés",
+            rows: [
+                { label: 'Attente forcée faite, médiane', cell: (x) => (x.forcedWaitMedianSec == null ? { text: 'non mesuré', muted: true } : { text: mmss(x.forcedWaitMedianSec) }) },
+                {
+                    label: "Vraie attente d'un agent, médiane",
+                    cell: real((x) => ({ text: mmss(x.realWaitMedianSec), pct: x.realWaitMeasured < x.answered ? `sur ${fmt(x.realWaitMeasured)} appels` : '' })),
+                },
+                { label: 'Décrochés en moins de 30 s', sep: true, cell: real((x) => ({ text: fmt(x.realWithin30), pct: pct(x.realWithin30, x.realWaitMeasured) })) },
+                { label: 'Décrochés en moins de 1 min', cell: real((x) => ({ text: fmt(x.realWithin60), pct: pct(x.realWithin60, x.realWaitMeasured) })) },
+                { label: 'Décrochés après plus de 5 min', cell: real((x) => ({ text: fmt(x.realOver300), pct: pct(x.realOver300, x.realWaitMeasured) })) },
+            ],
+        },
     ]
 })
 const anyEstimated = computed(() => (data.value?.fate?.all?.lostEstimated ?? 0) > 0)
@@ -248,13 +274,13 @@ const ov = computed(() => {
             line('Appels', (f) => f1(f.calls)),
             line('Décrochés', (f) => f1(f.ans)),
             line('dont après une longue attente', (f) => f1(f.late), 'l1', (f) => f.late >= 1),
-            line("Perdus pendant l'accueil ou l'attente forcée", (f) => (f.est > 0 ? '≈ ' : '') + f1(f.lf)),
+            line('Perdus accueil / attente forcée', (f) => (f.est > 0 ? '≈ ' : '') + f1(f.lf)),
             line("Perdus en attente d'un agent", (f) => (f.est > 0 ? '≈ ' : '') + f1(f.lq), '', (f) => f.lq >= 1),
             line('Vraie attente moyenne', (f) => (f.realWait == null ? '–' : mmss(f.realWait))),
         ],
         agents: [
             ...(showNeed
-                ? [line('Nécessaires', (f) => fmt1(f.need)), line('Écart (présents − nécessaires)', (f) => gapTxt(f.gap), '', (f) => f.gap != null && Math.round(f.gap) < 0)]
+                ? [line('Nécessaires', (f) => fmt1(f.need)), line('Écart présents − nécessaires', (f) => gapTxt(f.gap), '', (f) => f.gap != null && Math.round(f.gap) < 0)]
                 : []),
             line('Présents', (f) => fmt1(f.present)),
             line('en appel ou pause après appel', (f) => fmt1(f.busy), 'l1'),
@@ -402,33 +428,38 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
             <template v-if="data">
 
                 <div class="space-y-4" :class="loading && 'opacity-60'">
-                    <!-- ─── 1. Devenir des appels ───────────────────────────── -->
+                    <!-- ─── 1. Devenir des appels : quatre petits tableaux ───── -->
                     <section class="card">
                         <header>
-                            <h2>Devenir des appels</h2><span class="sub">Attente comptée depuis le décroché du serveur, accueil et attente forcée compris</span>
+                            <h2>Devenir des appels</h2><span class="sub">Attente comptée depuis le décroché du serveur</span>
                             <span v-if="data.team !== 'all'" class="sub">· Appels : tout le centre d'appels, agents : {{ teamName }}</span>
                         </header>
-                        <div class="body scroll">
-                            <table class="tbl">
-                                <thead>
-                                    <tr><th />
-                                        <th v-for="[k, label] in COLS" :key="k">{{ label }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="r in fateRows" :key="r.label" :class="r.cls">
-                                        <td>{{ r.label }}</td>
-                                        <td v-for="[k] in COLS" :key="k">
-                                            <template v-for="c in [r.cell(data.fate[k])]" :key="k">
-                                                <span v-if="c.muted" class="pct">{{ c.text }}</span>
-                                                <template v-else>
-                                                    <span v-if="c.est" class="est">{{ c.est }}</span><span :class="c.red && 'red'">{{ c.text }}</span><span v-if="c.pct" class="pct">{{ c.pct }}</span>
-                                                </template>
-                                            </template>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div class="body">
+                            <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+                                <div v-for="g in fateGroups" :key="g.title" class="mini fit">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="title">{{ g.title }}<span v-if="g.note" class="note">{{ g.note }}</span></th>
+                                                <th v-for="[k, label] in COLS" :key="k" :class="k === 'all' && 'total'">{{ label }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="r in g.rows" :key="r.label" :class="[r.strong && 'strong', r.sub && 'subrow', r.sep && 'sep']">
+                                                <td>{{ r.label }}</td>
+                                                <td v-for="[k] in COLS" :key="k" :class="k === 'all' && 'total'">
+                                                    <template v-for="c in [r.cell(data.fate[k])]" :key="k">
+                                                        <span v-if="c.muted" class="pct">{{ c.text }}</span>
+                                                        <template v-else>
+                                                            <span v-if="c.est" class="est">{{ c.est }}</span><span :class="c.red && 'red'">{{ c.text }}</span><span v-if="c.pct" class="pct">{{ c.pct }}</span>
+                                                        </template>
+                                                    </template>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                             <p v-if="anyEstimated" class="legend">≈ : étape estimée d'après la durée de l'appel (raccroché après 4 min = en attente d'un agent)</p>
                         </div>
                     </section>
@@ -626,67 +657,93 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                     <!-- ─── 5. Créneaux à revoir ────────────────────────────── -->
                     <section v-if="data.worst?.length" class="card">
                         <header><h2>Créneaux à revoir</h2><span class="sub">Les demi-heures avec le plus d'appels perdus en attente d'un agent ou décrochés après une longue attente</span></header>
-                        <div class="body scroll">
-                            <table class="tbl">
-                                <thead>
-                                    <tr>
-                                        <th>Demi-heure</th><th>Appels</th><th>Perdus en attente d'un agent</th><th>serveur / Voxnode</th><th>Décrochés après longue attente</th>
-                                        <th>Agents présents</th><th>Libres</th><th>En pause ou déjeuner</th><th>Sonnés sans réponse</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="w in data.worst" :key="w.date + w.slot">
-                                        <td>
-                                            <button v-if="data.rows.some((r) => r.key === w.date)" type="button" class="link" @click="selectWorst(w)">{{ dayLabel(w.date) }} {{ w.slot }}–{{ endOf(w.slot) }}</button>
-                                            <template v-else>{{ dayLabel(w.date) }} {{ w.slot }}–{{ endOf(w.slot) }}</template>
-                                        </td>
-                                        <td>{{ fmt(w.calls) }}</td>
-                                        <td class="red">{{ fmt(w.lostQueue) }}</td>
-                                        <td>{{ fmt(w.lostQueueServer) }} / {{ fmt(w.lostQueueVoxnode) }}</td>
-                                        <td>{{ fmt(w.late) }}</td>
-                                        <td>{{ fmt1(w.agents?.present) }}</td>
-                                        <td>{{ fmt1(w.agents?.free) }}</td>
-                                        <td>{{ fmt1((w.agents?.pause ?? 0) + (w.agents?.lunch ?? 0)) }}</td>
-                                        <td>{{ fmt(w.agents?.missed) }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div class="body">
+                            <div class="mini inline-block max-w-full overflow-x-auto">
+                                <table>
+                                    <thead>
+                                        <tr class="group">
+                                            <th />
+                                            <th colspan="3" class="gh">Appels</th>
+                                            <th colspan="4" class="gh">Agents</th>
+                                        </tr>
+                                        <tr>
+                                            <th class="title">Demi-heure</th>
+                                            <th>Reçus</th><th>Perdus en attente d'un agent</th><th>Longue attente</th>
+                                            <th class="gl">Présents</th><th>Libres</th><th>En pause ou déjeuner</th><th>Sonnés sans réponse</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="w in data.worst" :key="w.date + w.slot">
+                                            <td>
+                                                <button v-if="data.rows.some((r) => r.key === w.date)" type="button" class="link" @click="selectWorst(w)">{{ dayLabel(w.date) }} {{ w.slot }}–{{ endOf(w.slot) }}</button>
+                                                <template v-else>{{ dayLabel(w.date) }} {{ w.slot }}–{{ endOf(w.slot) }}</template>
+                                            </td>
+                                            <td>{{ fmt(w.calls) }}</td>
+                                            <td><span class="red">{{ fmt(w.lostQueue) }}</span><span class="pct" title="Notre serveur / Voxnode">{{ fmt(w.lostQueueServer) }} / {{ fmt(w.lostQueueVoxnode) }}</span></td>
+                                            <td>{{ fmt(w.late) }}</td>
+                                            <td class="gl">{{ fmt1(w.agents?.present) }}</td>
+                                            <td>{{ fmt1(w.agents?.free) }}</td>
+                                            <td>{{ fmt1((w.agents?.pause ?? 0) + (w.agents?.lunch ?? 0)) }}</td>
+                                            <td>{{ fmt(w.agents?.missed) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="legend">Perdus en attente d'un agent : en gris, notre serveur / Voxnode.</p>
                         </div>
                     </section>
 
-                    <!-- ─── 6. Jour par jour ────────────────────────────────── -->
+                    <!-- ─── 6. Jour par jour : appels et agents côte à côte ──── -->
                     <section v-if="data.days?.length" class="card">
                         <header><h2>Jour par jour</h2></header>
-                        <div class="body scroll">
-                            <table class="tbl">
-                                <thead>
-                                    <tr>
-                                        <th>Jour</th><th>Appels</th><th>Décrochés</th><th>dont après longue attente</th><th>Perdus</th><th>accueil / attente forcée</th>
-                                        <th>en attente d'un agent</th><th>Attente médiane avant décroché</th><th>Heures d'agents</th><th>Heures nécessaires</th>
-                                        <th>Heures en trop / manquantes</th><th>Heures de pause et déjeuner</th><th>Sonnés sans réponse</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="d in data.days" :key="d.date">
-                                        <td>{{ dayLabel(d.date) }}</td>
-                                        <td>{{ fmt(d.calls) }}</td>
-                                        <td>{{ fmt(d.answered) }}<span class="pct">{{ pct(d.answered, d.calls) }}</span></td>
-                                        <td>{{ fmt(d.late) }}</td>
-                                        <td>{{ fmt(d.lost) }}<span class="pct">{{ pct(d.lost, d.calls) }}</span></td>
-                                        <td><span v-if="d.lostEstimated > 0" class="est">≈ </span>{{ fmt(d.lostForced) }}</td>
-                                        <td class="red"><span v-if="d.lostEstimated > 0" class="est">≈ </span>{{ fmt(d.lostQueue) }}<span class="pct">{{ pct(d.lostQueue, d.calls) }}</span></td>
-                                        <td>{{ mmss(d.answerWaitMedianSec) }}</td>
-                                        <td>{{ fmt(d.agentHours) }}</td>
-                                        <td>{{ fmt(d.needHours) }}</td>
-                                        <td>
-                                            <template v-if="d.overHours == null && d.shortHours == null">–</template>
-                                            <template v-else>{{ fmt(d.overHours) }} / <span class="red">{{ fmt(d.shortHours) }}</span></template>
-                                        </td>
-                                        <td>{{ fmt(d.breakHours) }}</td>
-                                        <td>{{ fmt(d.missed) }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div class="body">
+                            <div class="flex flex-wrap items-start gap-4">
+                                <div class="mini">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="title">Appels</th><th>Reçus</th><th>Décrochés</th><th>Longue attente</th><th>Perdus</th>
+                                                <th>Accueil / attente forcée</th><th>En attente d'un agent</th><th>Attente médiane</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="d in data.days" :key="d.date">
+                                                <td>{{ dayLabel(d.date) }}</td>
+                                                <td>{{ fmt(d.calls) }}</td>
+                                                <td>{{ fmt(d.answered) }}<span class="pct">{{ pct(d.answered, d.calls) }}</span></td>
+                                                <td>{{ fmt(d.late) }}</td>
+                                                <td>{{ fmt(d.lost) }}<span class="pct">{{ pct(d.lost, d.calls) }}</span></td>
+                                                <td><span v-if="d.lostEstimated > 0" class="est">≈ </span>{{ fmt(d.lostForced) }}</td>
+                                                <td><span v-if="d.lostEstimated > 0" class="est">≈ </span><span class="red">{{ fmt(d.lostQueue) }}</span><span class="pct">{{ pct(d.lostQueue, d.calls) }}</span></td>
+                                                <td>{{ mmss(d.answerWaitMedianSec) }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="mini">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="title">Agents (heures)</th><th>Présents</th><th v-if="data.needShown">Nécessaires</th><th v-if="data.needShown">En trop / manquantes</th>
+                                                <th>Pause et déjeuner</th><th>Sonnés sans réponse</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="d in data.days" :key="d.date">
+                                                <td>{{ dayLabel(d.date) }}</td>
+                                                <td>{{ fmt(d.agentHours) }}</td>
+                                                <td v-if="data.needShown">{{ fmt(d.needHours) }}</td>
+                                                <td v-if="data.needShown">
+                                                    <template v-if="d.overHours == null && d.shortHours == null">–</template>
+                                                    <template v-else>{{ fmt(d.overHours) }} / <span :class="d.shortHours > 0 && 'red'">{{ fmt(d.shortHours) }}</span></template>
+                                                </td>
+                                                <td>{{ fmt(d.breakHours) }}</td>
+                                                <td>{{ fmt(d.missed) }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                             <p v-if="daysEstimated" class="legend">≈ : étape estimée d'après la durée de l'appel (raccroché après 4 min = en attente d'un agent)</p>
                         </div>
                     </section>
@@ -898,6 +955,79 @@ tr.sep td {
 .warn-sw {
     background: color-mix(in srgb, var(--red-bg) 45%, #fff);
 }
+/* Petits tableaux : titre dans la première case, valeurs près des libellés */
+.mini {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+.mini table {
+    border-collapse: collapse;
+    width: auto;
+    font-variant-numeric: tabular-nums;
+}
+/* Devenir des appels : chaque tableau occupe sa demi-largeur */
+.mini.fit table {
+    width: 100%;
+}
+.mini th,
+.mini td {
+    padding: 5px 8px;
+    text-align: right;
+    white-space: nowrap;
+}
+.mini th:first-child,
+.mini td:first-child {
+    text-align: left;
+}
+.mini thead th {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+}
+.mini thead th.title {
+    color: var(--fg);
+    font-size: 14px;
+    font-weight: 600;
+}
+.mini thead th .note {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+}
+.mini thead tr.group th {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+.mini .gh {
+    text-align: center;
+    color: var(--fg);
+}
+.mini .gl {
+    border-left: 1px solid var(--line);
+}
+.mini tbody tr {
+    border-top: 1px solid var(--soft);
+}
+.mini tbody tr:hover {
+    background: var(--soft);
+}
+.mini tr.strong td {
+    font-weight: 600;
+}
+.mini tr.subrow td:first-child {
+    padding-left: 24px;
+    color: var(--muted);
+}
+.mini tr.sep {
+    border-top: 1px solid #e5e7eb;
+}
+.mini .total {
+    background: #fafafa;
+}
 /* Raccrochés */
 .hist {
     display: grid;
@@ -1032,7 +1162,7 @@ tr.sep td {
 /* Vue d'ensemble : graphique et chiffres sur la même grille, une colonne par demi-heure */
 .ov {
     display: grid;
-    grid-template-columns: max-content repeat(var(--n), 40px);
+    grid-template-columns: max-content repeat(var(--n), 36px);
     font-variant-numeric: tabular-nums;
     width: max-content;
 }
@@ -1041,6 +1171,7 @@ tr.sep td {
     padding: 4px 2px;
     text-align: right;
     font-size: 12px;
+    white-space: nowrap;
 }
 .ov > .lab {
     text-align: left;
@@ -1081,7 +1212,7 @@ tr.sep td {
     border-bottom: 1px solid #e5e7eb;
 }
 .ov > .chart > div {
-    width: 26px;
+    width: 24px;
     flex: none;
 }
 .ov > .chart.lab {
@@ -1093,7 +1224,7 @@ tr.sep td {
 }
 .ov .stat {
     height: 8px;
-    width: 26px;
+    width: 24px;
     border-radius: 2px;
     margin: 0 auto;
 }
