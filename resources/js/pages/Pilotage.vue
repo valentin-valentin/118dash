@@ -395,19 +395,19 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
             </FilterBar>
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
-            <div v-else-if="!data" class="h-64 animate-pulse rounded-lg bg-gray-50" />
+            <div v-else-if="!data" class="space-y-4">
+                <div v-for="i in 3" :key="i" class="h-40 animate-pulse rounded-lg border border-gray-100 bg-white" />
+            </div>
 
             <template v-if="data">
-                <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                    <span>{{ data.from === data.to ? dayLabel(data.from) : `Du ${dayLabel(data.from)} au ${dayLabel(data.to)}` }}{{ data.period === 'weeks' ? ' · moyennes par jour de semaine' : '' }}</span>
-                    <span v-if="live" class="inline-flex items-center gap-1.5 font-medium text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500" />En direct</span>
-                    <span v-if="data.team !== 'all'">Appels : tout le centre d'appels · Agents : {{ teamName }}</span>
-                </p>
 
                 <div class="space-y-4" :class="loading && 'opacity-60'">
                     <!-- ─── 1. Devenir des appels ───────────────────────────── -->
                     <section class="card">
-                        <header><h2>Devenir des appels</h2><span class="sub">Attente comptée depuis le décroché du serveur, accueil et attente forcée compris</span></header>
+                        <header>
+                            <h2>Devenir des appels</h2><span class="sub">Attente comptée depuis le décroché du serveur, accueil et attente forcée compris</span>
+                            <span v-if="data.team !== 'all'" class="sub">· Appels : tout le centre d'appels, agents : {{ teamName }}</span>
+                        </header>
                         <div class="body scroll">
                             <table class="tbl">
                                 <thead>
@@ -661,7 +661,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                             <table class="tbl">
                                 <thead>
                                     <tr>
-                                        <th>Jour</th><th>Appels</th><th>Décrochés</th><th>dont après longue attente</th><th>Perdus</th><th>pendant accueil ou attente forcée</th>
+                                        <th>Jour</th><th>Appels</th><th>Décrochés</th><th>dont après longue attente</th><th>Perdus</th><th>accueil / attente forcée</th>
                                         <th>en attente d'un agent</th><th>Attente médiane avant décroché</th><th>Heures d'agents</th><th>Heures nécessaires</th>
                                         <th>Heures en trop / manquantes</th><th>Heures de pause et déjeuner</th><th>Sonnés sans réponse</th>
                                     </tr>
@@ -699,10 +699,11 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
 <style scoped>
 /* Repris de la maquette validée (thème clair du panel) */
 .pilotage {
-    --fg: #18181b;
-    --muted: #71717a;
-    --line: #e4e4e7;
-    --soft: #f4f4f5;
+    --fg: #111827;
+    --muted: #6b7280;
+    --line: #f3f4f6;
+    --soft: #f9fafb;
+    --cell: #f3f4f6;
     --red: #dc2626;
     --red-bg: #fee2e2;
     --red-mid: #f59e9e;
@@ -718,7 +719,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
     border: 1px solid var(--line);
     border-radius: 8px;
     min-width: 0;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--fg);
 }
 .card > header {
@@ -728,6 +729,9 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
     gap: 6px 14px;
     padding: 12px 16px;
     border-bottom: 1px solid var(--line);
+}
+.card > header .sub + .sub {
+    margin-left: -8px;
 }
 h2 {
     font-size: 14px;
@@ -748,7 +752,7 @@ h2 {
 }
 .tbl {
     border-collapse: collapse;
-    width: 100%;
+    width: auto;
     font-variant-numeric: tabular-nums;
 }
 .tbl th,
@@ -764,12 +768,24 @@ h2 {
 .tbl td:first-child,
 .detail td:first-child {
     text-align: left;
+    padding-right: 24px;
+}
+.tbl th + th,
+.tbl td + td {
+    padding-left: 16px;
 }
 .tbl thead th,
 .detail thead th {
     font-weight: 500;
     color: var(--muted);
     font-size: 12px;
+}
+/* En-têtes longs sur deux lignes : les colonnes restent étroites */
+.tbl thead th {
+    white-space: normal;
+    max-width: 110px;
+    vertical-align: bottom;
+    line-height: 1.25;
 }
 .tbl tbody tr:hover td {
     background: #fafafa;
@@ -782,7 +798,7 @@ tr.grp td {
     font-weight: 600;
 }
 tr.sep td {
-    border-top: 1px solid var(--line);
+    border-top: 1px solid #e5e7eb;
 }
 .red {
     color: var(--red);
@@ -810,19 +826,21 @@ tr.sep td {
 .sep-l {
     margin-left: 8px;
     padding-left: 14px;
-    border-left: 1px solid var(--line);
+    border-left: 1px solid #e5e7eb;
 }
 .chip {
-    border: 1px solid var(--line);
+    height: 28px;
+    border: 1px solid #e5e7eb;
     background: #fff;
-    color: var(--fg);
+    color: #4b5563;
     border-radius: 6px;
-    padding: 4px 9px;
+    padding: 0 10px;
     font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
 }
 .chip:hover {
-    background: var(--soft);
+    background: #f3f4f6;
 }
 .chip[aria-pressed='true'] {
     background: var(--fg);
@@ -883,11 +901,11 @@ tr.sep td {
 /* Raccrochés */
 .hist {
     display: grid;
-    grid-template-columns: 96px repeat(3, minmax(220px, 1fr));
-    gap: 5px 16px;
+    grid-template-columns: 96px repeat(3, 300px);
+    gap: 5px 24px;
     align-items: center;
     font-variant-numeric: tabular-nums;
-    min-width: 860px;
+    width: max-content;
 }
 .hist .h {
     color: var(--muted);
@@ -910,7 +928,7 @@ tr.sep td {
     height: 100%;
 }
 .val {
-    width: 150px;
+    width: 130px;
     text-align: right;
     font-size: 12px;
     line-height: 1.25;
@@ -950,14 +968,14 @@ tr.sep td {
 }
 .cell {
     display: block;
-    width: 40px;
+    width: 38px;
     height: 28px;
     border: 0;
     border-radius: 4px;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     cursor: pointer;
-    background: var(--soft);
+    background: var(--cell);
     color: var(--fg);
 }
 .cell.short {
@@ -976,14 +994,14 @@ tr.sep td {
 }
 .cell.none {
     background: #fff;
-    box-shadow: inset 0 0 0 1px var(--soft);
+    box-shadow: inset 0 0 0 1px var(--cell);
 }
 .cell.empty {
     background: #fafafa;
     cursor: default;
 }
 .cell.closed {
-    background: repeating-linear-gradient(135deg, var(--soft) 0 4px, #fff 4px 8px);
+    background: repeating-linear-gradient(135deg, var(--cell) 0 4px, #fff 4px 8px);
     cursor: default;
 }
 .cell.sel {
@@ -1014,13 +1032,13 @@ tr.sep td {
 /* Vue d'ensemble : graphique et chiffres sur la même grille, une colonne par demi-heure */
 .ov {
     display: grid;
-    grid-template-columns: 280px repeat(var(--n), 46px);
+    grid-template-columns: max-content repeat(var(--n), 40px);
     font-variant-numeric: tabular-nums;
     width: max-content;
 }
 .ov > div {
     border-bottom: 1px solid var(--soft);
-    padding: 4px;
+    padding: 4px 2px;
     text-align: right;
     font-size: 12px;
 }
@@ -1028,6 +1046,7 @@ tr.sep td {
     text-align: left;
     color: var(--fg);
     padding-left: 0;
+    padding-right: 16px;
     position: sticky;
     left: 0;
     background: #fff;
@@ -1048,7 +1067,7 @@ tr.sep td {
     text-align: left;
     font-weight: 600;
     padding-top: 12px;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid #e5e7eb;
     position: sticky;
     left: 0;
 }
@@ -1059,10 +1078,10 @@ tr.sep td {
     flex-direction: column-reverse;
     align-items: center;
     padding: 0 0 2px;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid #e5e7eb;
 }
 .ov > .chart > div {
-    width: 30px;
+    width: 26px;
     flex: none;
 }
 .ov > .chart.lab {
@@ -1074,7 +1093,7 @@ tr.sep td {
 }
 .ov .stat {
     height: 8px;
-    width: 30px;
+    width: 26px;
     border-radius: 2px;
     margin: 0 auto;
 }
