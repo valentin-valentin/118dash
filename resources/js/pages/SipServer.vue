@@ -488,6 +488,7 @@ const pauses = computed(() => {
     const d = breakAdvice.value?.ok ? breakAdvice.value.data : null
     if (!d) return null
     const live = d.live ?? {}
+    // closed (service fermé) et nobody (aucun agent connecté) s'affichent comme unknown, en gris
     const verdict = BREAK_VERDICTS[live.verdict] ? live.verdict : 'unknown'
     const callers = live.callers ?? {}
     const waiting = callers.waiting ?? {}
@@ -501,9 +502,9 @@ const pauses = computed(() => {
         verdict,
         style: BREAK_VERDICTS[verdict],
         message: live.message,
-        // Agents libres face aux appelants qui auront besoin d'un agent maintenant ou sous 2-3 min
+        // Agents libres face aux appelants qui auront besoin d'un agent maintenant ou sous 2-3 min (sans objet service fermé)
         callersLine:
-            agents.free != null && waiting.total != null && intro.total != null
+            live.verdict !== 'closed' && agents.free != null && waiting.total != null && intro.total != null
                 ? `${plural(agents.free, 'agent libre', 'agents libres')} pour ${plural(waiting.total + intro.total, 'appelant', 'appelants')} en attente ou dans l'accueil`
                 : null,
         callersTitle: `En attente d'un agent : ${side(waiting.server)} chez nous, ${side(waiting.voxnode)} chez Voxnode. Dans l'accueil ou l'attente forcée : ${side(intro.server)} chez nous, ${side(intro.voxnode)} chez Voxnode.`,
