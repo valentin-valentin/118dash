@@ -708,7 +708,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr v-for="t in data.teamSummary" :key="t.id" :class="t.id === data.team && 'strong selrow'">
+                                        <tr v-for="t in data.teamSummary" :key="t.id" :class="t.id === 'none' ? 'closedrow' : t.id === data.team && 'strong selrow'">
                                             <td>{{ t.name }}</td>
                                             <td>{{ fmt(t.agentHours) }}</td>
                                             <td>{{ fmt(t.answered) }} <span class="pct">{{ fmt1(t.answeredPct) }} %</span></td>
