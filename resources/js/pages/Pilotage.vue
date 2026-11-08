@@ -126,6 +126,11 @@ const COLS = [
     ['all', 'Ensemble'],
 ]
 
+// 0 mesuré n'est pas 0 : étape des perdus inconnue pour tous, ou vraie attente jamais mesurée
+const stageUnmeasured = (x) => (x?.lost ?? 0) > 0 && (x.lostUnknown ?? 0) >= x.lost
+const lateUnmeasured = (x) => (x?.answered ?? 0) > 0 && x.realWaitMeasured === 0
+const NOT_MEASURED = { text: 'non mesuré', muted: true }
+
 // ─── 1. Devenir des appels ────────────────────────────────────────────────────
 const REAL_WAITS = ['en moins de 30 s', 'de 30 s à 1 min', 'de 1 à 2 min', 'de 2 à 5 min', 'après plus de 5 min']
 const ANSWER_WAITS = ['en moins de 30 s', 'de 30 s à 1 min', 'de 1 à 3 min', 'de 3 à 5 min', 'de 5 à 8 min', 'après plus de 8 min']
@@ -134,7 +139,8 @@ const ANSWER_WAITS = ['en moins de 30 s', 'de 30 s à 1 min', 'de 1 à 3 min', '
 const fateGroups = computed(() => {
     const F = data.value?.fate
     if (!F) return []
-    const est = (x) => (x.lostEstimated > 0 ? '≈ ' : '')
+    const unknown = (x) => x.lostUnknown ?? 0
+    const anyUnknown = COLS.some(([k]) => unknown(F[k] ?? {}) > 0)
     // Vraie attente : mesurée seulement sur une partie des appels (notre serveur, Voxnode suivi en direct)
     const real = (f) => (x) => (x.realWaitMeasured ? f(x) : { text: 'non mesuré', muted: true })
     return [
@@ -144,7 +150,14 @@ const fateGroups = computed(() => {
                 { label: 'Appels', strong: true, cell: (x) => ({ text: fmt(x.calls) }) },
                 { label: 'Décrochés par un agent', cell: (x) => ({ text: fmt(x.answered), pct: pct(x.answered, x.calls) }) },
                 { label: 'Perdus', cell: (x) => ({ text: fmt(x.lost), pct: pct(x.lost, x.calls) }) },
-                { label: "dont en attente d'un agent", sub: true, cell: (x) => ({ est: est(x), text: fmt(x.lostQueue), red: true, pct: pct(x.lostQueue, x.calls) }) },
+                {
+                    label: "dont en attente d'un agent",
+                    sub: true,
+                    cell: (x) =>
+                        stageUnmeasured(x)
+                            ? NOT_MEASURED
+                            : { text: fmt(x.lostQueue), red: true, pct: pct(x.lostQueue, x.calls), extra: unknown(x) > 0 ? `+ ${fmt(unknown(x))} non mesurés` : '' },
+                },
                 // Appels = décrochés + perdus + ni l'un ni l'autre (sans durée, refusés avant sonnerie, en cours)
                 ...(COLS.some(([k]) => (F[k]?.other ?? 0) > 0)
                     ? [{ label: 'Ni décrochés ni perdus (sans durée ou en cours)', cell: (x) => ({ text: fmt(x.other ?? 0), pct: pct(x.other ?? 0, x.calls) }) }]
@@ -155,8 +168,9 @@ const fateGroups = computed(() => {
             title: 'Perdus, selon le moment',
             note: 'raccrochés avant un agent, en % des perdus',
             rows: [
-                { label: "Pendant l'accueil ou l'attente forcée", cell: (x) => ({ est: est(x), text: fmt(x.lostForced), pct: pct(x.lostForced, x.lost) }) },
-                { label: "En attente d'un agent", cell: (x) => ({ est: est(x), text: fmt(x.lostQueue), red: true, pct: pct(x.lostQueue, x.lost) }) },
+                { label: "Pendant l'accueil ou l'attente forcée", cell: (x) => (stageUnmeasured(x) ? NOT_MEASURED : { text: fmt(x.lostForced), pct: pct(x.lostForced, x.lost) }) },
+                { label: "En attente d'un agent", cell: (x) => (stageUnmeasured(x) ? NOT_MEASURED : { text: fmt(x.lostQueue), red: true, pct: pct(x.lostQueue, x.lost) }) },
+                ...(anyUnknown ? [{ label: 'Étape non mesurée', cell: (x) => ({ text: fmt(unknown(x)), muted: unknown(x) === 0, grey: true, pct: pct(unknown(x), x.lost) }) }] : []),
                 { label: 'Temps avant de raccrocher, moyenne', sep: true, cell: (x) => ({ text: mmss(x.lostWaitAvgSec) }) },
                 { label: 'Temps avant de raccrocher, médiane', cell: (x) => ({ text: mmss(x.lostWaitMedianSec) }) },
             ],
@@ -196,7 +210,6 @@ const fateGroups = computed(() => {
     ]
 })
 const outsideHours = computed(() => data.value?.fate?.outsideHours ?? null)
-const anyEstimated = computed(() => (data.value?.fate?.all?.lostEstimated ?? 0) > 0)
 
 // ─── 2. Quand les appelants raccrochent ───────────────────────────────────────
 const dur = (s) => (s < 60 ? `${s} s` : `${s / 60} min`)
@@ -227,7 +240,6 @@ const hangups = computed(() => {
                     const unmeasured = (sl.unknown ?? 0) > 0 && !sl.forced && !sl.queue
                     return {
                         label: bucketLabel(b),
-                        mark: b.from === 240,
                         total: t,
                         pct: t ? pct(t, calls) : '',
                         queue: unmeasured ? null : (sl.queue ?? 0),
@@ -236,7 +248,7 @@ const hangups = computed(() => {
                 }),
             }
         }),
-        markText: `Ligne pointillée : 4 min. Voxnode : l'accueil et l'attente forcée durent environ 4 min (attente médiane des décrochés : ${mmss(F.voxnode?.answerWaitMedianSec)}). Notre serveur : attente forcée médiane ${mmss(F.server?.forcedWaitMedianSec)}.`,
+        forcedText: `Attente forcée faite, médiane : notre serveur ${F.server?.forcedWaitMedianSec == null ? 'non mesurée' : mmss(F.server.forcedWaitMedianSec)}, Voxnode ${F.voxnode?.forcedWaitMedianSec == null ? 'non mesurée' : mmss(F.voxnode.forcedWaitMedianSec)}`,
     }
 })
 
@@ -251,14 +263,16 @@ const fig = (cell, p) => {
         late: c.late ?? 0,
         lf: c.lostForced ?? 0,
         lq: c.lostQueue ?? 0,
-        lost: (c.lostForced ?? 0) + (c.lostQueue ?? 0),
-        est: c.lostEstimated ?? 0,
+        lost: (c.lostForced ?? 0) + (c.lostQueue ?? 0) + (c.lostUnknown ?? 0),
+        unknown: c.lostUnknown ?? 0,
+        realMeasured: c.realWaitMeasured,
+        stageUnm: stageUnmeasured({ lost: (c.lostForced ?? 0) + (c.lostQueue ?? 0) + (c.lostUnknown ?? 0), lostUnknown: c.lostUnknown }),
+        lateUnm: lateUnmeasured(c),
         wait: c.waitSec,
         realWait: c.realWaitSec,
         level: c.level ?? 'none',
         ...(cell.agents ?? {}),
         live: cell.live ?? null,
-        gapBasis: cell.gapBasis,
         need: cell.need,
         gap: cell.gap,
         gapLevel: cell.gapLevel,
@@ -267,14 +281,9 @@ const fig = (cell, p) => {
 }
 // Agents libres : téléphones relevés (les deux plateformes) quand ils le sont, sinon feuille de présence − en appel
 const freeOf = (f) => (f.live ? (f.live.server?.free ?? 0) + (f.live.voxnode?.free ?? 0) : f.free)
-// Écart : joignables (téléphone connecté) ou, sans relevé des téléphones, présents sur la feuille de présence
-const GAP_LABELS = { reachable: 'Écart (joignables − nécessaires)', present: 'Écart (présents − nécessaires)' }
-const gapLabel = (bases) => {
-    const set = new Set(bases.filter(Boolean))
-    if (set.size === 1) return GAP_LABELS[[...set][0]] ?? 'Écart'
-    return set.size ? 'Écart (joignables, sinon présents − nécessaires)' : 'Écart'
-}
-const LONG_WAIT_TEXT = "Longue attente : 5 min ou plus de vraie attente d'un agent (8 min ou plus au total quand la vraie attente n'est pas mesurée)"
+// Écart : agents joignables (téléphone connecté) − nécessaires, seulement là où les téléphones sont relevés
+const GAP_LABEL = 'Écart (joignables − nécessaires)'
+const LONG_WAIT_TEXT = "Longue attente : 5 min ou plus de vraie attente d'un agent, sur les appels où elle est mesurée"
 const allRows = computed(() => [...(data.value?.rows ?? []), ...(data.value?.average ? [data.value.average] : [])])
 const cellOf = (row, slot) => row?.cells.find((c) => c.slot === slot)
 // Moyennes (plusieurs jours) : une décimale
@@ -315,9 +324,10 @@ const ov = computed(() => {
         calls: [
             line('Appels', (f) => f1(f.calls)),
             line('Décrochés', (f) => f1(f.ans)),
-            line('dont après une longue attente', (f) => f1(f.late), 'l1', (f) => f.late >= 1),
-            line('Perdus accueil / attente forcée', (f) => (f.est > 0 ? '≈ ' : '') + f1(f.lf)),
-            line("Perdus en attente d'un agent", (f) => (f.est > 0 ? '≈ ' : '') + f1(f.lq), '', (f) => f.lq >= 1),
+            line('dont après une longue attente', (f) => (f.lateUnm ? '–' : f1(f.late)), 'l1', (f) => f.late >= 1),
+            line('Perdus accueil / attente forcée', (f) => (f.stageUnm ? '–' : f1(f.lf))),
+            line("Perdus en attente d'un agent", (f) => (f.stageUnm ? '–' : f1(f.lq)), '', (f) => f.lq >= 1),
+            ...(figs.some((f) => f.unknown > 0) ? [line('Perdus, étape non mesurée', (f) => f1(f.unknown), 'l1 muted')] : []),
             line('Attente moyenne avant décroché', (f) => (f.wait == null ? '–' : mmss(f.wait))),
             line('Vraie attente moyenne', (f) => (f.realWait == null ? '–' : mmss(f.realWait))),
         ],
@@ -325,7 +335,7 @@ const ov = computed(() => {
             ...(showNeed
                 ? [
                       line('Nécessaires', (f) => fmt1(f.need)),
-                      line(gapLabel(figs.map((f) => f.gapBasis)), (f) => gapTxt(f.gap), '', (f) => f.gap != null && Math.round(f.gap) < 0),
+                      line(GAP_LABEL, (f) => gapTxt(f.gap), '', (f) => f.gap != null && Math.round(f.gap) < 0),
                   ]
                 : []),
             line('Présents (feuille de présence)', (f) => fmt1(f.present)),
@@ -346,7 +356,7 @@ const ov = computed(() => {
         ],
     }
 })
-const STAT_CLASS = { short: 'queue', warn: 'late', ok: 'free', over: 'over', none: '' }
+const STAT_CLASS = { short: 'queue', warn: 'late', ok: 'free', over: 'over', none: '', unmeasured: '' }
 
 // ─── 4. Heure par heure ───────────────────────────────────────────────────────
 const NEED_MODES = ['gap', 'need']
@@ -377,7 +387,7 @@ const MODES = [
         agents: true,
     },
     { key: 'missed', label: 'Sonnés sans réponse', name: 'appels sonnés chez un agent sans réponse', value: (f) => fmt(f.missed), agents: true, whole: true },
-    { key: 'lq', label: "Perdus en attente d'un agent", name: "appels perdus en attente d'un agent", value: (f) => fmt(f.lq) },
+    { key: 'lq', label: "Perdus en attente d'un agent", name: "appels perdus en attente d'un agent", value: (f) => (f.stageUnm ? '–' : fmt(f.lq)) },
     { key: 'lost', label: 'Perdus (tous)', name: 'appels perdus', value: (f) => fmt(f.lost) },
     { key: 'calls', label: 'Appels', name: 'appels', value: (f) => fmt(f.calls) },
     { key: 'realWait', label: 'Vraie attente moyenne', name: "vraie attente moyenne d'un agent", value: (f) => (f.realWait == null ? '–' : mmss(f.realWait)) },
@@ -395,14 +405,18 @@ const modeDisabled = (m) => {
 }
 const currentMode = computed(() => MODES.find((m) => m.key === mode.value))
 // Mode devenu indisponible (plateforme choisie, vue équipe) : perdus en attente d'un agent
+// Ouverture sur « En trop ou manquants » seulement si une case de la période a un écart (téléphones relevés)
+const anyGap = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.gap != null)))
 watch([gPlat, data], () => {
     if (currentMode.value && modeDisabled(currentMode.value)) mode.value = 'lq'
+    else if (mode.value === 'gap' && !anyGap.value) mode.value = 'lq'
 })
 const needMode = computed(() => NEED_MODES.includes(mode.value))
 const cellClass = (cell) => {
     const f = fig(cell, gPlat.value)
     if (!f) return ''
-    const lvl = needMode.value ? (f.gapLevel ?? 'none') : f.level
+    // Moins de 2 appels mesurés : case neutre, comme « none »
+    const lvl = needMode.value ? (f.gapLevel ?? 'none') : f.level === 'unmeasured' ? 'none' : f.level
     return [lvl, needMode.value && f.lostDespiteStaff ? 'dot' : '']
 }
 
@@ -425,7 +439,7 @@ const detail = computed(() => {
     const cell = cellOf(row, sel.value.slot)
     if (!cell || cell.state !== 'open') return null
     const x = Object.fromEntries(PLATS.map(([p]) => [p, fig(cell, p)]))
-    const est = (f) => (f.est > 0 ? '≈ ' : '')
+    const measuredOn = (f) => (f.realMeasured != null && f.realMeasured < f.ans ? `sur ${fmt(f.realMeasured)} mesurés` : '')
     const a = x.all
     return {
         title: `${row.label}, ${cell.slot}–${endOf(cell.slot)}`,
@@ -433,9 +447,9 @@ const detail = computed(() => {
         calls: [
             { label: 'Appels', v: (f) => ({ text: fmt(f.calls) }) },
             { label: 'Décrochés', v: (f) => ({ text: fmt(f.ans), pct: pct(f.ans, f.calls) }) },
-            { label: 'dont après une longue attente', v: (f) => ({ text: fmt(f.late), red: f.late > 0 }) },
-            { label: "Perdus pendant l'accueil ou l'attente forcée", v: (f) => ({ text: est(f) + fmt(f.lf) }) },
-            { label: "Perdus en attente d'un agent", v: (f) => ({ text: est(f) + fmt(f.lq), red: f.lq > 0 }) },
+            { label: 'dont après une longue attente', v: (f) => (f.lateUnm ? NOT_MEASURED : { text: fmt(f.late), red: f.late > 0, pct: measuredOn(f) }) },
+            { label: "Perdus pendant l'accueil ou l'attente forcée", v: (f) => (f.stageUnm ? NOT_MEASURED : { text: fmt(f.lf) }) },
+            { label: "Perdus en attente d'un agent", v: (f) => (f.stageUnm ? NOT_MEASURED : { text: fmt(f.lq), red: f.lq > 0, pct: f.unknown > 0 ? `+ ${fmt(f.unknown)} non mesurés` : '' }) },
             { label: 'Attente moyenne avant décroché', v: (f) => ({ text: f.wait == null ? '–' : mmss(f.wait) }) },
             { label: 'Vraie attente moyenne', v: (f) => ({ text: f.realWait == null ? '–' : mmss(f.realWait) }) },
         ].map((r) => ({ label: r.label, cells: PLATS.map(([p]) => r.v(x[p])) })),
@@ -450,7 +464,7 @@ const detail = computed(() => {
                       ['Injoignables (en poste, téléphone non connecté)', { text: fmt1(a.live.unavailable), red: a.live.unavailable >= 1 }],
                   ]
                 : []),
-            ...(data.value?.needShown ? [[gapLabel([a.gapBasis]), { text: gapTxt(a.gap), red: a.gapLevel === 'short' }]] : []),
+            ...(data.value?.needShown ? [[GAP_LABEL, { text: gapTxt(a.gap), red: a.gapLevel === 'short' }]] : []),
             ['En appel ou pause après appel', { text: fmt1(a.busy) }],
             [a.live ? 'Libres (téléphones relevés)' : 'Libres', { text: fmt1(freeOf(a)) }],
             ['En pause', { text: fmt1(a.pause) }],
@@ -467,7 +481,7 @@ function selectWorst(w) {
 
 // ─── 6. Jour par jour ─────────────────────────────────────────────────────────
 const daysOther = computed(() => (data.value?.days ?? []).some((d) => (d.other ?? 0) > 0))
-const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lostEstimated > 0))
+const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostUnknown ?? 0) > 0))
 </script>
 
 <template>
@@ -545,7 +559,8 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                                     <template v-for="c in [r.cell(data.fate[k])]" :key="k">
                                                         <span v-if="c.muted" class="pct">{{ c.text }}</span>
                                                         <template v-else>
-                                                            <span v-if="c.est" class="est">{{ c.est }}</span><span :class="c.red && 'red'">{{ c.text }}</span> <span v-if="c.pct" class="pct">{{ c.pct }}</span>
+                                                            <span :class="[c.red && 'red', c.grey && 'text-gray-500']">{{ c.text }}</span> <span v-if="c.pct" class="pct">{{ c.pct }}</span>
+                                                            <span v-if="c.extra" class="pct block">{{ c.extra }}</span>
                                                         </template>
                                                     </template>
                                                 </td>
@@ -557,7 +572,6 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                             <p v-if="outsideHours?.calls > 0" class="legend">
                                 Hors horaires d'ouverture : {{ fmt(outsideHours.calls) }} appels (dont {{ fmt(outsideHours.answered) }} décrochés), non comptés ici
                             </p>
-                            <p v-if="anyEstimated" class="legend">≈ : étape estimée d'après la durée de l'appel (raccroché après 4 min = en attente d'un agent)</p>
                         </div>
                     </section>
 
@@ -576,7 +590,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="r in t.rows" :key="r.label" :class="r.mark && 'mark'">
+                                            <tr v-for="r in t.rows" :key="r.label">
                                                 <td>{{ r.label }}</td>
                                                 <td>{{ r.total ? fmt(r.total) : '–' }} <span class="pct">{{ r.pct }}</span></td>
                                                 <td>
@@ -588,7 +602,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                     </table>
                                 </div>
                             </div>
-                            <p class="legend">{{ hangups.markText }}</p>
+                            <p class="legend">{{ hangups.forcedText }}</p>
                         </div>
                     </section>
 
@@ -612,7 +626,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                 <div class="lab hd" />
                                 <div v-for="s in ovCols" :key="s" class="hd">{{ s }}</div>
                                 <div class="lab">État</div>
-                                <div v-for="s in ovCols" :key="s"><div v-if="ov.F[s]" class="stat" :class="STAT_CLASS[ov.F[s].level]" /></div>
+                                <div v-for="s in ovCols" :key="s"><div v-if="ov.F[s]" class="stat" :class="STAT_CLASS[ov.F[s].level]" :title="ov.F[s].level === 'unmeasured' ? 'non mesuré' : undefined" /></div>
 
                                 <div class="grp">Appels{{ ovPlat === 'all' ? '' : ' · ' + PLATS.find((p) => p[0] === ovPlat)[1] }}</div>
                                 <div class="lab chart" style="--h: 120px"><span>{{ fmt(ov.maxC) }}</span><span>0</span></div>
@@ -706,6 +720,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                                         class="cell"
                                                         :class="[cellClass(c), isSel(r, s) && 'sel']"
                                                         :aria-label="`${r.label} ${s}`"
+                                                        :title="!needMode && fig(c, gPlat)?.level === 'unmeasured' ? 'non mesuré' : undefined"
                                                         @click="sel = { row: r.key, slot: s }"
                                                     >
                                                         {{ currentMode.value(fig(c, gPlat), gPlat) }}
@@ -726,7 +741,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                     <select v-model.number="within" class="within" aria-label="Attente maximale">
                                         <option v-for="v in WITHIN_CHOICES" :key="v" :value="v">{{ v }} s</option>
                                     </select>
-                                    de vraie attente, avec la durée de traitement de la demi-heure (appel et pause après appel). Écart : agents joignables (téléphone connecté, hors pause) moins nécessaires ; sans relevé des téléphones, agents présents sur la feuille de présence.
+                                    de vraie attente, avec la durée de traitement de la demi-heure (appel et pause après appel). Écart : agents joignables (téléphone connecté, hors pause) moins nécessaires. – : téléphones non relevés.
                                 </span>
                             </div>
                             <div v-else class="legend">
@@ -750,7 +765,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                         <tbody>
                                             <tr v-for="r in detail.calls" :key="r.label">
                                                 <td>{{ r.label }}</td>
-                                                <td v-for="(c, i) in r.cells" :key="i" :class="i === 0 && 'total'"><span :class="c.red && 'red'">{{ c.text }}</span> <span v-if="c.pct" class="pct">{{ c.pct }}</span></td>
+                                                <td v-for="(c, i) in r.cells" :key="i" :class="i === 0 && 'total'"><span :class="[c.red && 'red', c.muted && 'pct']">{{ c.text }}</span> <span v-if="c.pct" class="pct">{{ c.pct }}</span></td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -801,11 +816,14 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                                 <template v-else>{{ dayLabel(w.date) }} {{ w.slot }}–{{ endOf(w.slot) }}</template>
                                             </td>
                                             <td>{{ fmt(w.calls) }}</td>
-                                            <td><span class="red">{{ fmt(w.lostQueue) }}</span> <span class="pct" title="Notre serveur / Voxnode">{{ fmt(w.lostQueueServer) }} / {{ fmt(w.lostQueueVoxnode) }}</span></td>
-                                            <td>{{ fmt(w.late) }}</td>
+                                            <td>
+                                                <span class="red">{{ fmt(w.lostQueue) }}</span> <span class="pct" title="Notre serveur / Voxnode">{{ fmt(w.lostQueueServer) }} / {{ fmt(w.lostQueueVoxnode) }}</span>
+                                                <span v-if="(w.lostUnknown ?? 0) > 0" class="pct block">+ {{ fmt(w.lostUnknown) }} non mesurés</span>
+                                            </td>
+                                            <td>{{ w.realWaitMeasured === 0 ? '–' : fmt(w.late) }}</td>
                                             <template v-if="data.needShown">
                                                 <td class="gl">{{ fmt(w.need) }}</td>
-                                                <td :title="GAP_LABELS[w.gapBasis]"><span :class="w.gap != null && Math.round(w.gap) < 0 && 'red'">{{ gapTxt(w.gap) }}</span></td>
+                                                <td><span :class="w.gap != null && Math.round(w.gap) < 0 && 'red'">{{ gapTxt(w.gap) }}</span></td>
                                             </template>
                                             <td :class="!data.needShown && 'gl'">{{ fmt1(w.agents?.present) }}</td>
                                             <td>{{ fmt1(w.agents?.free) }}</td>
@@ -816,7 +834,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                     </tbody>
                                 </table>
                             </div>
-                            <p class="legend">Perdus en attente d'un agent : en gris, notre serveur / Voxnode. Écart : joignables − nécessaires, ou présents − nécessaires sans relevé des téléphones (au survol).</p>
+                            <p class="legend">Perdus en attente d'un agent : en gris, notre serveur / Voxnode. Écart : agents joignables − nécessaires, « – » quand les téléphones ne sont pas relevés.</p>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
                         </div>
                     </section>
@@ -831,7 +849,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                         <thead>
                                             <tr>
                                                 <th class="title">Appels</th><th>Total</th><th>Décrochés</th><th>Longue attente</th><th>Perdus</th>
-                                                <th>Accueil / attente forcée</th><th>Perdus en attente d'un agent</th><th v-if="daysOther">Ni décrochés ni perdus</th><th>Attente moyenne</th><th>Attente médiane</th><th>Hors horaires</th>
+                                                <th>Accueil / attente forcée</th><th>Perdus en attente d'un agent</th><th v-if="daysUnknown">Étape non mesurée</th><th v-if="daysOther">Ni décrochés ni perdus</th><th>Hors horaires</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -839,14 +857,33 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                                 <td>{{ dayLabel(d.date) }}</td>
                                                 <td>{{ fmt(d.calls) }}</td>
                                                 <td>{{ fmt(d.answered) }} <span class="pct">{{ pct(d.answered, d.calls) }}</span></td>
-                                                <td>{{ fmt(d.late) }}</td>
+                                                <td>
+                                                    <span v-if="lateUnmeasured(d)" class="pct">non mesuré</span>
+                                                    <template v-else>{{ fmt(d.late) }} <span v-if="d.realWaitMeasured != null && d.realWaitMeasured < d.answered" class="pct">sur {{ fmt(d.realWaitMeasured) }} mesurés</span></template>
+                                                </td>
                                                 <td>{{ fmt(d.lost) }} <span class="pct">{{ pct(d.lost, d.calls) }}</span></td>
-                                                <td><span v-if="d.lostEstimated > 0" class="est">≈ </span>{{ fmt(d.lostForced) }}</td>
-                                                <td><span v-if="d.lostEstimated > 0" class="est">≈ </span><span class="red">{{ fmt(d.lostQueue) }}</span> <span class="pct">{{ pct(d.lostQueue, d.calls) }}</span></td>
+                                                <td><span v-if="stageUnmeasured(d)" class="pct">non mesuré</span><template v-else>{{ fmt(d.lostForced) }}</template></td>
+                                                <td>
+                                                    <span v-if="stageUnmeasured(d)" class="pct">non mesuré</span>
+                                                    <template v-else><span class="red">{{ fmt(d.lostQueue) }}</span> <span class="pct">{{ pct(d.lostQueue, d.calls) }}</span></template>
+                                                </td>
+                                                <td v-if="daysUnknown" class="text-gray-500">{{ fmt(d.lostUnknown ?? 0) }}</td>
                                                 <td v-if="daysOther">{{ fmt(d.other ?? 0) }}</td>
+                                                <td class="text-gray-500">{{ fmt(d.outsideHours ?? 0) }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="mini">
+                                    <table>
+                                        <thead>
+                                            <tr><th class="title">Attente avant décroché</th><th>Moyenne</th><th>Médiane</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="d in data.days" :key="d.date">
+                                                <td>{{ dayLabel(d.date) }}</td>
                                                 <td>{{ mmss(d.answerWaitAvgSec) }}</td>
                                                 <td>{{ mmss(d.answerWaitMedianSec) }}</td>
-                                                <td class="text-gray-500">{{ fmt(d.outsideHours ?? 0) }}</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -865,7 +902,7 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                                 <td>{{ fmt(d.agentHours) }}</td>
                                                 <td v-if="data.needShown">{{ fmt(d.needHours) }}</td>
                                                 <td v-if="data.needShown">
-                                                    <template v-if="d.overHours == null && d.shortHours == null">–</template>
+                                                    <template v-if="d.overHours == null || d.shortHours == null">–</template>
                                                     <template v-else>{{ fmt(d.overHours) }} / <span :class="d.shortHours > 0 && 'red'">{{ fmt(d.shortHours) }}</span></template>
                                                 </td>
                                                 <td>{{ fmt(d.breakHours) }}</td>
@@ -876,7 +913,6 @@ const daysEstimated = computed(() => (data.value?.days ?? []).some((d) => d.lost
                                 </div>
                             </div>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
-                            <p v-if="daysEstimated" class="legend">≈ : étape estimée d'après la durée de l'appel (raccroché après 4 min = en attente d'un agent)</p>
                         </div>
                     </section>
                 </div>
@@ -998,9 +1034,6 @@ tr.sep td {
     font-size: 11px;
     margin-left: 1px;
     font-weight: 400;
-}
-.est {
-    color: var(--muted);
 }
 .link {
     color: inherit;
@@ -1197,9 +1230,6 @@ tr.sep td {
     width: 40%;
     min-width: 90px;
 }
-.mini tr.mark {
-    border-top: 1px dashed var(--muted);
-}
 /* Raccrochés */
 .hist {
     display: grid;
@@ -1356,6 +1386,9 @@ tr.sep td {
     left: 0;
     background: #fff;
     z-index: 1;
+}
+.ov > .lab.muted {
+    color: var(--muted);
 }
 .ov > .lab.l1 {
     padding-left: 14px;
