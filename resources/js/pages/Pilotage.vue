@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { addDays, iso } from '@/lib/performance'
 
 /**
- * Pilotage des effectifs (GET /pilotage de voxnode118), tous les chiffres viennent de l'API.
+ * Attentes et agents (GET /pilotage de voxnode118), tous les chiffres viennent de l'API.
  *   1. Devenir des appels : décrochés (par attente), perdus (à quelle étape), attentes, par plateforme
  *   2. Quand les appelants raccrochent : perdus par temps passé avant de raccrocher
  *   3. Vue d'ensemble : appels et agents d'un jour, demi-heure par demi-heure, sur les mêmes colonnes
@@ -366,6 +366,7 @@ const ov = computed(() => {
             line('Appels décrochés par ces agents', (f) => f1(f.answered)),
             line('Présents (feuille de présence)', (f) => fmt1(f.present)),
             line('en appel', (f) => fmt1(f.busy), 'l1'),
+            line('Occupation (en appel / présence)', (f) => (f.occupancyPct == null ? '–' : `${fmt(f.occupancyPct)} %`), 'l1'),
             line('présents sans appel', (f) => fmt1(f.free), 'l1'),
             // Téléphones relevés minute par minute : joignables par plateforme, injoignables
             ...(figs.some((f) => f.live)
@@ -398,6 +399,8 @@ const MODES = [
     { key: 'planned', label: 'Écart de planning', name: 'écart de planning (présents sur la feuille − nécessaires)', value: (f) => gapTxt(f.plannedGap), agents: true, whole: true },
     { key: 'gap', label: 'Écart réel', name: 'écart réel (joignables − nécessaires)', value: (f) => gapTxt(f.gap), agents: true, whole: true },
     { key: 'need', label: 'Nécessaires', name: 'agents nécessaires', value: (f) => fmt(f.need), agents: true, whole: true },
+    // Occupation : temps en appel / temps de présence, sans modèle ; couleur = niveau des pertes de la case
+    { key: 'occupancy', label: 'Occupation', name: 'occupation (en appel / présence)', value: (f) => (f.occupancyPct == null ? '–' : `${fmt(f.occupancyPct)} %`), agents: true, sheet: true },
     { key: 'present', label: 'Présents (feuille)', name: 'agents présents (feuille de présence)', value: (f) => fmt1(f.present), agents: true, sheet: true },
     { key: 'reachable', label: 'Joignables', name: 'agents joignables (téléphone connecté)', value: (f, p) => fmt1(agentValue(f, p, (x) => x.live?.reachable ?? null, (l) => l.reachable)), agents: true },
     { key: 'free', label: 'Libres', name: 'agents libres (téléphones relevés)', value: (f, p) => fmt1(agentValue(f, p, freeOf, (l) => l.free)), agents: true },
@@ -447,9 +450,14 @@ const currentMode = computed(() => MODES.find((m) => m.key === mode.value))
 // Ouverture sur l'écart de planning ; l'écart réel seulement si une case de la période a un relevé des téléphones
 const anyDot = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.lostDespiteFree)))
 const anyGap = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.gap != null)))
+// Écart de planning à l'ouverture seulement si une case l'a (besoin mesuré), sinon l'occupation
+const anyPlanned = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.plannedGap != null)))
 watch([gPlat, data], () => {
-    if (currentMode.value && modeDisabled(currentMode.value)) mode.value = 'lq'
-    else if (mode.value === 'gap' && !anyGap.value && !modeFromUrl) mode.value = 'planned'
+    if (!modeFromUrl) {
+        if (mode.value === 'gap' && !anyGap.value) mode.value = 'planned'
+        if (mode.value === 'planned' && !anyPlanned.value) mode.value = 'occupancy'
+    }
+    if (currentMode.value && modeDisabled(currentMode.value)) mode.value = !modeDisabled(MODES.find((m) => m.key === 'occupancy')) ? 'occupancy' : 'lq'
     modeFromUrl = false
 })
 const needMode = computed(() => NEED_MODES.includes(mode.value))
@@ -532,6 +540,7 @@ const detail = computed(() => {
                   ]
                 : []),
             ['En appel', { text: fmt1(a.busy) }],
+            ['Occupation (en appel / présence)', { text: a.occupancyPct == null ? '–' : `${fmt(a.occupancyPct)} %` }],
             ['Présents sans appel (feuille de présence)', { text: fmt1(a.free) }],
             ['Libres (téléphones relevés)', { text: a.live ? fmt1(freeOf(a)) : '–' }],
             ['En pause', { text: fmt1(a.pause) }],
@@ -588,11 +597,11 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
 </script>
 
 <template>
-    <Head title="Pilotage des effectifs" />
+    <Head title="Attentes et agents" />
 
     <AppLayout>
         <div class="pilotage space-y-4 p-6">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Pilotage des effectifs' }]">
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Attentes et agents' }]">
                 <template v-if="data?.computedAt" #actions>
                     <span class="text-xs text-gray-500">Chiffres calculés à {{ data.computedAt.slice(11, 16) }}</span>
                 </template>
@@ -882,7 +891,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                     </select>
                                     de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise). Ce choix change le calcul des agents nécessaires dans toute la page.
                                     <template v-if="mode === 'gap'">Écart réel : agents joignables (téléphone connecté, hors pause) moins nécessaires. – : téléphones non relevés.</template>
-                                    <template v-else>Écart de planning : agents présents sur la feuille de présence (hors pause et déjeuner) moins nécessaires.</template>
+                                    <template v-else>Écart de planning : agents présents sur la feuille de présence (hors pause et déjeuner) moins nécessaires. – : appels de la demi-heure pas tous mesurés.</template>
                                 </span>
                             </div>
                             <div v-else class="legend">
@@ -1059,7 +1068,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                             <tr>
                                                 <th class="title">Agents<span class="note">{{ data.team === 'all' ? 'tous' : teamName }}</span></th><th>Présents (h)</th><th>Décrochés</th><th>Par heure de présence</th>
                                                 <th v-if="data.needShown">Nécessaires (h)</th><th v-if="data.needShown">Planning : en trop / manquantes (h)</th><th v-if="data.needShown">Réel : en trop / manquantes (h)</th>
-                                                <th>Pause et déjeuner (h)</th><th>Sonnés sans réponse</th>
+                                                <th>Occupation</th><th>Pause et déjeuner (h)</th><th>Sonnés sans réponse</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1079,6 +1088,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                                         <template v-if="d.overHours == null || d.shortHours == null">–</template>
                                                         <template v-else>{{ fmt(d.overHours) }} / <span :class="d.shortHours > 0 && 'red'">{{ fmt(d.shortHours) }}</span></template>
                                                     </td>
+                                                    <td>{{ d.occupancyPct == null ? '–' : `${fmt(d.occupancyPct)} %` }}</td>
                                                     <td>{{ fmt(d.breakHours) }}</td>
                                                     <td>{{ fmt(d.missed) }}</td>
                                                 </template>

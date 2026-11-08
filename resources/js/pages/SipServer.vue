@@ -925,7 +925,6 @@ const sinceLastRun = computed(() => {
                             </table>
                         </div>
                     </div>
-                    <p class="border-t border-gray-50 px-3 py-1.5 text-xs text-gray-400">Indication seulement : une pause n'est jamais bloquée.</p>
                 </section>
 
                 <!-- Appels et agents, côte à côte -->

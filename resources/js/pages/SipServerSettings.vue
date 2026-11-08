@@ -968,7 +968,7 @@ onUnmounted(() => window.removeEventListener('hashchange', onHash))
                                 <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_auto]">
                                     <div>
                                         <Label for="break-margin" class="text-gray-900">Marge pour « bon moment pour une pause » (agents libres en plus des appelants)</Label>
-                                        <p class="text-sm text-gray-500">La page Serveur SIP affiche « Bon moment pour une pause » quand il y a au moins {{ telSettings.break_advice_ok_margin }} agents libres de plus que d'appelants en attente ou dans l'accueil. Indication seulement : une pause n'est jamais bloquée.</p>
+                                        <p class="text-sm text-gray-500">La page Serveur SIP affiche « Bon moment pour une pause » quand il y a au moins {{ telSettings.break_advice_ok_margin }} agents libres de plus que d'appelants en attente ou dans l'accueil.</p>
                                     </div>
                                     <div class="flex items-center gap-2 text-sm text-gray-600">
                                         <Input id="break-margin" v-model.number="breakForm.values.break_advice_ok_margin" type="number" min="0" max="20" class="h-9 w-24 text-right tabular-nums" />

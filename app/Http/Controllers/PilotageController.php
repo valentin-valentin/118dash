@@ -11,7 +11,7 @@ use Inertia\Response;
 use Throwable;
 
 /**
- * Pilotage des effectifs (GET /pilotage de voxnode118) : devenir des appels par plateforme, moment où les appelants
+ * Attentes et agents (GET /pilotage de voxnode118) : devenir des appels par plateforme, moment où les appelants
  * raccrochent, appels et agents demi-heure par demi-heure (agents nécessaires calculés par l'API pour décrocher 90 %
  * des appels en moins de « within » secondes), créneaux à revoir et jour par jour. Aucun calcul côté page.
  */

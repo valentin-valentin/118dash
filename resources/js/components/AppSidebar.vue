@@ -54,7 +54,7 @@ const navItems = [
     { title: 'Assistant', href: '/assistant', icon: MessagesSquare },
     { title: 'Appels', href: '/calls', icon: Phone },
     { title: 'Appels rejetés', href: '/rejected-calls', icon: PhoneOff },
-    { title: 'Pilotage des effectifs', href: '/pilotage', icon: CalendarRange },
+    { title: 'Attentes et agents', href: '/pilotage', icon: CalendarRange },
     { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
