@@ -5,8 +5,8 @@ import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Copy, Check } from 'lucide-vue-next'
-import { callTest, hangup, softphone } from '@/composables/useSoftphone'
+import { Check, Copy, ExternalLink, Mic, MicOff, Volume2, VolumeX } from 'lucide-vue-next'
+import { callTest, hangup, setMuted, setVolume, softphone } from '@/composables/useSoftphone'
 import { xsrfToken } from '@/lib/csrf'
 
 /**
@@ -41,13 +41,15 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(setupTimer))
 
+// Appli agent (softphone des agents, connexion par PIN)
+const AGENT_APP = 'https://agent.118.ae/'
 const testerState = (t) => {
-    if (!t.enabled) return { label: 'désactivé', class: 'text-gray-400' }
-    if (!t.online && !t.registered) return { label: 'hors ligne', class: 'text-gray-400' }
-    if (t.inCall) return { label: 'en appel', class: 'text-gray-900 font-medium' }
-    if (t.onBreak) return { label: 'en pause', class: 'text-amber-700' }
-    if (t.registered) return { label: 'disponible', class: 'text-emerald-700 font-medium' }
-    return { label: 'connecté', class: 'text-gray-700' }
+    if (!t.enabled) return { label: 'désactivé', class: 'text-gray-400', dot: 'bg-gray-300' }
+    if (!t.online && !t.registered) return { label: 'hors ligne', class: 'text-gray-500', dot: 'bg-gray-300' }
+    if (t.inCall) return { label: 'en appel', class: 'text-gray-900', dot: 'bg-gray-900' }
+    if (t.onBreak) return { label: 'en pause', class: 'text-amber-700', dot: 'bg-amber-500' }
+    if (t.registered) return { label: 'disponible', class: 'text-emerald-700', dot: 'bg-emerald-500' }
+    return { label: 'appli ouverte, téléphone non connecté', class: 'text-gray-700', dot: 'bg-gray-400' }
 }
 const copied = ref(null)
 async function copyPin(t) {
@@ -169,6 +171,18 @@ watch(
     },
 )
 
+// Micro et son du navigateur (softphone du panel, partagé avec le widget)
+const soundOff = computed(() => softphone.volume === 0)
+let lastVolume = 1
+function toggleSound() {
+    if (soundOff.value) {
+        setVolume(lastVolume || 1)
+    } else {
+        lastVolume = softphone.volume
+        setVolume(0)
+    }
+}
+
 // Raccrocher côté serveur : tous les canaux de l'appel (appel bloqué)
 const serverHangupError = ref(null)
 async function serverHangup() {
@@ -234,144 +248,190 @@ function clearHistory() {
     <Head title="Testeur de softphone" />
 
     <AppLayout>
-        <div class="space-y-4 p-6">
+        <div class="space-y-5 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Testeur de softphone' }]" />
 
             <p v-if="setupError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ setupError }}</p>
 
-            <!-- ─── 1. Comptes de test ─── -->
-            <section class="rounded-lg border border-gray-100 bg-white">
-                <header class="border-b border-gray-100 px-4 py-3">
-                    <h2 class="text-sm font-semibold text-gray-900">Comptes de test</h2>
-                    <p class="text-xs text-gray-500">Connectez-vous au softphone agent avec ce PIN, dans un autre onglet ou un autre navigateur.</p>
-                </header>
-                <div class="px-4 py-3">
-                    <div v-if="!setup && !setupError" class="h-16 animate-pulse rounded bg-gray-50" />
-                    <p v-else-if="!setup?.testers?.length" class="text-sm text-gray-500">Aucun compte de test</p>
-                    <table v-else class="text-sm">
-                        <thead>
-                            <tr class="text-left text-xs text-gray-500">
-                                <th class="py-1 pr-6 font-medium">Nom</th>
-                                <th class="py-1 pr-6 font-medium">Identifiant</th>
-                                <th class="py-1 pr-6 font-medium">PIN</th>
-                                <th class="py-1 font-medium">État</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="t in setup.testers" :key="t.id" class="border-t border-gray-50">
-                                <td class="py-1.5 pr-6 text-gray-900">{{ t.name || '—' }}</td>
-                                <td class="py-1.5 pr-6 font-mono text-gray-700">{{ t.username }}</td>
-                                <td class="py-1.5 pr-6">
-                                    <span class="font-mono text-gray-900">{{ t.pin }}</span>
-                                    <button type="button" class="ml-2 inline-flex items-center rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" :aria-label="`Copier le PIN de ${t.username}`" @click="copyPin(t)">
-                                        <Check v-if="copied === t.id" class="h-3.5 w-3.5 text-emerald-600" />
-                                        <Copy v-else class="h-3.5 w-3.5" />
-                                    </button>
-                                </td>
-                                <td class="py-1.5" :class="testerState(t).class">{{ testerState(t).label }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <!-- ─── 2. Appel ─── -->
+            <div class="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+                <!-- ─── Lancer un appel : qui décroche, qui appelle, quel numéro ─── -->
                 <section class="rounded-lg border border-gray-100 bg-white">
-                    <header class="border-b border-gray-100 px-4 py-3">
-                        <h2 class="text-sm font-semibold text-gray-900">Appel</h2>
+                    <header class="border-b border-gray-100 px-5 py-3.5">
+                        <h2 class="text-sm font-semibold text-gray-900">Appel de test</h2>
                     </header>
-                    <form class="space-y-4 px-4 py-4" @submit.prevent="start">
+
+                    <div class="space-y-6 px-5 py-5">
+                        <!-- Comptes qui décrochent : PIN à saisir sur l'appli agent -->
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-600" for="tester-caller">Numéro appelant</label>
-                            <Input id="tester-caller" v-model="caller" class="h-9 w-64 font-mono" :placeholder="callerKind === 'masked' ? 'masqué' : '+33…'" @input="callerKind = 'free'" />
-                            <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                                <button type="button" class="chip" :aria-pressed="callerKind === 'new'" @click="randomMobile">Nouveau numéro</button>
-                                <select
-                                    class="chip-select"
-                                    :class="callerKind === 'blacklisted' && 'on'"
-                                    :disabled="!blacklisted.length"
-                                    @change="(e) => e.target.value && ((caller = e.target.value), (callerKind = 'blacklisted'), (e.target.value = ''))"
-                                >
-                                    <option value="">Liste noire…</option>
-                                    <option v-for="b in blacklisted" :key="b.number" :value="b.number">{{ b.number }}{{ b.note ? ` · ${b.note}` : '' }}</option>
-                                </select>
-                                <select
-                                    class="chip-select"
-                                    :class="callerKind === 'recent' && 'on'"
-                                    :disabled="!recentCallers.length"
-                                    @change="(e) => e.target.value && ((caller = e.target.value), (callerKind = 'recent'), (e.target.value = ''))"
-                                >
-                                    <option value="">Client récent…</option>
-                                    <option v-for="r in recentCallers" :key="r.number + r.calledAt" :value="r.number">{{ r.number }} · {{ r.brand || '—' }} · {{ fmtTime(r.calledAt) }}</option>
-                                </select>
-                                <button type="button" class="chip" :aria-pressed="callerKind === 'masked'" @click="(caller = ''), (callerKind = 'masked')">Masqué</button>
-                            </div>
+                            <h3 class="mb-2 text-sm font-medium text-gray-900">Agent qui décroche</h3>
+                            <div v-if="!setup && !setupError" class="h-20 animate-pulse rounded-md bg-gray-50" />
+                            <p v-else-if="!setup?.testers?.length" class="text-sm text-gray-500">Aucun compte de test</p>
+                            <table v-else class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-gray-100 text-left text-xs text-gray-500">
+                                        <th class="pb-2 font-medium">Compte</th>
+                                        <th class="pb-2 font-medium">État</th>
+                                        <th class="pb-2 font-medium">PIN</th>
+                                        <th class="pb-2" />
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="t in setup.testers" :key="t.id" class="border-b border-gray-50 last:border-0">
+                                        <td class="py-2.5">
+                                            <span class="font-medium text-gray-900">{{ t.username }}</span>
+                                            <span v-if="t.name" class="ml-2 text-gray-500">{{ t.name }}</span>
+                                        </td>
+                                        <td class="py-2.5">
+                                            <span class="inline-flex items-center gap-1.5" :class="testerState(t).class">
+                                                <span class="h-2 w-2 rounded-full" :class="testerState(t).dot" />
+                                                {{ testerState(t).label }}
+                                            </span>
+                                        </td>
+                                        <td class="py-2.5">
+                                            <button type="button" class="inline-flex items-center gap-2 rounded-md px-2 py-1 font-mono text-gray-900 hover:bg-gray-100" :aria-label="`Copier le PIN de ${t.username}`" @click="copyPin(t)">
+                                                {{ t.pin }}
+                                                <Check v-if="copied === t.id" class="h-3.5 w-3.5 text-emerald-600" />
+                                                <Copy v-else class="h-3.5 w-3.5 text-gray-400" />
+                                            </button>
+                                        </td>
+                                        <td class="py-2.5 text-right">
+                                            <a :href="AGENT_APP" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900">
+                                                Ouvrir l'appli agent <ExternalLink class="h-3.5 w-3.5" />
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <div>
-                            <label class="mb-1 block text-xs font-medium text-gray-600" for="tester-called">Numéro appelé</label>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <Input id="tester-called" v-model="called" class="h-9 w-64 font-mono" placeholder="+33…" />
-                                <select class="chip-select" @change="(e) => e.target.value && ((called = e.target.value), (e.target.value = ''))">
-                                    <option value="">Choisir…</option>
+
+                        <!-- Appelant et appelé -->
+                        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-gray-900" for="tester-caller">Appelant</label>
+                                <Input id="tester-caller" v-model="caller" class="h-10 w-full font-mono" :placeholder="callerKind === 'masked' ? 'masqué' : '+33…'" @input="callerKind = 'free'" />
+                                <!-- Raccourcis : quatre cases de même largeur -->
+                                <div class="mt-2 grid grid-cols-2 gap-1.5">
+                                    <button type="button" class="chip" :aria-pressed="callerKind === 'new'" @click="randomMobile">Nouveau numéro</button>
+                                    <button type="button" class="chip" :aria-pressed="callerKind === 'masked'" @click="(caller = ''), (callerKind = 'masked')">Masqué</button>
+                                    <select
+                                        class="chip-select"
+                                        :class="callerKind === 'blacklisted' && 'on'"
+                                        :disabled="!blacklisted.length"
+                                        @change="(e) => e.target.value && ((caller = e.target.value), (callerKind = 'blacklisted'), (e.target.value = ''))"
+                                    >
+                                        <option value="">Liste noire</option>
+                                        <option v-for="b in blacklisted" :key="b.number" :value="b.number">{{ b.number }}{{ b.note ? ` · ${b.note}` : '' }}</option>
+                                    </select>
+                                    <select
+                                        class="chip-select"
+                                        :class="callerKind === 'recent' && 'on'"
+                                        :disabled="!recentCallers.length"
+                                        @change="(e) => e.target.value && ((caller = e.target.value), (callerKind = 'recent'), (e.target.value = ''))"
+                                    >
+                                        <option value="">Client récent</option>
+                                        <option v-for="r in recentCallers" :key="r.number + r.calledAt" :value="r.number">{{ r.number }} · {{ r.brand || '—' }} · {{ fmtTime(r.calledAt) }}</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="mb-1.5 block text-sm font-medium text-gray-900" for="tester-called">Numéro appelé</label>
+                                <Input id="tester-called" v-model="called" class="h-10 w-full font-mono" placeholder="+33…" />
+                                <select class="chip-select mt-2 w-full" @change="(e) => e.target.value && ((called = e.target.value), (e.target.value = ''))">
+                                    <option value="">Nos numéros</option>
                                     <option v-for="n in numbers" :key="n.number" :value="n.number">{{ n.number }}{{ n.label ? ` · ${n.label}` : '' }}</option>
                                 </select>
                             </div>
-                            <p class="mt-1 text-xs text-gray-500">Un numéro inconnu teste le refus sans décrocher.</p>
                         </div>
-                        <div class="space-y-1.5 text-sm text-gray-700">
-                            <label class="flex items-center gap-2"><input v-model="skipWait" type="checkbox" class="h-4 w-4" />Sauter l'attente forcée</label>
-                            <label class="flex items-center gap-2"><input v-model="realTransfer" type="checkbox" class="h-4 w-4" />Transfert réel vers la marque (appelle vraiment la marque, facturé)</label>
+
+                        <div class="space-y-2 text-sm text-gray-800">
+                            <label class="flex cursor-pointer items-center gap-2.5"><input v-model="skipWait" type="checkbox" class="h-4 w-4" />Sauter l'attente forcée</label>
+                            <label class="flex cursor-pointer items-center gap-2.5"><input v-model="realTransfer" type="checkbox" class="h-4 w-4" />Transfert réel vers la marque <span class="text-gray-500">(appelle vraiment la marque, facturé)</span></label>
                         </div>
-                        <div class="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4">
-                            <Button v-if="!active" type="submit" size="sm" :disabled="!called">Appeler</Button>
-                            <Button v-else type="button" size="sm" variant="destructive" @click="hangup">Raccrocher</Button>
-                            <Button type="button" size="sm" variant="outline" :disabled="!current?.linkedid || !channels.length" @click="serverHangup">Raccrocher côté serveur</Button>
-                            <span v-if="softphone.status !== 'idle'" class="ml-2 text-sm text-gray-600">
-                                {{ STATUS_LABELS[softphone.status] ?? softphone.status }}
-                                <template v-if="active && softphone.startedAt"> · {{ dur(now - softphone.startedAt) }}</template>
-                            </span>
+                    </div>
+
+                    <footer class="border-t border-gray-100 px-5 py-4">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <Button v-if="!active" type="button" class="min-w-28" :disabled="!called" @click="start">Appeler</Button>
+                            <Button v-else type="button" class="min-w-28" variant="destructive" @click="hangup">Raccrocher</Button>
+
+                            <!-- Micro et son pendant l'appel -->
+                            <div class="inline-flex overflow-hidden rounded-md border border-gray-200">
+                                <button
+                                    type="button"
+                                    class="inline-flex h-9 items-center gap-2 px-3 text-sm disabled:cursor-not-allowed disabled:opacity-40"
+                                    :class="softphone.muted ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                                    :disabled="!active"
+                                    :aria-pressed="softphone.muted"
+                                    @click="setMuted(!softphone.muted)"
+                                >
+                                    <MicOff v-if="softphone.muted" class="h-4 w-4" />
+                                    <Mic v-else class="h-4 w-4" />
+                                    {{ softphone.muted ? 'Micro coupé' : 'Micro' }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="inline-flex h-9 items-center gap-2 border-l border-gray-200 px-3 text-sm"
+                                    :class="soundOff ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                                    :aria-pressed="soundOff"
+                                    @click="toggleSound"
+                                >
+                                    <VolumeX v-if="soundOff" class="h-4 w-4" />
+                                    <Volume2 v-else class="h-4 w-4" />
+                                    {{ soundOff ? 'Son coupé' : 'Son' }}
+                                </button>
+                            </div>
+
+                            <Button type="button" variant="outline" class="ml-auto" :disabled="!current?.linkedid || !channels.length" @click="serverHangup">Raccrocher côté serveur</Button>
                         </div>
-                        <p v-if="softphone.error" class="text-sm text-red-600">{{ softphone.error }}</p>
-                        <p v-if="serverHangupError" class="text-sm text-red-600">Raccrocher côté serveur : {{ serverHangupError }}</p>
-                        <p class="text-xs text-gray-500">Micro et haut-parleur de ce navigateur : vous entendez l'appel et parlez à l'agent.</p>
-                    </form>
+                        <p v-if="softphone.error" class="mt-2 text-sm text-red-600">{{ softphone.error }}</p>
+                        <p v-else-if="serverHangupError" class="mt-2 text-sm text-red-600">{{ serverHangupError }}</p>
+                    </footer>
                 </section>
 
-                <!-- ─── 3. Suivi en direct ─── -->
-                <section class="rounded-lg border border-gray-100 bg-white">
-                    <header class="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+                <!-- ─── Suivi de l'appel en cours ─── -->
+                <section class="rounded-lg border border-gray-100 bg-white xl:sticky xl:top-20">
+                    <header class="flex items-baseline gap-3 border-b border-gray-100 px-5 py-3.5">
                         <h2 class="text-sm font-semibold text-gray-900">Suivi de l'appel</h2>
-                        <span v-if="current?.linkedid" class="font-mono text-xs text-gray-400">{{ current.linkedid }}</span>
+                        <span v-if="active && softphone.startedAt" class="ml-auto text-sm tabular-nums text-gray-500">{{ dur(now - softphone.startedAt) }}</span>
                     </header>
-                    <div class="px-4 py-3">
-                        <p v-if="!current" class="text-sm text-gray-400">Aucun appel lancé depuis cette page</p>
+                    <div class="px-5 py-4">
+                        <p v-if="!current" class="text-sm text-gray-400">Aucun appel</p>
                         <template v-else>
-                            <p class="mb-2 text-xs text-gray-500">
-                                {{ current.caller || 'masqué' }} → {{ current.called }}
-                                <template v-if="current.skipWait"> · sans attente forcée</template>
-                                <template v-if="current.realTransfer"> · transfert réel</template>
+                            <p class="text-sm text-gray-900">
+                                <span class="font-mono">{{ current.caller || 'masqué' }}</span>
+                                <span class="mx-1.5 text-gray-400">→</span>
+                                <span class="font-mono">{{ current.called }}</span>
                             </p>
-                            <p v-if="!current.ended && !current.linkedid" class="text-sm text-gray-500">En attente de l'appel sur le serveur SIP…</p>
-                            <ol class="space-y-1">
-                                <li v-for="(s, i) in current.steps" :key="i" class="grid grid-cols-[5.5rem_1fr_auto] items-baseline gap-3 text-sm">
-                                    <span class="font-mono text-xs text-gray-400">{{ hms(s.start) }}</span>
-                                    <span :class="s.key === 'end' ? 'text-gray-500' : s.end ? 'text-gray-700' : 'font-medium text-gray-900'">{{ s.label }}</span>
-                                    <span v-if="s.key !== 'end'" class="text-xs text-gray-500 tabular-nums">{{ dur((s.end ?? now) - s.start) }}</span>
-                                </li>
-                            </ol>
-                            <p v-if="current.ended" class="mt-2 text-sm" :class="current.rejected ? 'text-red-600' : 'text-gray-700'">{{ current.result }} · {{ dur(current.endedAt - current.startedAt) }}</p>
-                            <p v-if="pollError" class="mt-2 text-xs text-red-600">Suivi : {{ pollError }}</p>
-                            <details v-if="channels.length" class="mt-3 text-xs text-gray-500">
-                                <summary class="cursor-pointer">Canaux du serveur SIP ({{ channels.length }})</summary>
-                                <table class="mt-1 font-mono">
+                            <p v-if="current.skipWait || current.realTransfer" class="mt-0.5 text-xs text-gray-500">
+                                {{ [current.skipWait && 'sans attente forcée', current.realTransfer && 'transfert réel'].filter(Boolean).join(' · ') }}
+                            </p>
+
+                            <table class="mt-4 w-full text-sm">
+                                <tbody>
+                                    <tr v-if="!current.ended && !current.steps.length">
+                                        <td class="py-2 text-gray-500">{{ STATUS_LABELS[softphone.status] ?? '…' }}</td>
+                                    </tr>
+                                    <tr v-for="(s, i) in current.steps" :key="i" class="border-b border-gray-50 last:border-0" :class="!s.end && s.key !== 'end' && 'bg-gray-50'">
+                                        <td class="w-24 py-2 pl-2 font-mono text-xs text-gray-400">{{ hms(s.start) }}</td>
+                                        <td class="py-2" :class="s.key === 'end' ? 'text-gray-500' : !s.end ? 'font-medium text-gray-900' : 'text-gray-700'">{{ s.label }}</td>
+                                        <td class="py-2 pr-2 text-right tabular-nums text-gray-500">{{ s.key === 'end' ? '' : dur((s.end ?? now) - s.start) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <p v-if="current.ended" class="mt-3 text-sm" :class="current.rejected ? 'text-red-600' : 'text-gray-700'">{{ current.result }} · {{ dur(current.endedAt - current.startedAt) }}</p>
+                            <p v-if="pollError" class="mt-3 text-sm text-red-600">{{ pollError }}</p>
+
+                            <details v-if="channels.length" class="mt-4 text-xs text-gray-500">
+                                <summary class="cursor-pointer">Canaux Asterisk · {{ current.linkedid }}</summary>
+                                <table class="mt-2 w-full font-mono">
                                     <tbody>
-                                        <tr v-for="ch in channels" :key="ch.uniqueid">
-                                            <td class="pr-3">{{ ch.channel }}</td>
-                                            <td class="pr-3">{{ ch.context }}</td>
-                                            <td class="pr-3">{{ ch.app }}</td>
-                                            <td class="pr-3">{{ ch.state }}</td>
-                                            <td>{{ ch.duration }}</td>
+                                        <tr v-for="ch in channels" :key="ch.uniqueid" class="border-t border-gray-50">
+                                            <td class="py-1 pr-3">{{ ch.channel }}</td>
+                                            <td class="py-1 pr-3">{{ ch.context }}</td>
+                                            <td class="py-1 pr-3">{{ ch.app }}</td>
+                                            <td class="py-1 pr-3">{{ ch.state }}</td>
+                                            <td class="py-1 text-right">{{ ch.duration }}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -381,39 +441,39 @@ function clearHistory() {
                 </section>
             </div>
 
-            <!-- ─── 4. Historique ─── -->
+            <!-- ─── Historique (ce navigateur) ─── -->
             <section class="rounded-lg border border-gray-100 bg-white">
-                <header class="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
-                    <h2 class="text-sm font-semibold text-gray-900">Historique</h2>
-                    <span class="text-xs text-gray-500">Appels de test lancés depuis ce navigateur</span>
-                    <button v-if="history.length" type="button" class="ml-auto text-xs text-gray-500 underline hover:text-gray-800" @click="clearHistory">Effacer</button>
+                <header class="flex items-center gap-3 border-b border-gray-100 px-5 py-3.5">
+                    <h2 class="text-sm font-semibold text-gray-900">Derniers appels de test</h2>
+                    <button v-if="history.length" type="button" class="ml-auto text-sm text-gray-500 hover:text-gray-900" @click="clearHistory">Effacer</button>
                 </header>
-                <p v-if="!history.length" class="px-4 py-3 text-sm text-gray-400">Aucun appel</p>
-                <div v-else class="overflow-x-auto px-4 py-2">
-                    <table class="text-sm">
+                <p v-if="!history.length" class="px-5 py-4 text-sm text-gray-400">Aucun appel</p>
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full text-sm">
                         <thead>
-                            <tr class="text-left text-xs text-gray-500">
-                                <th class="py-1 pr-5 font-medium">Heure</th>
-                                <th class="py-1 pr-5 font-medium">Appelant</th>
-                                <th class="py-1 pr-5 font-medium">Appelé</th>
-                                <th class="py-1 pr-5 font-medium">Options</th>
-                                <th class="py-1 pr-5 font-medium">Étapes</th>
-                                <th class="py-1 pr-5 font-medium">Fin</th>
-                                <th class="py-1 text-right font-medium">Durée</th>
+                            <tr class="border-b border-gray-100 text-left text-xs text-gray-500">
+                                <th class="px-5 py-2.5 font-medium">Heure</th>
+                                <th class="px-3 py-2.5 font-medium">Appelant</th>
+                                <th class="px-3 py-2.5 font-medium">Appelé</th>
+                                <th class="px-3 py-2.5 font-medium">Parcours</th>
+                                <th class="px-3 py-2.5 font-medium">Fin</th>
+                                <th class="px-5 py-2.5 text-right font-medium">Durée</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="h in history" :key="h.at" class="border-t border-gray-50 align-top">
-                                <td class="py-1.5 pr-5 whitespace-nowrap text-gray-500">{{ fmtTime(new Date(h.at).toISOString()) }}</td>
-                                <td class="py-1.5 pr-5 font-mono whitespace-nowrap">{{ h.caller || 'masqué' }}</td>
-                                <td class="py-1.5 pr-5 font-mono whitespace-nowrap">{{ h.called }}</td>
-                                <td class="py-1.5 pr-5 text-xs whitespace-nowrap text-gray-500">{{ [h.skipWait && 'sans attente forcée', h.realTransfer && 'transfert réel'].filter(Boolean).join(', ') || '—' }}</td>
-                                <td class="py-1.5 pr-5 text-xs text-gray-700">
-                                    <span v-for="(s, i) in h.steps" :key="i">{{ i ? ' → ' : '' }}{{ s.label }} <span class="text-gray-400">{{ dur(s.ms) }}</span></span>
+                            <tr v-for="h in history" :key="h.at" class="border-b border-gray-50 align-top last:border-0 hover:bg-gray-50/60">
+                                <td class="px-5 py-3 whitespace-nowrap text-gray-500">{{ fmtTime(new Date(h.at).toISOString()) }}</td>
+                                <td class="px-3 py-3 font-mono whitespace-nowrap">{{ h.caller || 'masqué' }}</td>
+                                <td class="px-3 py-3 whitespace-nowrap">
+                                    <span class="font-mono">{{ h.called }}</span>
+                                    <span v-if="h.skipWait || h.realTransfer" class="block text-xs text-gray-500">{{ [h.skipWait && 'sans attente forcée', h.realTransfer && 'transfert réel'].filter(Boolean).join(' · ') }}</span>
+                                </td>
+                                <td class="px-3 py-3 text-gray-700">
+                                    <span v-for="(st, i) in h.steps" :key="i" class="whitespace-nowrap">{{ i ? ' → ' : '' }}{{ st.label }} <span class="text-gray-400">{{ dur(st.ms) }}</span></span>
                                     <span v-if="!h.steps.length" class="text-gray-400">—</span>
                                 </td>
-                                <td class="py-1.5 pr-5 text-xs text-gray-700">{{ h.result }}</td>
-                                <td class="py-1.5 text-right whitespace-nowrap tabular-nums">{{ dur(h.total) }}</td>
+                                <td class="px-3 py-3 text-gray-700">{{ h.result }}</td>
+                                <td class="px-5 py-3 text-right whitespace-nowrap tabular-nums">{{ dur(h.total) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -426,7 +486,7 @@ function clearHistory() {
 <style scoped>
 .chip,
 .chip-select {
-    height: 28px;
+    height: 30px;
     border: 1px solid #e5e7eb;
     background: #fff;
     color: #4b5563;
@@ -445,9 +505,6 @@ function clearHistory() {
     background: #111827;
     color: #fff;
     border-color: #111827;
-}
-.chip-select {
-    max-width: 11rem;
 }
 .chip-select:disabled {
     opacity: 0.4;
