@@ -14,6 +14,7 @@ class Brand extends Model
         'enabled',
         'type',
         'name',
+        'aliases',
         'country',
         'phonenumber',
         'note',

@@ -4,6 +4,7 @@ import { Head, Link, usePage } from '@inertiajs/vue3'
 import { Pencil, Phone, PhoneForwarded, Plus } from 'lucide-vue-next'
 import { call as callNumber, normalizeNumber } from '@/composables/useSoftphone'
 import AppLayout from '@/layouts/AppLayout.vue'
+import BrandRequestsNotice from '@/components/BrandRequestsNotice.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
@@ -101,6 +102,8 @@ onMounted(() => {
                     </Button>
                 </template>
             </PageHeader>
+
+            <BrandRequestsNotice />
 
             <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 <StatCard label="Total" :value="stats.data?.total" :loading="stats.loading" />

@@ -34,6 +34,11 @@ const { isCurrentUrl } = useCurrentUrl();
                             v-if="item.badge && item.badge() === 'error'"
                             class="ml-auto h-2 w-2 rounded-full bg-red-500"
                         />
+                        <!-- Nombre d'éléments à traiter (information, pas une erreur) -->
+                        <span
+                            v-else-if="item.badge && typeof item.badge() === 'number'"
+                            class="ml-auto rounded-full bg-gray-200 px-1.5 text-[11px] font-medium tabular-nums text-gray-700"
+                        >{{ item.badge() }}</span>
                     </Link>
                 </SidebarMenuButton>
             </SidebarMenuItem>

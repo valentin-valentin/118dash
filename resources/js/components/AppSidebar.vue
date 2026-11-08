@@ -40,7 +40,20 @@ async function checkInvalidRouting() {
     }
 }
 
+// Marques demandées par les agents, à traiter
+const brandRequests = ref(0)
+async function checkBrandRequests() {
+    try {
+        const res = await fetch('/data/brand-requests/count', { headers: { Accept: 'application/json' } })
+        if (res.ok) brandRequests.value = (await res.json()).brands
+    } catch {
+        // pastille absente si la requête échoue
+    }
+}
+
 onMounted(() => {
+    checkBrandRequests()
+    setInterval(checkBrandRequests, 60000)
     checkRoutingErrors()
     checkInvalidRouting()
     // Check every 60 seconds
@@ -58,7 +71,7 @@ const navItems = [
     { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
-    { title: 'Marques', href: '/brands', icon: Store },
+    { title: 'Marques', href: '/brands', icon: Store, badge: () => brandRequests.value || null },
     { title: 'Sources', href: '/sources', icon: Workflow },
     { title: 'Soldes', href: '/soldes', icon: Wallet },
     { title: 'Numéros', href: '/phonenumbers', icon: Hash, badge: () => hasInvalidRouting.value ? 'error' : null },

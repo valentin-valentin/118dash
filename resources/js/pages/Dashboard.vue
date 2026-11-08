@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
+import BrandRequestsNotice from '@/components/BrandRequestsNotice.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
@@ -379,6 +380,8 @@ onMounted(() => {
                 <SidebarTrigger class="lg:hidden" />
                 <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
             </div>
+
+            <BrandRequestsNotice />
 
             <!-- Sélecteur de période + Hero KPIs -->
             <div class="lg:flex items-start gap-4">

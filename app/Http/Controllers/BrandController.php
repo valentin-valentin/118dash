@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\BrandName;
+
 use App\Models\Call;
 
 use App\Models\Brand;
@@ -55,6 +57,8 @@ class BrandController extends Controller
             // Numéro de transfert au format international : +33…, +32…
             'phonenumber' => ['nullable', 'string', 'regex:/^\+[1-9]\d{6,14}$/'],
             'note' => 'nullable|string',
+            // Autres noms sous lesquels les agents cherchent la marque, un par ligne
+            'aliases' => 'nullable|string',
             'scenario' => 'nullable|string',
             'image' => 'nullable|url|max:255',
             'icon' => 'nullable|url|max:255',
@@ -81,8 +85,13 @@ class BrandController extends Controller
         if ($request->filled('search')) {
             $search = trim($request->search);
             $digits = preg_replace('/\D/', '', $search);
-            $query->where(function ($q) use ($search, $digits) {
-                $q->where('name', 'like', "%{$search}%");
+            // Même règle que le softphone : clé du nom (accents, casse, espaces, ponctuation ignorés) sur le nom et les alias
+            $key = BrandName::key($search);
+            $ids = $key === '' ? [] : Brand::query()->get(['id', 'name', 'aliases'])
+                ->filter(fn ($b) => collect([$b->name, ...BrandName::aliases($b->aliases)])->contains(fn ($n) => str_contains(BrandName::key($n), $key)))
+                ->pluck('id')->all();
+            $query->where(function ($q) use ($search, $digits, $ids) {
+                $q->where('name', 'like', "%{$search}%")->orWhereIn('id', $ids);
                 // « 01 23 45 », « 0123… » ou « +33123… » : on compare les chiffres sans le 0 initial
                 if (strlen($digits) >= 4) {
                     $q->orWhere('phonenumber', 'like', '%' . ltrim(preg_replace('/^(33|32|49)/', '', $digits), '0') . '%');

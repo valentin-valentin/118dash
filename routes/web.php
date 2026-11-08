@@ -25,6 +25,7 @@ use App\Http\Controllers\SourcePaymentController;
 use App\Http\Controllers\SuperviseurController;
 use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\BrandCheckController;
+use App\Http\Controllers\BrandRequestController;
 use App\Http\Controllers\BrandController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -108,6 +109,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/brands/create', [BrandController::class, 'create'])->name('brands.create');
     Route::post('/brands', [BrandController::class, 'store'])->name('brands.store');
     Route::get('/brands/transfer-check', [BrandCheckController::class, 'index'])->name('brands.transfer-check');
+    Route::get('/brands/requests', [BrandRequestController::class, 'index'])->name('brands.requests');
+    Route::get('/brands/requests/{key}', [BrandRequestController::class, 'show'])->where('key', '[a-z0-9]+')->name('brands.requests.show');
     Route::get('/brands/{brand}/edit', [BrandController::class, 'edit'])->name('brands.edit');
     Route::put('/brands/{brand}', [BrandController::class, 'update'])->name('brands.update');
 
@@ -217,6 +220,14 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/superviseur/key', [SuperviseurController::class, 'updateKey']);
         Route::get('/brands', [BrandController::class, 'data']);
         Route::get('/brands/stats', [BrandController::class, 'stats']);
+        Route::get('/brand-requests', [BrandRequestController::class, 'data']);
+        Route::get('/brand-requests/count', [BrandRequestController::class, 'count']);
+        Route::get('/brand-requests/phone-check', [BrandRequestController::class, 'phoneCheck']);
+        Route::post('/brand-requests/link', [BrandRequestController::class, 'link']);
+        Route::post('/brand-requests/create', [BrandRequestController::class, 'create']);
+        Route::post('/brand-requests/ignore', [BrandRequestController::class, 'ignore']);
+        Route::post('/brand-requests/{id}/reopen', [BrandRequestController::class, 'reopen'])->whereNumber('id');
+        Route::get('/brand-requests/{key}', [BrandRequestController::class, 'detail'])->where('key', '[a-z0-9]+');
         Route::get('/brand-checks', [BrandCheckController::class, 'data']);
         Route::post('/brand-checks/measure', [BrandCheckController::class, 'measure']);
         Route::put('/brand-checks/check', [BrandCheckController::class, 'check']);

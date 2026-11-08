@@ -24,6 +24,7 @@ const b = props.brand ?? {}
 
 const form = useForm({
     name: b.name ?? '',
+    aliases: b.aliases ?? '',
     type: b.type ?? '',
     country: b.country ?? 'FR',
     phonenumber: b.phonenumber ?? '',
@@ -63,7 +64,7 @@ const changes = computed(() => {
 
 function submit() {
     // Les colonnes display_time et display_118500 ne servent plus : elles ne sont ni affichées ni envoyées
-    const payload = (data) => ({ ...data, type: data.type || null, country: data.country || null, phonenumber: data.phonenumber.trim() || null, note: data.note || null, scenario: data.scenario || null, image: data.image || null, icon: data.icon || null })
+    const payload = (data) => ({ ...data, type: data.type || null, country: data.country || null, phonenumber: data.phonenumber.trim() || null, note: data.note || null, aliases: data.aliases?.trim() || null, scenario: data.scenario || null, image: data.image || null, icon: data.icon || null })
     if (isEdit.value) {
         if (changes.value.length && !confirming.value) {
             confirming.value = true
@@ -98,6 +99,11 @@ function submit() {
                             <Label for="name">Nom *</Label>
                             <Input id="name" v-model="form.name" required :class="{ 'border-red-500': form.errors.name }" />
                             <p v-if="form.errors.name" class="text-sm text-red-600">{{ form.errors.name }}</p>
+                        </div>
+                        <div class="space-y-2 md:col-span-2">
+                            <Label for="aliases">Autres noms</Label>
+                            <Textarea id="aliases" v-model="form.aliases" rows="2" placeholder="Un nom par ligne" />
+                            <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone.</p>
                         </div>
                         <div class="space-y-2">
                             <Label for="phonenumber">Numéro de transfert</Label>
