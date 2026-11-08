@@ -36,7 +36,8 @@ Ces règles ne sont pas des suggestions. Un écran qui en enfreint une n'est pas
 
 | Élément | Modèle |
 |---|---|
-| Formulaire, réglages | carte `rounded-lg border border-gray-100 bg-white` ; en-tête `border-b border-gray-100 px-5 py-3` (`h2 font-semibold text-gray-900`, `p text-sm text-gray-500`) ; lignes `divide-y divide-gray-50` ; pied `flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3` — `SipServerSettings.vue` |
+| Fiche (créer ou modifier un enregistrement : marque, source, numéro…) | `Card` / `CardHeader` + `CardTitle` / `CardContent class="grid gap-4 md:grid-cols-2"`, champs `space-y-2` avec `Label` au-dessus, interrupteurs `Switch`, boutons en bas à droite hors carte (`flex justify-end gap-4`). **Tout écran qui crée ou modifie le même type d'enregistrement reprend exactement la même fiche** (mêmes cartes, mêmes libellés, mêmes contrôles, même ordre) — `BrandForm.vue` (repris par `BrandRequest.vue`) |
+| Réglages | carte `rounded-lg border border-gray-100 bg-white` ; en-tête `border-b border-gray-100 px-5 py-3` (`h2 font-semibold text-gray-900`, `p text-sm text-gray-500`) ; lignes `divide-y divide-gray-50` ; pied `flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3` — `SipServerSettings.vue` |
 | Tableau de données | titre `h2 mb-2 text-sm font-semibold text-gray-900` au-dessus d'un `rounded-lg border border-gray-100 bg-white` contenant `DataTable` — `SipServer.vue` (Agents en ligne) |
 | Filtres | `FilterBar` + `FilterSelect` / `Input h-8`, tous visibles — `Brands.vue`, `Calls.vue` |
 | Liste de choix fixe | `<select>` natif `flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm` — `BrandForm.vue`. `FilterSelect` seulement pour un filtre ou une recherche dans une longue liste. |

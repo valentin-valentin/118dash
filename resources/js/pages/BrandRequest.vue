@@ -6,11 +6,12 @@ import DataTable from '@/components/DataTable.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ExternalLink, Pause, Phone, Play, Search } from 'lucide-vue-next'
+import { ExternalLink, Pause, Phone, Play } from 'lucide-vue-next'
 import { call as softphoneCall } from '@/composables/useSoftphone'
 import { refreshBrandRequests } from '@/composables/useBrandRequests'
 import { xsrfToken } from '@/lib/csrf'
@@ -117,28 +118,6 @@ const identicalId = computed(() => (data.value?.suggestions?.[0]?.rank === 1 ? d
 
 // Création
 const COUNTRY = { 33: 'FR', 32: 'BE', 49: 'DE' }
-const TYPE_LABELS = {
-    service: 'Service',
-    ecommerce: 'E-commerce',
-    travel: 'Voyage',
-    bank: 'Banque',
-    insurance: 'Assurance',
-    public: 'Service public',
-    utility: 'Énergie et eau',
-    package: 'Colis',
-    telecom: 'Télécom',
-    car: 'Automobile',
-    transport: 'Transport',
-    social: 'Réseau social',
-    food: 'Alimentation',
-    multimedia: 'Multimédia',
-}
-const typeOptions = computed(() => props.types.map((t) => ({ value: t, label: TYPE_LABELS[t] ?? t })))
-const countryOptions = [
-    { value: 'FR', label: 'France' },
-    { value: 'BE', label: 'Belgique' },
-    { value: 'DE', label: 'Allemagne' },
-]
 const form = reactive({ name: '', phone: '', country: 'FR', type: 'service', canTransfer: true, note: '' })
 // Numéro saisi librement (01 23…, 0033…, +33…) → +33…
 const phonenumber = computed(() => {
@@ -235,111 +214,107 @@ async function ignore() {
             <template v-if="data?.calls.length">
                 <p v-if="actionError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ actionError }}</p>
 
-                <!-- ─── Autres noms : même champ que la fiche marque ─── -->
-                <section class="rounded-lg border border-gray-100 bg-white">
-                    <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                        <div>
-                            <Label for="br-aliases" class="text-gray-900">Autres noms</Label>
-                            <p class="text-sm text-gray-500">Noms tapés par les agents, ajoutés à la marque créée ou existante. Un par ligne.</p>
-                        </div>
-                        <div>
-                            <Textarea id="br-aliases" v-model="aliasText" rows="3" />
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Marques proches et création : la réponse la plus probable en premier (proches s'il y en a, sinon création) -->
+                <!-- Marques proches et création : la réponse la plus probable en premier (proches s'il y en a, sinon création).
+                     Les cartes et les champs sont ceux de la fiche marque (BrandForm.vue). -->
                 <div class="flex flex-col gap-6">
-                <!-- ─── Marques existantes proches ─── -->
-                <section class="rounded-lg border border-gray-100 bg-white" :class="data.suggestions.length ? 'order-1' : 'order-2'">
-                    <header class="border-b border-gray-100 px-5 py-3">
-                        <h2 class="font-semibold text-gray-900">Marques existantes proches</h2>
-                        <p class="text-sm text-gray-500">« Associer à cette marque » : les autres noms ci-dessus sont ajoutés à la marque, et la demande passe dans « Traitées » comme marque existante.</p>
-                    </header>
-                    <div class="divide-y divide-gray-50">
-                        <div v-for="b in data.suggestions" :key="b.id" class="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
-                            <Link :href="`/brands/${b.id}/edit`" class="font-medium text-gray-900 hover:underline">{{ b.name }}</Link>
-                            <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
-                            <span class="text-gray-500">{{ TYPE_LABELS[b.type] ?? b.type ?? '-' }}</span>
-                            <span class="text-gray-500">· {{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template></span>
-                            <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
-                        </div>
-                        <p v-if="!data.suggestions.length" class="px-5 py-3 text-sm text-gray-500">Aucune marque proche</p>
-                        <div class="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
-                            <span class="text-gray-700">Une autre marque</span>
-                            <div class="w-72"><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
-                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand" @click="link(otherBrand)">Associer à cette marque</Button>
-                        </div>
-                    </div>
-                </section>
+                    <!-- ─── Marques existantes proches ─── -->
+                    <Card :class="data.suggestions.length ? 'order-1' : 'order-2'">
+                        <CardHeader>
+                            <CardTitle>Marques existantes proches</CardTitle>
+                            <p class="text-sm text-gray-500">« Associer à cette marque » ajoute à cette marque les autres noms saisis dans « Créer la marque », et la demande passe dans « Traitées » comme marque existante.</p>
+                        </CardHeader>
+                        <CardContent class="space-y-3">
+                            <div v-for="b in data.suggestions" :key="b.id" class="flex items-center gap-4 text-sm">
+                                <Link :href="`/brands/${b.id}/edit`" class="font-medium text-gray-900 hover:underline">{{ b.name }}</Link>
+                                <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
+                                <span class="text-gray-500">{{ b.type || '-' }}</span>
+                                <span class="text-gray-500">{{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template></span>
+                                <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
+                            </div>
+                            <p v-if="!data.suggestions.length" class="text-sm text-gray-500">Aucune marque proche</p>
+                            <div class="flex items-center gap-4 text-sm">
+                                <span class="text-gray-700">Une autre marque</span>
+                                <div class="w-72"><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
+                                <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand" @click="link(otherBrand)">Associer à cette marque</Button>
+                            </div>
+                        </CardContent>
+                    </Card>
 
-                <!-- ─── Créer la marque ─── -->
-                <form class="rounded-lg border border-gray-100 bg-white" :class="data.suggestions.length ? 'order-2' : 'order-1'" @submit.prevent="create">
-                    <header class="border-b border-gray-100 px-5 py-3">
-                        <h2 class="font-semibold text-gray-900">Créer la marque</h2>
-                        <p class="text-sm text-gray-500">Activée tout de suite et visible des agents. Le reste se complète ensuite dans la fiche de la marque.</p>
-                    </header>
-                    <div class="divide-y divide-gray-50">
-                        <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                            <Label for="br-name" class="pt-2 text-gray-900">Nom</Label>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <Input id="br-name" v-model="form.name" class="h-9 w-72" required />
-                                <Button type="button" size="sm" variant="outline" as-child>
-                                    <a :href="googleUrl" target="_blank" rel="noopener"><Search class="mr-2 h-4 w-4" />Chercher sur Google<ExternalLink class="ml-2 h-3.5 w-3.5" /></a>
-                                </Button>
-                            </div>
-                        </div>
-                        <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                            <Label for="br-phone" class="pt-2 text-gray-900">Numéro du service client</Label>
-                            <div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <Input id="br-phone" v-model="form.phone" class="h-9 w-56 tabular-nums" placeholder="01 23 45 67 89" />
-                                    <span v-if="phonenumber && phoneValid" class="text-sm tabular-nums text-gray-500">{{ phonenumber }}</span>
-                                    <Button v-if="phonenumber && phoneValid" type="button" size="sm" variant="outline" @click="softphoneCall(phonenumber)"><Phone class="mr-2 h-4 w-4" />Appeler</Button>
+                    <!-- ─── Créer la marque : mêmes cartes et mêmes champs que « Nouvelle marque » ─── -->
+                    <form class="space-y-6" :class="data.suggestions.length ? 'order-2' : 'order-1'" @submit.prevent="create">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Créer la marque</CardTitle>
+                                <p class="text-sm text-gray-500">Activée tout de suite et visible des agents.</p>
+                            </CardHeader>
+                            <CardContent class="grid gap-4 md:grid-cols-2">
+                                <div class="space-y-2">
+                                    <Label for="br-name">Nom *</Label>
+                                    <Input id="br-name" v-model="form.name" required />
+                                    <a :href="googleUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-gray-500 underline hover:text-gray-900">Chercher le service client sur Google <ExternalLink class="h-3.5 w-3.5" /></a>
                                 </div>
-                                <p v-if="!phoneValid" class="mt-1 text-sm text-red-600">Numéro français, belge ou allemand attendu.</p>
-                                <p v-if="premium" class="mt-1 text-sm text-amber-700">Numéro surtaxé (08 9).</p>
-                                <p v-if="sameNumber.length" class="mt-1 text-sm text-red-600">
-                                    Déjà le numéro de
-                                    <template v-for="(b, i) in sameNumber" :key="b.id">{{ i ? ', ' : '' }}<Link :href="`/brands/${b.id}/edit`" class="underline">{{ b.name }}</Link></template>
-                                    : les appels des deux marques seraient mélangés.
-                                </p>
-                            </div>
+                                <div class="space-y-2 md:col-span-2">
+                                    <Label for="br-aliases">Autres noms</Label>
+                                    <Textarea id="br-aliases" v-model="aliasText" rows="2" placeholder="Un nom par ligne" />
+                                    <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone. Préremplis avec les noms tapés.</p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="br-phone">Numéro de transfert</Label>
+                                    <div class="flex items-center gap-2">
+                                        <Input id="br-phone" v-model="form.phone" placeholder="+33123456789" class="tabular-nums" />
+                                        <Button v-if="phonenumber && phoneValid" type="button" size="sm" variant="outline" @click="softphoneCall(phonenumber)"><Phone class="mr-2 h-4 w-4" />Appeler</Button>
+                                    </div>
+                                    <p v-if="phonenumber && phoneValid && phonenumber !== form.phone.trim()" class="text-sm tabular-nums text-gray-500">{{ phonenumber }}</p>
+                                    <p v-if="!phoneValid" class="text-sm text-red-600">Numéro français, belge ou allemand attendu.</p>
+                                    <p v-if="premium" class="text-sm text-amber-700">Numéro surtaxé (08 9).</p>
+                                    <p v-if="sameNumber.length" class="text-sm text-red-600">
+                                        Déjà le numéro de
+                                        <template v-for="(b, i) in sameNumber" :key="b.id">{{ i ? ', ' : '' }}<Link :href="`/brands/${b.id}/edit`" class="underline">{{ b.name }}</Link></template>
+                                        : les appels des deux marques seraient mélangés.
+                                    </p>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="br-type">Type</Label>
+                                    <Input id="br-type" v-model="form.type" list="br-types" placeholder="service, bank, ecommerce…" />
+                                    <datalist id="br-types">
+                                        <option v-for="t in types" :key="t" :value="t" />
+                                    </datalist>
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="br-country">Pays</Label>
+                                    <select id="br-country" v-model="form.country" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm">
+                                        <option value="FR">France</option>
+                                        <option value="BE">Belgique</option>
+                                        <option value="DE">Allemagne</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2 md:col-span-2">
+                                    <Switch id="br-transfer" :checked="form.canTransfer && !!phonenumber" :disabled="!phonenumber" @update:checked="form.canTransfer = $event" />
+                                    <Label for="br-transfer">Transfert possible</Label>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader><CardTitle>Pour l'agent</CardTitle></CardHeader>
+                            <CardContent>
+                                <div class="space-y-2">
+                                    <Label for="br-note">Note</Label>
+                                    <Textarea id="br-note" v-model="form.note" rows="3" />
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <div class="flex justify-end">
+                            <Button type="submit" :variant="identicalId ? 'outline' : 'default'" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
                         </div>
-                        <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                            <span class="pt-2 text-sm font-medium text-gray-900">Pays et catégorie</span>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <select v-model="form.country" class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm w-40" aria-label="Pays">
-                                    <option v-for="o in countryOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-                                </select>
-                                <select v-model="form.type" class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm w-56" aria-label="Catégorie">
-                                    <option v-for="o in typeOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div v-if="phonenumber" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                            <span class="text-sm font-medium text-gray-900">Transfert</span>
-                            <label class="flex items-center gap-2 text-sm text-gray-700"><Checkbox :model-value="form.canTransfer" @update:model-value="form.canTransfer = !!$event" />Les agents peuvent transférer l'appel vers ce numéro</label>
-                        </div>
-                        <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                            <Label for="br-note" class="pt-2 text-gray-900">Note pour les agents</Label>
-                            <Textarea id="br-note" v-model="form.note" rows="2" placeholder="" />
-                        </div>
-                    </div>
-                    <footer class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
-                        <Button type="submit" size="sm" :variant="identicalId ? 'outline' : 'default'" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
-                    </footer>
-                </form>
+                    </form>
                 </div>
 
-
                 <!-- ─── Sans créer ni associer de marque ─── -->
-                <section class="rounded-lg border border-gray-100 bg-white">
-                    <div class="flex flex-wrap items-center gap-3 px-5 py-4">
-                        <!-- <p class="text-sm text-gray-500">Sans créer ni associer de marque.</p> -->
-                        <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="ignore">Marquer la demande comme traitée</Button>
-                    </div>
-                </section>
+                <div class="flex justify-end">
+                    <Button type="button" variant="outline" :disabled="busy" @click="ignore">Marquer la demande comme traitée</Button>
+                </div>
             </template>
         </div>
     </AppLayout>
