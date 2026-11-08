@@ -17,26 +17,26 @@ import { xsrfToken } from '@/lib/csrf'
 
 /**
  * Une marque demandée (tous les appels où les agents ont tapé ce nom, ou une variante) :
- *   1. Appels : écoute de la conversation, cases à cocher (tout est coché ; décocher ceux qui visent une autre marque)
- *   2. Noms tapés : ceux à ajouter aux autres noms de la marque (recherche du softphone)
- *   3. Marques existantes proches : « C'est celle-ci » relie les appels cochés (l'agent ne l'a pas trouvée)
- *   4. Créer la marque, ou ignorer les appels cochés
+ *   1. Appels : écoute de la conversation
+ *   2. Autres noms : ajoutés à la marque (brands.aliases, un par ligne), cherchés par le softphone
+ *   3. Marques existantes proches : « C'est celle-ci » y relie la demande (l'agent ne l'a pas trouvée)
+ *   4. Créer la marque, ou ignorer la demande
+ * Chaque action porte sur tous les appels de la demande.
  */
 const props = defineProps({ nameKey: String, ignoreReasons: Object, types: Array })
 
 const data = ref(null)
 const error = ref(null)
-const selected = ref([])
-const aliasChoice = reactive({})
+// Autres noms à ajouter à la marque : même champ que la fiche marque (un par ligne)
+const aliasText = ref('')
 async function load() {
     try {
         const res = await fetch(`/data/brand-requests/${props.nameKey}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
         data.value = await res.json()
         error.value = null
-        selected.value = data.value.calls.map((c) => c.id)
-        // Noms tapés ajoutés aux autres noms : ceux que la recherche du softphone ne trouve pas déjà
-        for (const n of data.value.names) aliasChoice[n.name] = !n.found
+        // Préremplis avec tous les noms tapés, un par ligne (ceux qui sont déjà le nom ou un autre nom de la marque sont ignorés à l'enregistrement)
+        aliasText.value = data.value.names.map((n) => n.name).join('\n')
         if (!form.name) form.name = titleCase(data.value.name ?? '')
     } catch (e) {
         error.value = e.message
@@ -50,7 +50,6 @@ const mmss = (s) => (s == null ? '' : `${Math.floor(s / 60)}:${String(s % 60).pa
 
 // ─── Appels ───────────────────────────────────────────────────────────────────
 const callColumns = [
-    { key: 'select', label: '' },
     { key: 'at', label: 'Date' },
     { key: 'called', label: 'Numéro appelé' },
     { key: 'caller', label: 'Appelant' },
@@ -58,13 +57,6 @@ const callColumns = [
     { key: 'name', label: 'Nom tapé' },
     { key: 'record', label: 'Conversation' },
 ]
-const allSelected = computed(() => data.value && selected.value.length === data.value.calls.length)
-function toggle(id, on) {
-    selected.value = on ? [...new Set([...selected.value, id])] : selected.value.filter((x) => x !== id)
-}
-function toggleAll(on) {
-    selected.value = on ? data.value.calls.map((c) => c.id) : []
-}
 
 // Écoute de la conversation avec l'agent
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
@@ -84,7 +76,8 @@ function play(row) {
 onUnmounted(() => audio?.pause())
 
 // ─── Noms tapés → autres noms de la marque ────────────────────────────────────
-const aliases = computed(() => Object.entries(aliasChoice).filter(([, on]) => on).map(([name]) => name))
+const aliases = computed(() => aliasText.value.split('\n').map((x) => x.trim()).filter(Boolean))
+const ids = computed(() => data.value?.calls.map((c) => c.id) ?? [])
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 const busy = ref(false)
@@ -115,7 +108,7 @@ async function after() {
     if (data.value && !data.value.calls.length) router.visit(data.value.next ? `/brands/requests/${data.value.next}` : '/brands/requests')
 }
 async function link(brandId) {
-    if (await post('/data/brand-requests/link', { ids: selected.value, brand_id: brandId, aliases: aliases.value })) after()
+    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: aliases.value })) after()
 }
 const otherBrand = ref(null)
 
@@ -175,7 +168,7 @@ watch(phonenumber, (n) => {
 const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURIComponent(`${form.name || data.value?.name || ''} numéro de téléphone service client contact`)}`)
 async function create() {
     const json = await post('/data/brand-requests/create', {
-        ids: selected.value,
+        ids: ids.value,
         name: form.name,
         phonenumber: phonenumber.value || null,
         country: form.country,
@@ -194,7 +187,7 @@ async function create() {
 const ignoreReason = ref(null)
 const reasonOptions = computed(() => Object.entries(props.ignoreReasons).map(([value, label]) => ({ value, label })))
 async function ignore() {
-    if (await post('/data/brand-requests/ignore', { ids: selected.value, reason: ignoreReason.value })) {
+    if (await post('/data/brand-requests/ignore', { ids: ids.value, reason: ignoreReason.value })) {
         ignoreReason.value = null
         after()
     }
@@ -220,16 +213,9 @@ async function ignore() {
             <section>
                 <h2 class="mb-2 text-sm font-semibold text-gray-900">
                     Appels <span class="ml-1 font-normal tabular-nums text-gray-400">{{ data?.calls.length ?? '' }}</span>
-                    <span class="ml-2 font-normal text-gray-500">les actions ci-dessous portent sur les appels cochés</span>
                 </h2>
                 <div class="rounded-lg border border-gray-100 bg-white">
                     <DataTable :columns="callColumns" :rows="data?.calls ?? []" :loading="!data && !error" empty-message="Aucun appel à traiter">
-                        <template #header-select>
-                            <Checkbox v-if="data?.calls.length" :model-value="allSelected" aria-label="Tout cocher" @update:model-value="toggleAll(!!$event)" />
-                        </template>
-                        <template #select="{ row }">
-                            <Checkbox :model-value="selected.includes(row.id)" :aria-label="`Cocher l'appel du ${date(row.at)}`" @update:model-value="toggle(row.id, !!$event)" />
-                        </template>
                         <template #at="{ value }"><span class="text-sm whitespace-nowrap text-gray-700">{{ date(value) }}</span></template>
                         <template #called="{ value }"><span class="text-sm text-gray-700">{{ value || '-' }}</span></template>
                         <template #caller="{ value }"><span class="font-mono text-sm text-gray-600">{{ value || '-' }}</span></template>
@@ -256,19 +242,16 @@ async function ignore() {
             <template v-if="data?.calls.length">
                 <p v-if="actionError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ actionError }}</p>
 
-                <!-- ─── Noms tapés : autres noms de la marque ─── -->
+                <!-- ─── Autres noms : même champ que la fiche marque ─── -->
                 <section class="rounded-lg border border-gray-100 bg-white">
-                    <header class="border-b border-gray-100 px-5 py-3">
-                        <h2 class="font-semibold text-gray-900">Noms tapés par les agents</h2>
-                        <p class="text-sm text-gray-500">Ceux qui sont cochés deviennent des autres noms de la marque, cherchés par le softphone.</p>
-                    </header>
-                    <div class="divide-y divide-gray-50">
-                        <label v-for="n in data.names" :key="n.name" class="flex items-center gap-3 px-5 py-3 text-sm">
-                            <Checkbox :model-value="aliasChoice[n.name]" @update:model-value="aliasChoice[n.name] = !!$event" />
-                            <span class="text-gray-900">{{ n.name }}</span>
-                            <span class="text-gray-500">{{ n.calls }} appel{{ n.calls > 1 ? 's' : '' }}</span>
-                            <span v-if="n.found" class="text-gray-500">· déjà trouvé par la recherche du softphone</span>
-                        </label>
+                    <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
+                        <div>
+                            <Label for="br-aliases" class="text-gray-900">Autres noms</Label>
+                            <p class="text-sm text-gray-500">Noms tapés par les agents, ajoutés à la marque créée ou existante. Un par ligne.</p>
+                        </div>
+                        <div>
+                            <Textarea id="br-aliases" v-model="aliasText" rows="3" />
+                        </div>
                     </div>
                 </section>
 
@@ -276,7 +259,7 @@ async function ignore() {
                 <section class="rounded-lg border border-gray-100 bg-white">
                     <header class="border-b border-gray-100 px-5 py-3">
                         <h2 class="font-semibold text-gray-900">Marques existantes proches</h2>
-                        <p class="text-sm text-gray-500">Si c'est l'une d'elles, les appels cochés lui sont reliés : l'agent ne l'avait pas trouvée.</p>
+                        <p class="text-sm text-gray-500">Si c'est l'une d'elles, la demande lui est reliée : l'agent ne l'avait pas trouvée.</p>
                     </header>
                     <div class="divide-y divide-gray-50">
                         <div v-for="b in data.suggestions" :key="b.id" class="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
@@ -284,13 +267,13 @@ async function ignore() {
                             <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
                             <span class="text-gray-500">{{ TYPE_LABELS[b.type] ?? b.type ?? '-' }}</span>
                             <span class="text-gray-500">· {{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template></span>
-                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !selected.length" @click="link(b.id)">C'est celle-ci</Button>
+                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="link(b.id)">C'est celle-ci</Button>
                         </div>
                         <p v-if="!data.suggestions.length" class="px-5 py-3 text-sm text-gray-500">Aucune marque proche</p>
                         <div class="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
                             <span class="text-gray-700">Une autre marque</span>
                             <div class="w-72"><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
-                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand || !selected.length" @click="link(otherBrand)">C'est celle-ci</Button>
+                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand" @click="link(otherBrand)">C'est celle-ci</Button>
                         </div>
                     </div>
                 </section>
@@ -341,21 +324,21 @@ async function ignore() {
                         </div>
                         <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
                             <Label for="br-note" class="pt-2 text-gray-900">Note pour les agents</Label>
-                            <Textarea id="br-note" v-model="form.note" rows="2" placeholder="Horaires, particularités…" />
+                            <Textarea id="br-note" v-model="form.note" rows="2" placeholder="" />
                         </div>
                     </div>
                     <footer class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
-                        <Button type="submit" size="sm" :disabled="busy || !selected.length || !form.name || !phoneValid">Créer la marque</Button>
+                        <Button type="submit" size="sm" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
                     </footer>
                 </form>
 
                 <!-- ─── Ignorer ─── -->
                 <section class="rounded-lg border border-gray-100 bg-white">
                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                        <span class="text-sm font-medium text-gray-900">Ignorer les appels cochés</span>
+                        <span class="text-sm font-medium text-gray-900">Ignorer la demande</span>
                         <div class="flex flex-wrap items-center gap-2">
                             <div class="w-56"><FilterSelect v-model="ignoreReason" :options="reasonOptions" placeholder="Motif" :searchable="false" /></div>
-                            <Button type="button" size="sm" variant="outline" :disabled="busy || !ignoreReason || !selected.length" @click="ignore">Ignorer</Button>
+                            <Button type="button" size="sm" variant="outline" :disabled="busy || !ignoreReason" @click="ignore">Ignorer</Button>
                         </div>
                     </div>
                 </section>

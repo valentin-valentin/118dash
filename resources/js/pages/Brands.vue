@@ -130,10 +130,7 @@ onMounted(() => {
                         <span class="font-mono text-xs text-gray-500">#{{ value }}</span>
                     </template>
                     <template #name="{ row }">
-                        <div class="flex items-center gap-2">
-                            <img v-if="row.icon" :src="row.icon" alt="" class="h-6 w-6 shrink-0 rounded object-cover" loading="lazy" @error="(e) => (e.target.style.visibility = 'hidden')" />
-                            <span class="font-medium text-gray-900">{{ row.name }}</span>
-                        </div>
+                        <span class="font-medium text-gray-900">{{ row.name }}</span>
                     </template>
                     <template #type="{ value }"><span class="text-sm text-gray-600">{{ value || '-' }}</span></template>
                     <template #country="{ value }"><span class="text-sm text-gray-600">{{ value || '-' }}</span></template>
