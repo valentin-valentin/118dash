@@ -32,15 +32,23 @@ const parisDay = (offset = 0) => {
     const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date()).split('-').map(Number)
     return iso(addDays(new Date(y, m - 1, d), offset))
 }
-const preset = ref('today')
-const pickedDay = ref(parisDay(-2))
-const team = ref('all')
+// État lu dans l'adresse (lien partageable), écrit à chaque changement (history.replaceState)
+const urlState = (() => {
+    try {
+        return new URLSearchParams(window.location.search)
+    } catch {
+        return new URLSearchParams()
+    }
+})()
+const preset = ref(PERIODS.some((x) => x.key === urlState.get('period')) ? urlState.get('period') : 'today')
+const pickedDay = ref(/^\d{4}-\d{2}-\d{2}$/.test(urlState.get('date') ?? '') ? urlState.get('date') : parisDay(-2))
+const team = ref(urlState.get('team') || 'all')
 
 // Attente maximale du calcul des agents nécessaires, gardée dans le navigateur
 const WITHIN_CHOICES = [20, 30, 45, 60, 90, 120]
 const within = ref(45)
 try {
-    const saved = Number(localStorage.getItem('pilotage.within'))
+    const saved = Number(urlState.get('within') ?? localStorage.getItem('pilotage.within'))
     if (WITHIN_CHOICES.includes(saved)) within.value = saved
 } catch {
     // stockage indisponible : valeur par défaut
@@ -65,24 +73,32 @@ const query = computed(() => {
 const data = ref(null)
 const loading = ref(false)
 const error = ref(null)
+// Requête des données affichées : un rafraîchissement raté garde les données, un changement de filtre raté les retire
+let dataKey = null
 let requestId = 0
 async function load() {
     if (query.value.period === 'day' && !query.value.date) return
     const id = ++requestId
+    const key = JSON.stringify(query.value)
     loading.value = true
+    const fail = (message) => {
+        if (id !== requestId) return
+        error.value = message
+        if (dataKey !== key) data.value = null
+    }
     try {
         const res = await fetch(`/data/pilotage?${new URLSearchParams(query.value)}`, { headers: { Accept: 'application/json' } })
         const json = res.ok ? await res.json() : { ok: false, error: `Erreur HTTP ${res.status}` }
         if (id !== requestId) return
         if (json.ok) {
             data.value = json.data
+            dataKey = key
             error.value = null
         } else {
-            data.value = null
-            error.value = json.error
+            fail(json.error)
         }
     } catch (e) {
-        if (id === requestId) error.value = e.message
+        fail(e.message)
     } finally {
         if (id === requestId) loading.value = false
     }
@@ -272,17 +288,24 @@ const fig = (cell, p) => {
         realWait: c.realWaitSec,
         level: c.level ?? 'none',
         ...(cell.agents ?? {}),
+        // agents.answered : décrochés par les agents affichés (l'équipe en vue équipe)
         live: cell.live ?? null,
         need: cell.need,
         gap: cell.gap,
+        plannedGap: cell.plannedGap,
+        plannedGapLevel: cell.plannedGapLevel,
         gapLevel: cell.gapLevel,
-        lostDespiteStaff: cell.lostDespiteStaff,
+        causes: cell.causes ?? null,
+        // Perdus en attente d'un agent alors que des agents étaient libres (mesuré minute par minute)
+        lostDespiteFree: !!cell.lostDespiteFree,
     }
 }
-// Agents libres : téléphones relevés (les deux plateformes) quand ils le sont, sinon feuille de présence − en appel
-const freeOf = (f) => (f.live ? (f.live.server?.free ?? 0) + (f.live.voxnode?.free ?? 0) : f.free)
+// Une seule définition par chiffre : « libres » = téléphones relevés uniquement ; agents.free (feuille − en appel) = « présents sans appel »
+const freeOf = (f) => (f.live ? (f.live.server?.free ?? 0) + (f.live.voxnode?.free ?? 0) : null)
 // Écart : agents joignables (téléphone connecté) − nécessaires, seulement là où les téléphones sont relevés
-const GAP_LABEL = 'Écart (joignables − nécessaires)'
+// Deux écarts, deux noms : planning (feuille de présence) et réel (téléphones relevés) ; la différence = les injoignables
+const GAP_LABEL = 'Écart réel (joignables − nécessaires)'
+const PLANNED_LABEL = 'Écart de planning (présents − nécessaires)'
 const LONG_WAIT_TEXT = "Longue attente : 5 min ou plus de vraie attente d'un agent, sur les appels où elle est mesurée"
 const allRows = computed(() => [...(data.value?.rows ?? []), ...(data.value?.average ? [data.value.average] : [])])
 const cellOf = (row, slot) => row?.cells.find((c) => c.slot === slot)
@@ -290,10 +313,11 @@ const cellOf = (row, slot) => row?.cells.find((c) => c.slot === slot)
 const isAvg = (row) => (row?.days ?? 1) > 1
 
 // ─── 3. Vue d'ensemble ────────────────────────────────────────────────────────
-const ovDay = ref(null)
-const ovPlat = ref('all')
+const ovDay = ref(urlState.get('ov') || null)
+const ovPlat = ref(PLATS.some(([k]) => k === urlState.get('ovplat')) ? urlState.get('ovplat') : 'all')
+const ovDefault = () => (data.value?.average ? 'average' : (data.value?.rows?.at(-1)?.key ?? null))
 watch(allRows, (list) => {
-    if (!list.some((r) => r.key === ovDay.value)) ovDay.value = data.value?.rows?.at(-1)?.key ?? null
+    if (!list.some((r) => r.key === ovDay.value)) ovDay.value = ovDefault()
 })
 const ovRow = computed(() => allRows.value.find((r) => r.key === ovDay.value) ?? null)
 const ovCols = computed(() => (ovRow.value ? ovRow.value.cells.filter((c) => c.state !== 'closed').map((c) => c.slot) : []))
@@ -335,21 +359,24 @@ const ov = computed(() => {
             ...(showNeed
                 ? [
                       line('Nécessaires', (f) => fmt1(f.need)),
+                      line(PLANNED_LABEL, (f) => gapTxt(f.plannedGap), '', (f) => f.plannedGap != null && Math.round(f.plannedGap) < 0),
                       line(GAP_LABEL, (f) => gapTxt(f.gap), '', (f) => f.gap != null && Math.round(f.gap) < 0),
                   ]
                 : []),
+            line('Appels décrochés par ces agents', (f) => f1(f.answered)),
             line('Présents (feuille de présence)', (f) => fmt1(f.present)),
+            line('en appel', (f) => fmt1(f.busy), 'l1'),
+            line('présents sans appel', (f) => fmt1(f.free), 'l1'),
             // Téléphones relevés minute par minute : joignables par plateforme, injoignables
             ...(figs.some((f) => f.live)
                 ? [
                       line('Joignables (téléphone connecté)', (f) => (f.live ? fmt1(f.live.reachable) : '–')),
                       line('notre serveur', (f) => (f.live ? fmt1(f.live.server?.reachable) : '–'), 'l1'),
                       line('Voxnode', (f) => (f.live ? fmt1(f.live.voxnode?.reachable) : '–'), 'l1'),
+                      line('Libres (téléphones relevés)', (f) => (f.live ? fmt1(freeOf(f)) : '–'), '', (f) => f.live && freeOf(f) < 1 && f.calls > 2),
                       line('Injoignables (téléphone non connecté)', (f) => (f.live ? fmt1(f.live.unavailable) : '–'), '', (f) => (f.live?.unavailable ?? 0) >= 1),
                   ]
                 : []),
-            line('en appel ou pause après appel', (f) => fmt1(f.busy), 'l1'),
-            line('libres (téléphones relevés, sinon feuille de présence)', (f) => fmt1(freeOf(f)), 'l1', (f) => freeOf(f) < 1 && f.calls > 2),
             line('En pause', (f) => fmt1(f.pause)),
             line('En déjeuner', (f) => fmt1(f.lunch)),
             line('Appels sonnés sans réponse', (f) => f1(f.missed)),
@@ -359,7 +386,7 @@ const ov = computed(() => {
 const STAT_CLASS = { short: 'queue', warn: 'late', ok: 'free', over: 'over', none: '', unmeasured: '' }
 
 // ─── 4. Heure par heure ───────────────────────────────────────────────────────
-const NEED_MODES = ['gap', 'need']
+const NEED_MODES = ['planned', 'gap', 'need']
 // Agents d'une plateforme : seulement avec le relevé des téléphones (live[p]), « – » sans relevé
 const livePart = (f, p) => (p === 'all' ? null : (f.live?.[p] ?? undefined))
 const agentValue = (f, p, all, part) => {
@@ -368,16 +395,12 @@ const agentValue = (f, p, all, part) => {
     return l ? part(l) : null
 }
 const MODES = [
-    { key: 'gap', label: 'En trop ou manquants', name: 'agents en trop ou manquants', value: (f) => gapTxt(f.gap), agents: true, whole: true },
+    { key: 'planned', label: 'Écart de planning', name: 'écart de planning (présents sur la feuille − nécessaires)', value: (f) => gapTxt(f.plannedGap), agents: true, whole: true },
+    { key: 'gap', label: 'Écart réel', name: 'écart réel (joignables − nécessaires)', value: (f) => gapTxt(f.gap), agents: true, whole: true },
     { key: 'need', label: 'Nécessaires', name: 'agents nécessaires', value: (f) => fmt(f.need), agents: true, whole: true },
-    { key: 'free', label: 'Libres', name: 'agents libres', value: (f, p) => fmt1(agentValue(f, p, freeOf, (l) => l.free)), agents: true },
-    {
-        key: 'present',
-        label: (p) => (p === 'all' ? 'Présents' : 'Joignables'),
-        name: (p) => (p === 'all' ? 'agents présents (feuille de présence)' : 'agents joignables (téléphone connecté)'),
-        value: (f, p) => fmt1(agentValue(f, p, (x) => x.present, (l) => l.reachable)),
-        agents: true,
-    },
+    { key: 'present', label: 'Présents (feuille)', name: 'agents présents (feuille de présence)', value: (f) => fmt1(f.present), agents: true, sheet: true },
+    { key: 'reachable', label: 'Joignables', name: 'agents joignables (téléphone connecté)', value: (f, p) => fmt1(agentValue(f, p, (x) => x.live?.reachable ?? null, (l) => l.reachable)), agents: true },
+    { key: 'free', label: 'Libres', name: 'agents libres (téléphones relevés)', value: (f, p) => fmt1(agentValue(f, p, freeOf, (l) => l.free)), agents: true },
     { key: 'breaks', label: 'En pause ou déjeuner', name: 'agents en pause ou déjeuner', value: (f, p) => fmt1(agentValue(f, p, (x) => (x.pause ?? 0) + (x.lunch ?? 0), (l) => (l.pause ?? 0) + (l.lunch ?? 0))), agents: true },
     {
         key: 'unavailable',
@@ -386,6 +409,14 @@ const MODES = [
         value: (f, p) => fmt1(p === 'all' ? (f.live?.unavailable ?? null) : (livePart(f, p)?.unavailable ?? null)),
         agents: true,
     },
+    {
+        key: 'freeWait',
+        label: 'Attente avec agents libres',
+        name: "minutes où un appelant attendait un agent depuis 30 s ou plus alors que des agents étaient libres",
+        value: (f) => (f.causes ? fmt(f.causes.freeSame + f.causes.freeOther) : '–'),
+        agents: true,
+        whole: true,
+    },
     { key: 'missed', label: 'Sonnés sans réponse', name: 'appels sonnés chez un agent sans réponse', value: (f) => fmt(f.missed), agents: true, whole: true },
     { key: 'lq', label: "Perdus en attente d'un agent", name: "appels perdus en attente d'un agent", value: (f) => (f.stageUnm ? '–' : fmt(f.lq)) },
     { key: 'lost', label: 'Perdus (tous)', name: 'appels perdus', value: (f) => fmt(f.lost) },
@@ -393,38 +424,55 @@ const MODES = [
     { key: 'realWait', label: 'Vraie attente moyenne', name: "vraie attente moyenne d'un agent", value: (f) => (f.realWait == null ? '–' : mmss(f.realWait)) },
 ]
 const modeText = (v) => (typeof v === 'function' ? v(gPlat.value) : v)
-const gPlat = ref('all')
-const mode = ref('gap')
+const gPlat = ref(PLATS.some(([k]) => k === urlState.get('plat')) ? urlState.get('plat') : 'all')
+const mode = ref(MODES.some((m) => m.key === urlState.get('mode')) ? urlState.get('mode') : 'planned')
+// Mode choisi dans l'adresse : pas de repli automatique sur « perdus » à l'ouverture
+let modeFromUrl = urlState.has('mode')
 // Au moins une case de la grille avec le relevé des téléphones : agents par plateforme possibles
 const anyLive = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.live)))
 const modeDisabled = (m) => {
-    if (gPlat.value !== 'all' && m.whole) return m.key === 'missed' ? 'Les appels sonnés ne sont pas enregistrés par plateforme' : "Le besoin se calcule pour tout le centre d'appels"
+    if (gPlat.value !== 'all' && m.whole)
+        return m.key === 'missed'
+            ? 'Les appels sonnés ne sont pas enregistrés par plateforme'
+            : m.key === 'freeWait'
+              ? "Mesuré pour tout le centre d'appels"
+              : "Le besoin se calcule pour tout le centre d'appels"
+    if (gPlat.value !== 'all' && m.sheet) return 'La feuille de présence ne se lit pas par plateforme'
     if (gPlat.value !== 'all' && m.agents && !anyLive.value) return 'Sans relevé des téléphones, les agents ne sont pas comptés par plateforme'
     if (NEED_MODES.includes(m.key) && data.value && !data.value.needShown) return "Le besoin se calcule pour tout le centre d'appels"
     return null
 }
 const currentMode = computed(() => MODES.find((m) => m.key === mode.value))
 // Mode devenu indisponible (plateforme choisie, vue équipe) : perdus en attente d'un agent
-// Ouverture sur « En trop ou manquants » seulement si une case de la période a un écart (téléphones relevés)
+// Ouverture sur l'écart de planning ; l'écart réel seulement si une case de la période a un relevé des téléphones
+const anyDot = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.lostDespiteFree)))
 const anyGap = computed(() => (data.value?.rows ?? []).some((r) => r.cells.some((c) => c.gap != null)))
 watch([gPlat, data], () => {
     if (currentMode.value && modeDisabled(currentMode.value)) mode.value = 'lq'
-    else if (mode.value === 'gap' && !anyGap.value) mode.value = 'lq'
+    else if (mode.value === 'gap' && !anyGap.value && !modeFromUrl) mode.value = 'planned'
+    modeFromUrl = false
 })
 const needMode = computed(() => NEED_MODES.includes(mode.value))
 const cellClass = (cell) => {
     const f = fig(cell, gPlat.value)
     if (!f) return ''
     // Moins de 2 appels mesurés : case neutre, comme « none »
-    const lvl = needMode.value ? (f.gapLevel ?? 'none') : f.level === 'unmeasured' ? 'none' : f.level
-    return [lvl, needMode.value && f.lostDespiteStaff ? 'dot' : '']
+    const lvl = mode.value === 'gap' ? (f.gapLevel ?? 'none') : needMode.value ? (f.plannedGapLevel ?? 'none') : f.level === 'unmeasured' ? 'none' : f.level
+    return [lvl, f.lostDespiteFree ? 'dot' : '']
 }
 
 // Demi-heure sélectionnée (clic) : par défaut le pire créneau de la période s'il est dans la grille
-const sel = ref(null)
+const sel = ref(urlState.get('sel')?.includes('~') ? { row: urlState.get('sel').split('~')[0], slot: urlState.get('sel').split('~')[1] } : null)
+// Créneau cliqué dans « Créneaux à revoir » sur une période en semaines : le jour s'ouvre, puis la case est choisie
+let pendingSel = null
 watch(data, (d) => {
     const rows = d?.rows ?? []
     const has = (k) => k && rows.some((r) => r.key === k.row && cellOf(r, k.slot)?.state === 'open')
+    if (has(pendingSel)) {
+        sel.value = pendingSel
+        pendingSel = null
+        return
+    }
     if (has(sel.value)) return
     const w = d?.worst?.[0]
     const fromWorst = w && { row: w.date, slot: w.slot }
@@ -439,10 +487,22 @@ const detail = computed(() => {
     const cell = cellOf(row, sel.value.slot)
     if (!cell || cell.state !== 'open') return null
     const x = Object.fromEntries(PLATS.map(([p]) => [p, fig(cell, p)]))
+    // Minutes où un appelant attendait un agent depuis 30 s ou plus, selon les agents libres à ce moment
+    const c = cell.causes
+    const causes = c
+        ? [
+              [`Appelants en attente d'un agent depuis 30 s ou plus : ${fmt(c.waiting)} min sur 30`, null],
+              ['dont avec des agents libres sur la même plateforme', `${fmt(c.freeSame)} min`],
+              ['dont avec des agents libres seulement sur l\'autre plateforme', `${fmt(c.freeOther)} min`],
+              ['dont sans aucun agent libre', `${fmt(c.noneFree)} min`],
+          ]
+        : null
     const measuredOn = (f) => (f.realMeasured != null && f.realMeasured < f.ans ? `sur ${fmt(f.realMeasured)} mesurés` : '')
     const a = x.all
     return {
         title: `${row.label}, ${cell.slot}–${endOf(cell.slot)}`,
+        causes,
+        causesDays: c?.days > 1 ? c.days : null,
         avg: isAvg(row),
         calls: [
             { label: 'Appels', v: (f) => ({ text: fmt(f.calls) }) },
@@ -455,6 +515,7 @@ const detail = computed(() => {
         ].map((r) => ({ label: r.label, cells: PLATS.map(([p]) => r.v(x[p])) })),
         agents: [
             ...(data.value?.needShown ? [['Nécessaires', { text: fmt(a.need) }]] : []),
+            ['Appels décrochés par ces agents', { text: fmt(a.answered) }],
             ['Présents (feuille de présence)', { text: fmt1(a.present) }],
             ...(a.live
                 ? [
@@ -464,9 +525,15 @@ const detail = computed(() => {
                       ['Injoignables (en poste, téléphone non connecté)', { text: fmt1(a.live.unavailable), red: a.live.unavailable >= 1 }],
                   ]
                 : []),
-            ...(data.value?.needShown ? [[GAP_LABEL, { text: gapTxt(a.gap), red: a.gapLevel === 'short' }]] : []),
-            ['En appel ou pause après appel', { text: fmt1(a.busy) }],
-            [a.live ? 'Libres (téléphones relevés)' : 'Libres', { text: fmt1(freeOf(a)) }],
+            ...(data.value?.needShown
+                ? [
+                      [PLANNED_LABEL, { text: gapTxt(a.plannedGap), red: a.plannedGapLevel === 'short' }],
+                      [GAP_LABEL, { text: gapTxt(a.gap), red: a.gapLevel === 'short' }],
+                  ]
+                : []),
+            ['En appel', { text: fmt1(a.busy) }],
+            ['Présents sans appel (feuille de présence)', { text: fmt1(a.free) }],
+            ['Libres (téléphones relevés)', { text: a.live ? fmt1(freeOf(a)) : '–' }],
             ['En pause', { text: fmt1(a.pause) }],
             ['En déjeuner', { text: fmt1(a.lunch) }],
             ['Appels sonnés sans réponse', { text: fmt(a.missed) }],
@@ -474,14 +541,50 @@ const detail = computed(() => {
     }
 })
 function selectWorst(w) {
-    if (!data.value?.rows?.some((r) => r.key === w.date)) return
-    sel.value = { row: w.date, slot: w.slot }
+    if (data.value?.rows?.some((r) => r.key === w.date)) {
+        sel.value = { row: w.date, slot: w.slot }
+    } else {
+        // Période en semaines (lignes = jours de semaine) : ouvrir le jour du créneau
+        pendingSel = { row: w.date, slot: w.slot }
+        pickedDay.value = w.date
+        preset.value = 'day'
+    }
     document.getElementById('pilotage-grid')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
+// ─── P6 : état dans l'adresse ─────────────────────────────────────────────────
+watch(
+    () => [preset.value, pickedDay.value, team.value, within.value, mode.value, gPlat.value, ovDay.value, ovPlat.value, sel.value],
+    () => {
+        const q = new URLSearchParams()
+        if (preset.value !== 'today') q.set('period', preset.value)
+        if (preset.value === 'day') q.set('date', pickedDay.value)
+        if (team.value !== 'all') q.set('team', team.value)
+        if (within.value !== 45) q.set('within', within.value)
+        q.set('mode', mode.value)
+        if (gPlat.value !== 'all') q.set('plat', gPlat.value)
+        if (ovDay.value && ovDay.value !== ovDefault()) q.set('ov', ovDay.value)
+        if (ovPlat.value !== 'all') q.set('ovplat', ovPlat.value)
+        if (sel.value) q.set('sel', `${sel.value.row}~${sel.value.slot}`)
+        try {
+            history.replaceState(history.state, '', `${window.location.pathname}?${q}`)
+        } catch {
+            // adresse non modifiable : rien à faire
+        }
+    },
+)
+
 // ─── 6. Jour par jour ─────────────────────────────────────────────────────────
-const daysOther = computed(() => (data.value?.days ?? []).some((d) => (d.other ?? 0) > 0))
-const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostUnknown ?? 0) > 0))
+// Jours, ou semaines au-delà de 14 jours (weeksSummary) ; jours fermés avec des appels en ligne grise
+const byWeek = computed(() => (data.value?.weeksSummary ?? []).length > 0)
+const ddmm = (d) => new Date(`${d}T12:00`).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+const periodRows = computed(() =>
+    byWeek.value
+        ? data.value.weeksSummary.map((w) => ({ ...w, key: w.week, label: `sem. du ${ddmm(w.week)}`, closed: w.openDays === 0 }))
+        : (data.value?.days ?? []).map((d) => ({ ...d, key: d.date, label: dayLabel(d.date) })),
+)
+const daysOther = computed(() => periodRows.value.some((d) => (d.other ?? 0) > 0))
+const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?? 0) > 0))
 </script>
 
 <template>
@@ -489,7 +592,11 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
 
     <AppLayout>
         <div class="pilotage space-y-4 p-6">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Pilotage des effectifs' }]" />
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Pilotage des effectifs' }]">
+                <template v-if="data?.computedAt" #actions>
+                    <span class="text-xs text-gray-500">Chiffres calculés à {{ data.computedAt.slice(11, 16) }}</span>
+                </template>
+            </PageHeader>
 
             <FilterBar :has-active-filters="preset !== 'today' || team !== 'all'" @reset="(preset = 'today'), (team = 'all')">
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -530,7 +637,7 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
 
             <section v-if="data && data.open === false" class="card">
                 <div class="body text-gray-700">
-                    {{ data.from === data.to ? 'Service fermé ce jour' : 'Service fermé sur cette période' }}<template v-if="outsideHours?.calls > 0"> · {{ fmt(outsideHours.calls) }} appels reçus hors horaires</template>
+                    {{ data.from === data.to ? 'Service fermé ce jour' : 'Service fermé sur cette période' }}<template v-if="outsideHours?.calls > 0"> · {{ fmt(outsideHours.calls) }} appels hors horaires</template>
                 </div>
             </section>
 
@@ -569,9 +676,42 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                     </table>
                                 </div>
                             </div>
+                            <p v-if="data.fate.all?.lostMeasuredPct != null" class="legend">
+                                Mesuré :
+                                <template v-for="([k, label], i) in COLS" :key="k">{{ i ? ' ; ' : ' ' }}{{ label }} : étape des perdus {{ fmt1(data.fate[k]?.lostMeasuredPct) }} % · vraie attente {{ fmt1(data.fate[k]?.realWaitMeasuredPct) }} %</template>
+                            </p>
                             <p v-if="outsideHours?.calls > 0" class="legend">
                                 Hors horaires d'ouverture : {{ fmt(outsideHours.calls) }} appels (dont {{ fmt(outsideHours.answered) }} décrochés), non comptés ici
                             </p>
+                        </div>
+                    </section>
+
+                    <!-- ─── Équipes : une ligne par centre d'appels ─── -->
+                    <section v-if="data.teamSummary?.length" class="card">
+                        <header><h2>Équipes</h2><span class="sub">Agents de chaque centre d'appels sur la période</span></header>
+                        <div class="body">
+                            <div class="mini inline-block max-w-full overflow-x-auto">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th class="title">Équipe</th><th>Heures de présence</th><th>Appels décrochés</th><th>Décrochés par heure de présence</th>
+                                            <th>Temps en appel</th><th>Pauses (h)</th><th>Déjeuner (h)</th><th>Sonnés sans réponse</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="t in data.teamSummary" :key="t.id" :class="t.id === data.team && 'strong selrow'">
+                                            <td>{{ t.name }}</td>
+                                            <td>{{ fmt(t.agentHours) }}</td>
+                                            <td>{{ fmt(t.answered) }} <span class="pct">{{ fmt1(t.answeredPct) }} %</span></td>
+                                            <td>{{ fmt1(t.answeredPerHour) }}</td>
+                                            <td>{{ fmt1(t.talkPct) }} % <span class="pct">du temps de présence</span></td>
+                                            <td>{{ fmt(t.pauseHours) }}</td>
+                                            <td>{{ fmt(t.lunchHours) }}</td>
+                                            <td>{{ fmt(t.missed) }} <span class="pct">{{ fmt1(t.missedPer100) }} pour 100 décrochés</span></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </section>
 
@@ -661,9 +801,9 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                             <div class="legend">
                                 <span><i class="sw answered" />décrochés</span><span><i class="sw late" />décrochés après une longue attente</span>
                                 <span><i class="sw forced" />perdus pendant l'accueil ou l'attente forcée</span><span><i class="sw queue" />perdus en attente d'un agent</span>
-                                <span class="ml-3"><i class="sw busy" />agents en appel</span>
+                                <span class="ml-3"><i class="sw busy" />en appel</span>
                                 <span v-if="data.needShown"><i class="sw" style="height: 2px; background: #18181b" />agents nécessaires</span>
-                                <span><i class="sw free" />agents libres</span><span><i class="sw brk" />agents en pause ou déjeuner</span>
+                                <span><i class="sw free" />présents sans appel</span><span><i class="sw brk" />en pause ou déjeuner</span>
                             </div>
                         </div>
                     </section>
@@ -709,7 +849,7 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                     </thead>
                                     <tbody>
                                         <tr v-for="r in data.rows" :key="r.key">
-                                            <th class="day">{{ r.label }}</th>
+                                            <th class="day">{{ r.label }}<span v-if="r.days > 1" class="pct">{{ r.days }} j</span></th>
                                             <td v-for="s in data.slots" :key="s">
                                                 <template v-for="c in [cellOf(r, s)]" :key="s">
                                                     <span v-if="!c || c.state === 'closed'" class="cell closed" />
@@ -735,21 +875,24 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                 <span><i class="sw" style="background: #fee2e2; outline: 1px solid #dc2626" />il manquait des agents</span>
                                 <span><i class="sw" style="background: #ecfdf3" />effectif juste (0 à 2 en plus)</span>
                                 <span><i class="sw" style="background: #eef4ff" />3 agents ou plus en trop</span>
-                                <span><i class="sw" style="background: #dc2626; border-radius: 50%; width: 7px; height: 7px" />3 % des appels ou plus perdus en attente d'un agent malgré un effectif suffisant</span>
                                 <span style="flex-basis: 100%">
                                     Nécessaires : agents qu'il fallait pour décrocher {{ data.answerShare }} % des appels en moins de
                                     <select v-model.number="within" class="within" aria-label="Attente maximale">
                                         <option v-for="v in WITHIN_CHOICES" :key="v" :value="v">{{ v }} s</option>
                                     </select>
-                                    de vraie attente, avec la durée de traitement de la demi-heure (appel et pause après appel). Écart : agents joignables (téléphone connecté, hors pause) moins nécessaires. – : téléphones non relevés.
+                                    de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise). Ce choix change le calcul des agents nécessaires dans toute la page.
+                                    <template v-if="mode === 'gap'">Écart réel : agents joignables (téléphone connecté, hors pause) moins nécessaires. – : téléphones non relevés.</template>
+                                    <template v-else>Écart de planning : agents présents sur la feuille de présence (hors pause et déjeuner) moins nécessaires.</template>
                                 </span>
                             </div>
                             <div v-else class="legend">
                                 <span><i class="sw" style="background: #fee2e2; outline: 1px solid #dc2626" />3 % des appels ou plus perdus en attente d'un agent ou décrochés après une longue attente</span>
                                 <span><i class="sw warn-sw" />de 1 à 3 %</span>
                                 <span><i class="sw" style="background: #ecfdf3" />moins de 1 %</span>
-                                <span><i class="sw" style="background: #eef4ff" />aucun, et agents occupés moins de la moitié du temps</span>
                             </div>
+                            <p v-if="anyDot" class="legend">
+                                <span><i class="sw" style="background: #dc2626; border-radius: 50%; width: 7px; height: 7px" />point rouge : des appels perdus en attente d'un agent alors que des agents étaient libres</span>
+                            </p>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
 
                             <div v-if="detail" class="detail">
@@ -770,7 +913,7 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                         </tbody>
                                     </table>
                                 </div>
-                                <div class="mini">
+                                <div class="mini wrapheads">
                                     <table>
                                         <thead>
                                             <tr>
@@ -783,6 +926,17 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                                 <td :colspan="c.sub ? 2 : 1">{{ label }}</td>
                                                 <td v-if="!c.sub" :class="c.red && 'red'">{{ c.text }}</td>
                                             </tr>
+                                            <!-- Attente avec ou sans agents libres, minute par minute -->
+                                            <template v-if="detail.causes">
+                                                <tr v-for="[label, v] in detail.causes" :key="label" :class="v === null ? 'sep' : 'subrow'">
+                                                    <td :colspan="v === null ? 2 : 1">{{ label }}<span v-if="v === null && detail.causesDays" class="pct">moyenne sur {{ detail.causesDays }} jours relevés</span></td>
+                                                    <td v-if="v !== null">{{ v }}</td>
+                                                </tr>
+                                            </template>
+                                            <tr v-else class="sep">
+                                                <td>Appelants en attente d'un agent depuis 30 s ou plus</td>
+                                                <td class="pct">non mesuré</td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -794,19 +948,21 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                     <section v-if="data.worst?.length" class="card">
                         <header><h2>Créneaux à revoir</h2><span class="sub">Les demi-heures avec le plus d'appels perdus en attente d'un agent ou décrochés après une longue attente</span></header>
                         <div class="body">
-                            <div class="mini inline-block max-w-full overflow-x-auto">
+                            <div class="mini wrapheads inline-block max-w-full overflow-x-auto">
                                 <table>
                                     <thead>
                                         <tr class="group">
                                             <th />
                                             <th colspan="3" class="gh">Appels</th>
-                                            <th :colspan="data.needShown ? 7 : 5" class="gh">Agents</th>
+                                            <th :colspan="data.needShown ? 8 : 5" class="gh">Agents</th>
+                                            <th class="gh gl">Attente d'un agent (min)</th>
                                         </tr>
                                         <tr>
                                             <th class="title">Demi-heure</th>
                                             <th>Appels</th><th>Perdus en attente d'un agent</th><th>Longue attente</th>
-                                            <template v-if="data.needShown"><th class="gl">Nécessaires</th><th>Écart</th></template>
-                                            <th :class="!data.needShown && 'gl'">Présents</th><th>Libres</th><th>En pause ou déjeuner</th><th>Injoignables</th><th>Sonnés sans réponse</th>
+                                            <template v-if="data.needShown"><th class="gl">Nécessaires</th><th>Écart de planning</th><th>Écart réel</th></template>
+                                            <th :class="!data.needShown && 'gl'">Présents</th><th>Présents sans appel</th><th>En pause ou déjeuner</th><th>Injoignables</th><th>Sonnés sans réponse</th>
+                                            <th class="gl" title="Minutes où un appelant attendait un agent depuis 30 s ou plus : avec des agents libres sur la même plateforme / seulement sur l'autre / sans aucun agent libre">libres même pl. / autre pl. / aucun</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -823,6 +979,7 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                             <td>{{ w.realWaitMeasured === 0 ? '–' : fmt(w.late) }}</td>
                                             <template v-if="data.needShown">
                                                 <td class="gl">{{ fmt(w.need) }}</td>
+                                                <td><span :class="w.plannedGap != null && Math.round(w.plannedGap) < 0 && 'red'">{{ gapTxt(w.plannedGap) }}</span></td>
                                                 <td><span :class="w.gap != null && Math.round(w.gap) < 0 && 'red'">{{ gapTxt(w.gap) }}</span></td>
                                             </template>
                                             <td :class="!data.needShown && 'gl'">{{ fmt1(w.agents?.present) }}</td>
@@ -830,21 +987,23 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                             <td>{{ fmt1((w.agents?.pause ?? 0) + (w.agents?.lunch ?? 0)) }}</td>
                                             <td><span :class="(w.live?.unavailable ?? 0) >= 1 && 'red'">{{ w.live ? fmt1(w.live.unavailable) : '–' }}</span></td>
                                             <td>{{ fmt(w.agents?.missed) }}</td>
+                                            <td v-if="w.causes" class="gl">{{ fmt(w.causes.freeSame) }} / {{ fmt(w.causes.freeOther) }} / {{ fmt(w.causes.noneFree) }}</td>
+                                            <td v-else class="gl"><span class="pct">non mesuré</span></td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
-                            <p class="legend">Perdus en attente d'un agent : en gris, notre serveur / Voxnode. Écart : agents joignables − nécessaires, « – » quand les téléphones ne sont pas relevés.</p>
+                            <p class="legend">Perdus en attente d'un agent : en gris, notre serveur / Voxnode. Écart de planning : présents sur la feuille − nécessaires. Écart réel : joignables − nécessaires, « – » quand les téléphones ne sont pas relevés.</p>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
                         </div>
                     </section>
 
-                    <!-- ─── 6. Jour par jour : appels et agents côte à côte ──── -->
-                    <section v-if="data.days?.length" class="card">
-                        <header><h2>Jour par jour</h2></header>
+                    <!-- ─── 6. Jour par jour, ou semaine par semaine au-delà de 14 jours ──── -->
+                    <section v-if="periodRows.length" class="card">
+                        <header><h2>{{ byWeek ? 'Semaine par semaine' : 'Jour par jour' }}</h2></header>
                         <div class="body">
                             <div class="flex flex-wrap items-start gap-4">
-                                <div class="mini">
+                                <div class="mini wrapheads">
                                     <table>
                                         <thead>
                                             <tr>
@@ -853,23 +1012,26 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="d in data.days" :key="d.date">
-                                                <td>{{ dayLabel(d.date) }}</td>
-                                                <td>{{ fmt(d.calls) }}</td>
-                                                <td>{{ fmt(d.answered) }} <span class="pct">{{ pct(d.answered, d.calls) }}</span></td>
-                                                <td>
-                                                    <span v-if="lateUnmeasured(d)" class="pct">non mesuré</span>
-                                                    <template v-else>{{ fmt(d.late) }} <span v-if="d.realWaitMeasured != null && d.realWaitMeasured < d.answered" class="pct">sur {{ fmt(d.realWaitMeasured) }} mesurés</span></template>
-                                                </td>
-                                                <td>{{ fmt(d.lost) }} <span class="pct">{{ pct(d.lost, d.calls) }}</span></td>
-                                                <td><span v-if="stageUnmeasured(d)" class="pct">non mesuré</span><template v-else>{{ fmt(d.lostForced) }}</template></td>
-                                                <td>
-                                                    <span v-if="stageUnmeasured(d)" class="pct">non mesuré</span>
-                                                    <template v-else><span class="red">{{ fmt(d.lostQueue) }}</span> <span class="pct">{{ pct(d.lostQueue, d.calls) }}</span></template>
-                                                </td>
-                                                <td v-if="daysUnknown" class="text-gray-500">{{ fmt(d.lostUnknown ?? 0) }}</td>
-                                                <td v-if="daysOther">{{ fmt(d.other ?? 0) }}</td>
-                                                <td class="text-gray-500">{{ fmt(d.outsideHours ?? 0) }}</td>
+                                            <tr v-for="d in periodRows" :key="d.key" :class="d.closed && 'closedrow'">
+                                                <td>{{ d.label }}<span v-if="byWeek && d.openDays" class="pct">{{ d.openDays }} j</span></td>
+                                                <td v-if="d.closed" colspan="99" class="text-left">fermé · {{ fmt(d.outsideHours) }} appels hors horaires</td>
+                                                <template v-else>
+                                                    <td>{{ fmt(d.calls) }}</td>
+                                                    <td>{{ fmt(d.answered) }} <span class="pct">{{ pct(d.answered, d.calls) }}</span></td>
+                                                    <td>
+                                                        <span v-if="lateUnmeasured(d)" class="pct">non mesuré</span>
+                                                        <template v-else>{{ fmt(d.late) }} <span v-if="d.realWaitMeasured != null && d.realWaitMeasured < d.answered" class="pct">sur {{ fmt(d.realWaitMeasured) }} mesurés</span></template>
+                                                    </td>
+                                                    <td>{{ fmt(d.lost) }} <span class="pct">{{ pct(d.lost, d.calls) }}</span></td>
+                                                    <td><span v-if="stageUnmeasured(d)" class="pct">non mesuré</span><template v-else>{{ fmt(d.lostForced) }}</template></td>
+                                                    <td>
+                                                        <span v-if="stageUnmeasured(d)" class="pct">non mesuré</span>
+                                                        <template v-else><span class="red">{{ fmt(d.lostQueue) }}</span> <span class="pct">{{ pct(d.lostQueue, d.calls) }}</span></template>
+                                                    </td>
+                                                    <td v-if="daysUnknown" class="text-gray-500">{{ fmt(d.lostUnknown ?? 0) }}</td>
+                                                    <td v-if="daysOther">{{ fmt(d.other ?? 0) }}</td>
+                                                    <td class="text-gray-500">{{ fmt(d.outsideHours ?? 0) }}</td>
+                                                </template>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -880,33 +1042,46 @@ const daysUnknown = computed(() => (data.value?.days ?? []).some((d) => (d.lostU
                                             <tr><th class="title">Attente avant décroché</th><th>Moyenne</th><th>Médiane</th></tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="d in data.days" :key="d.date">
-                                                <td>{{ dayLabel(d.date) }}</td>
-                                                <td>{{ mmss(d.answerWaitAvgSec) }}</td>
-                                                <td>{{ mmss(d.answerWaitMedianSec) }}</td>
+                                            <tr v-for="d in periodRows" :key="d.key" :class="d.closed && 'closedrow'">
+                                                <td>{{ d.label }}</td>
+                                                <td v-if="d.closed" colspan="2" class="text-left">fermé</td>
+                                                <template v-else>
+                                                    <td>{{ mmss(d.answerWaitAvgSec) }}</td>
+                                                    <td>{{ mmss(d.answerWaitMedianSec) }}</td>
+                                                </template>
                                             </tr>
                                         </tbody>
                                     </table>
                                 </div>
-                                <div class="mini">
+                                <div class="mini wrapheads">
                                     <table>
                                         <thead>
                                             <tr>
-                                                <th class="title">Agents (heures)</th><th>Présents</th><th v-if="data.needShown">Nécessaires</th><th v-if="data.needShown">En trop / manquantes</th>
-                                                <th>Pause et déjeuner</th><th>Sonnés sans réponse</th>
+                                                <th class="title">Agents<span class="note">{{ data.team === 'all' ? 'tous' : teamName }}</span></th><th>Présents (h)</th><th>Décrochés</th><th>Par heure de présence</th>
+                                                <th v-if="data.needShown">Nécessaires (h)</th><th v-if="data.needShown">Planning : en trop / manquantes (h)</th><th v-if="data.needShown">Réel : en trop / manquantes (h)</th>
+                                                <th>Pause et déjeuner (h)</th><th>Sonnés sans réponse</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-for="d in data.days" :key="d.date">
-                                                <td>{{ dayLabel(d.date) }}</td>
-                                                <td>{{ fmt(d.agentHours) }}</td>
-                                                <td v-if="data.needShown">{{ fmt(d.needHours) }}</td>
-                                                <td v-if="data.needShown">
-                                                    <template v-if="d.overHours == null || d.shortHours == null">–</template>
-                                                    <template v-else>{{ fmt(d.overHours) }} / <span :class="d.shortHours > 0 && 'red'">{{ fmt(d.shortHours) }}</span></template>
-                                                </td>
-                                                <td>{{ fmt(d.breakHours) }}</td>
-                                                <td>{{ fmt(d.missed) }}</td>
+                                            <tr v-for="d in periodRows" :key="d.key" :class="d.closed && 'closedrow'">
+                                                <td>{{ d.label }}</td>
+                                                <td v-if="d.closed" colspan="99" class="text-left">fermé</td>
+                                                <template v-else>
+                                                    <td>{{ fmt(d.agentHours) }}</td>
+                                                    <td>{{ fmt(d.agentsAnswered) }}</td>
+                                                    <td>{{ fmt1(d.answeredPerHour) }}</td>
+                                                    <td v-if="data.needShown">{{ fmt(d.needHours) }}</td>
+                                                    <td v-if="data.needShown">
+                                                        <template v-if="d.plannedOverHours == null || d.plannedShortHours == null">–</template>
+                                                        <template v-else>{{ fmt(d.plannedOverHours) }} / <span :class="d.plannedShortHours > 0 && 'red'">{{ fmt(d.plannedShortHours) }}</span></template>
+                                                    </td>
+                                                    <td v-if="data.needShown">
+                                                        <template v-if="d.overHours == null || d.shortHours == null">–</template>
+                                                        <template v-else>{{ fmt(d.overHours) }} / <span :class="d.shortHours > 0 && 'red'">{{ fmt(d.shortHours) }}</span></template>
+                                                    </td>
+                                                    <td>{{ fmt(d.breakHours) }}</td>
+                                                    <td>{{ fmt(d.missed) }}</td>
+                                                </template>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -1229,6 +1404,20 @@ tr.sep td {
 .mini td.barcell {
     width: 40%;
     min-width: 90px;
+}
+.mini tr.closedrow td {
+    color: var(--muted);
+    background: var(--soft);
+}
+.mini tr.selrow td {
+    background: #f3f4f6;
+}
+/* En-têtes de colonnes sur plusieurs lignes : tableaux larges sans débordement */
+.mini.wrapheads thead tr:not(.group) th:not(.title) {
+    white-space: normal;
+    max-width: 84px;
+    line-height: 1.2;
+    vertical-align: bottom;
 }
 /* Raccrochés */
 .hist {
