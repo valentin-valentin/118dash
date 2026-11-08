@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Call;
+
 use Carbon\Carbon;
 use DateTimeZone;
 use Illuminate\Http\JsonResponse;
@@ -59,7 +61,7 @@ class WaitLossController extends Controller
 
         // Instants exacts (epoch) : called_at est un TIMESTAMP que MySQL renvoie dans le fuseau de son serveur ;
         // UNIX_TIMESTAMP / FROM_UNIXTIME donnent le bon résultat quel que soit ce fuseau.
-        $rows = DB::table('calls')
+        $rows = Call::excludeTests(DB::table('calls'))
             ->whereRaw('called_at BETWEEN FROM_UNIXTIME(?) AND FROM_UNIXTIME(?)', [$from->getTimestamp(), $to->getTimestamp()])
             ->where(fn ($q) => $q->whereNull('agent_name')->orWhere('agent_name', '!=', 'ai'))
             ->selectRaw('UNIX_TIMESTAMP(called_at) AS ts, platform, total_duration, duration_agent, duration_transfer, forced_wait, queue_wait')

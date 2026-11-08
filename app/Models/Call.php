@@ -2,14 +2,40 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Call extends Model
 {
     use HasFactory;
+
+    /**
+     * Appels décrochés par un compte de test (calls.is_test = 1, testeur de softphone) : exclus de toutes les
+     * lectures du panel. Portée globale pour Call::…, et excludeTests() pour les requêtes DB::table('calls').
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope('not_test', fn (Builder $query) => self::excludeTests($query));
+    }
+
+    public static function excludeTests(Builder|QueryBuilder $query, string $table = 'calls'): Builder|QueryBuilder
+    {
+        // La colonne vient de voxnode118 : sans elle (base sans la migration), il n'y a aucun appel de test
+        return self::hasTestColumn() ? $query->where("{$table}.is_test", 0) : $query;
+    }
+
+    private static function hasTestColumn(): bool
+    {
+        static $has = null;
+
+        return $has ??= Cache::remember('calls:has-is-test', 3600, fn () => Schema::hasColumn('calls', 'is_test'));
+    }
 
     protected $fillable = [
         'voxnode_id',

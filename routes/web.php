@@ -18,6 +18,7 @@ use App\Http\Controllers\RoutingLogController;
 use App\Http\Controllers\RsvaAuditController;
 use App\Http\Controllers\SipServerController;
 use App\Http\Controllers\SoftphoneController;
+use App\Http\Controllers\SoftphoneTesterController;
 use App\Http\Controllers\SourceController;
 use App\Http\Controllers\TelephonyController;
 use App\Http\Controllers\SourcePaymentController;
@@ -114,6 +115,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/routing-logs/{routingLog}', [RoutingLogController::class, 'show'])->name('routing-logs.show');
 
     Route::get('/api-tester', [ApiTesterController::class, 'index'])->name('api-tester.index');
+    Route::get('/softphone-tester', [SoftphoneTesterController::class, 'index'])->name('softphone-tester.index');
 
     Route::get('/soldes', [SourcePaymentController::class, 'index'])->name('soldes.index');
 
@@ -173,6 +175,9 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/softphone/credentials', [SoftphoneController::class, 'credentials']);
         Route::get('/softphone/calls', [SoftphoneController::class, 'calls']);
+        Route::get('/softphone-tester', [SoftphoneTesterController::class, 'data']);
+        Route::get('/softphone-tester/calls', [SoftphoneTesterController::class, 'calls']);
+        Route::post('/softphone-tester/calls/{linkedid}/hangup', [SoftphoneTesterController::class, 'hangup']);
         Route::post('/softphone/calls/{id}/browser-log', [SoftphoneController::class, 'browserLog']);
         Route::get('/softphone/calls/{id}/log/{kind}', [SoftphoneController::class, 'log']);
         Route::get('/sip/status', [SipServerController::class, 'status']);

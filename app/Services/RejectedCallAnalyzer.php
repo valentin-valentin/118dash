@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Call;
+
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -117,7 +119,7 @@ class RejectedCallAnalyzer
         // Premier appel abouti de chaque appelant (index sur calls.caller)
         $firstCall = [];
         foreach (array_chunk($froms, 1000) as $chunk) {
-            $rows = DB::table('calls')
+            $rows = Call::excludeTests(DB::table('calls'))
                 ->whereIn('caller', $chunk)
                 ->whereNotNull('called_at')
                 ->groupBy('caller')

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Call;
+
 use App\Models\Brand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -112,7 +114,7 @@ class BrandController extends Controller
 
         // Transferts des 30 derniers jours vers chaque marque de la page (nom de marque enregistré sur l'appel)
         $names = collect($paginator->items())->pluck('name')->all();
-        $transfers = DB::table('calls')
+        $transfers = Call::excludeTests(DB::table('calls'))
             ->where('called_at', '>=', now()->subDays(30))
             ->whereIn('brand_name', $names)
             ->where('duration_transfer', '>', 0)

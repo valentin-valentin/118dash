@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Call;
+
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -56,7 +58,7 @@ class BrandCheckController extends Controller
      */
     private function transfers(\Carbon\CarbonInterface $from, \Carbon\CarbonInterface $to)
     {
-        return DB::table('calls')
+        return Call::excludeTests(DB::table('calls'))
             ->where('called_at', '>=', $from->copy()->utc())
             ->where('called_at', '<=', $to->copy()->utc())
             ->where('duration_transfer', '>', 0)

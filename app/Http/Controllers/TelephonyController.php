@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Call;
+
 use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -154,7 +156,7 @@ class TelephonyController extends Controller
      */
     public function carriers(): JsonResponse
     {
-        $rows = DB::table('calls')
+        $rows = Call::excludeTests(DB::table('calls'))
             ->where('called_at', '>=', now()->subDays(30))
             ->whereRaw("carrier REGEXP '^[A-Z0-9]{2,6}$'")
             ->groupBy('carrier')

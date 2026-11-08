@@ -50,6 +50,8 @@ export const softphone = reactive({
     earlyAt: null as number | null,
     answeredAt: null as number | null,
     endReason: null as string | null,
+    // Réponse SIP de refus (code et motif), pour le testeur de softphone
+    rejected: null as { code: number; reason: string } | null,
     error: null as string | null,
     muted: false,
     volume: 1,
@@ -279,6 +281,42 @@ export async function call(input: string): Promise<void> {
         softphone.error = 'Un appel est déjà en cours';
         return;
     }
+    rememberNumber(number);
+    await dial(number, number, []);
+}
+
+export interface TestCallOptions {
+    caller: string; // numéro appelant, vide = masqué
+    called: string; // numéro appelé
+    skipWait: boolean; // saute l'attente forcée
+    realTransfer: boolean; // transfert réel vers la marque (sinon simulé)
+}
+
+/**
+ * Appel du testeur de softphone : sip:test@… avec les en-têtes X-Test-*. Le serveur SIP joue le parcours d'un client
+ * (appelant et appelé choisis) et ne fait sonner que les comptes de test.
+ */
+export async function callTest(options: TestCallOptions): Promise<boolean> {
+    if (inCall()) {
+        softphone.error = 'Un appel est déjà en cours';
+        return false;
+    }
+    const caller = options.caller.replace(/[^\d+]/g, '');
+    const called = options.called.replace(/[^\d+]/g, '');
+    if (!called) {
+        softphone.error = 'Numéro appelé obligatoire';
+        return false;
+    }
+    const headers = [`X-Test-Caller: ${caller}`, `X-Test-Called: ${called}`];
+    if (options.skipWait) headers.push('X-Test-Skip-Wait: 1');
+    if (options.realTransfer) headers.push('X-Test-Real-Transfer: 1');
+    await dial('test', `Test ${caller || 'masqué'} → ${called}`, headers);
+    return true;
+}
+
+/** Appel sortant vers sip:<target>@domaine ; display = ce que le widget affiche. */
+async function dial(target: string, display: string, extraHeaders: string[]): Promise<void> {
+    const number = display;
 
     sendCallLog();
     const startedAt = Date.now();
@@ -299,22 +337,21 @@ export async function call(input: string): Promise<void> {
         earlyAt: null,
         answeredAt: null,
         endReason: null,
+        rejected: null,
         error: null,
         muted: false,
     });
-    rememberNumber(number);
-
     try {
         const ua = await ensureConnected();
-        const target = UserAgent.makeURI(`sip:${number}@${domain}`);
-        if (!target) throw new Error('Numéro invalide');
+        const uri = UserAgent.makeURI(`sip:${target}@${domain}`);
+        if (!uri) throw new Error('Numéro invalide');
 
         const callId = callLog?.id ?? newCallId();
-        const inviter = new Inviter(ua, target, {
+        const inviter = new Inviter(ua, uri, {
             // Indispensable pour entendre le MGIT : l'audio du 183 est joué avant le décroché
             earlyMedia: true,
             // Relie l'enregistrement et le journal du serveur SIP à ce journal
-            extraHeaders: [`X-Panel-Call-Id: ${callId}`],
+            extraHeaders: [`X-Panel-Call-Id: ${callId}`, ...extraHeaders],
             delegate: {
                 onSessionDescriptionHandler: (handler) => {
                     const peerConnection = (handler as Web.SessionDescriptionHandler).peerConnection;
@@ -356,6 +393,7 @@ export async function call(input: string): Promise<void> {
                     const { statusCode, reasonPhrase } = response.message;
                     log('session', `refus ${statusCode} ${reasonPhrase ?? ''}`);
                     softphone.endReason = rejectLabel(statusCode ?? 0, reasonPhrase);
+                    softphone.rejected = { code: statusCode ?? 0, reason: reasonPhrase ?? '' };
                 },
             },
         });
@@ -414,5 +452,5 @@ export function setVolume(volume: number): void {
 }
 
 export function useSoftphone() {
-    return { softphone, call, hangup, sendDtmf, setMuted, setVolume, isInCall: inCall };
+    return { softphone, call, callTest, hangup, sendDtmf, setMuted, setVolume, isInCall: inCall };
 }

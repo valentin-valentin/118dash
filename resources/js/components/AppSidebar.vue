@@ -1,7 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
 import { onMounted, ref } from 'vue'
-import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, Hash, LayoutGrid, MessagesSquare, MonitorPlay, Phone, PhoneOff, Server, ShieldAlert, Store, Users, Wallet, Workflow } from 'lucide-vue-next'
+import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, Hash, LayoutGrid, MessagesSquare, MonitorPlay, Phone, PhoneCall, PhoneOff, Server, ShieldAlert, Store, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
 import NavUser from '@/components/NavUser.vue'
 import {
@@ -68,6 +68,7 @@ const navItems = [
     { title: 'Assignment History', href: '/assignment-history', icon: Clock },
     { title: 'Routing Logs', href: '/routing-logs', icon: FileText, badge: () => hasRoutingErrors.value ? 'error' : null },
     { title: 'API Tester', href: '/api-tester', icon: FlaskConical },
+    { title: 'Testeur de softphone', href: '/softphone-tester', icon: PhoneCall },
 ]
 </script>
 

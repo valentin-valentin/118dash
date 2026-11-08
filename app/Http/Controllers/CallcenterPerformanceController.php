@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Call;
+
 use Carbon\Carbon;
 use DateTimeZone;
 use Illuminate\Database\Query\Builder;
@@ -194,7 +196,7 @@ class CallcenterPerformanceController extends Controller
                 : null,
             'hourly' => $this->hourly($center, $from, $to),
             'agents' => $this->agents($center, $from, $to),
-            'unattributed' => DB::table('calls')
+            'unattributed' => Call::excludeTests(DB::table('calls'))
                 ->whereBetween('called_at', [$from, $to])
                 ->whereRaw("$center IS NULL")
                 ->selectRaw('COUNT(*) AS calls, COALESCE(SUM(payout), 0) AS payout')
@@ -213,7 +215,7 @@ class CallcenterPerformanceController extends Controller
         [$from, $to] = $this->range($request->from, $request->to);
         $day = $this->parisDateSql($from, $to);
 
-        $rows = DB::table('calls')
+        $rows = Call::excludeTests(DB::table('calls'))
             ->whereBetween('called_at', [$from, $to])
             ->where('agent_name', $request->agent)
             ->selectRaw("$day AS date, " . $this->sumsSql())
@@ -328,7 +330,7 @@ class CallcenterPerformanceController extends Controller
      */
     private function attributedCalls(string $center, Carbon $from, Carbon $to): Builder
     {
-        return DB::table('calls')
+        return Call::excludeTests(DB::table('calls'))
             ->whereBetween('called_at', [$from, $to])
             ->whereRaw("$center IS NOT NULL");
     }
