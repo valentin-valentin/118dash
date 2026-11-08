@@ -248,8 +248,10 @@ async function ignore() {
                     </div>
                 </section>
 
+                <!-- Marques proches et création : la réponse la plus probable en premier (proches s'il y en a, sinon création) -->
+                <div class="flex flex-col gap-6">
                 <!-- ─── Marques existantes proches ─── -->
-                <section class="rounded-lg border border-gray-100 bg-white">
+                <section class="rounded-lg border border-gray-100 bg-white" :class="data.suggestions.length ? 'order-1' : 'order-2'">
                     <header class="border-b border-gray-100 px-5 py-3">
                         <h2 class="font-semibold text-gray-900">Marques existantes proches</h2>
                         <p class="text-sm text-gray-500">« Associer à cette marque » : les autres noms ci-dessus sont ajoutés à la marque, et la demande passe dans « Traitées » comme marque existante.</p>
@@ -272,7 +274,7 @@ async function ignore() {
                 </section>
 
                 <!-- ─── Créer la marque ─── -->
-                <form class="rounded-lg border border-gray-100 bg-white" @submit.prevent="create">
+                <form class="rounded-lg border border-gray-100 bg-white" :class="data.suggestions.length ? 'order-2' : 'order-1'" @submit.prevent="create">
                     <header class="border-b border-gray-100 px-5 py-3">
                         <h2 class="font-semibold text-gray-900">Créer la marque</h2>
                         <p class="text-sm text-gray-500">Activée tout de suite et visible des agents. Le reste se complète ensuite dans la fiche de la marque.</p>
@@ -328,12 +330,13 @@ async function ignore() {
                         <Button type="submit" size="sm" :variant="identicalId ? 'outline' : 'default'" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
                     </footer>
                 </form>
+                </div>
 
 
                 <!-- ─── Sans créer ni associer de marque ─── -->
                 <section class="rounded-lg border border-gray-100 bg-white">
                     <div class="flex flex-wrap items-center gap-3 px-5 py-4">
-                        <p class="text-sm text-gray-500">Sans créer ni associer de marque.</p>
+                        <!-- <p class="text-sm text-gray-500">Sans créer ni associer de marque.</p> -->
                         <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="ignore">Marquer la demande comme traitée</Button>
                     </div>
                 </section>

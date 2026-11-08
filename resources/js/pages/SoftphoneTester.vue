@@ -320,12 +320,15 @@ function clearHistory() {
                 <div class="divide-y divide-gray-50">
                     <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
                         <Label for="tester-caller" class="pt-2 text-gray-900">Appelant</Label>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <Input id="tester-caller" v-model="caller" class="h-9 w-48 font-mono" :placeholder="callerKind === 'masked' ? 'Masqué' : '+33…'" @input="callerKind = 'free'" />
-                            <Button type="button" size="sm" :variant="callerKind === 'new' ? 'default' : 'outline'" @click="randomMobile">Nouveau numéro</Button>
-                            <Button type="button" size="sm" :variant="callerKind === 'masked' ? 'default' : 'outline'" @click="(caller = ''), (callerKind = 'masked')">Masqué</Button>
-                            <div class="w-44"><FilterSelect v-model="pickBlacklisted" :options="blacklistOptions" placeholder="Liste noire" :searchable="blacklistOptions.length > 8" /></div>
-                            <div class="w-44"><FilterSelect v-model="pickRecent" :options="recentOptions" placeholder="Client récent" searchable /></div>
+                        <!-- Champ sur une ligne, raccourcis sur la suivante (ne tiennent pas ensemble en largeur « form ») -->
+                        <div class="space-y-2">
+                            <Input id="tester-caller" v-model="caller" class="h-9 w-56 font-mono" :placeholder="callerKind === 'masked' ? 'Masqué' : '+33…'" @input="callerKind = 'free'" />
+                            <div class="flex items-center gap-2">
+                                <Button type="button" size="sm" :variant="callerKind === 'new' ? 'default' : 'outline'" @click="randomMobile">Nouveau numéro</Button>
+                                <Button type="button" size="sm" :variant="callerKind === 'masked' ? 'default' : 'outline'" @click="(caller = ''), (callerKind = 'masked')">Masqué</Button>
+                                <div class="w-44"><FilterSelect v-model="pickBlacklisted" :options="blacklistOptions" placeholder="Liste noire" :searchable="blacklistOptions.length > 8" /></div>
+                                <div class="w-44"><FilterSelect v-model="pickRecent" :options="recentOptions" placeholder="Client récent" searchable /></div>
+                            </div>
                         </div>
                     </div>
                     <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
