@@ -14,7 +14,6 @@ import { xsrfToken } from '@/lib/csrf'
  *   ouvre la page de la demande (appels, écoute, marques proches, création).
  *   Traitées : une ligne par appel, avec le résultat ; « Rouvrir » remet la demande à traiter.
  */
-defineProps({ ignoreReasons: Object })
 
 const tab = ref(new URLSearchParams(window.location.search).get('tab') === 'handled' ? 'handled' : 'pending')
 const rows = ref([])
@@ -134,7 +133,7 @@ async function reopen(row) {
                             <template v-if="row.status === 'created'">Marque créée : <Link :href="`/brands/${row.brand_id}/edit`" class="hover:underline">{{ row.brand_name }}</Link></template>
                             <template v-else-if="row.status === 'linked' && row.handled_by === 'softphone'">Marque existante, trouvée par le softphone : <Link :href="`/brands/${row.brand_id}/edit`" class="hover:underline">{{ row.brand_name }}</Link></template>
                             <template v-else-if="row.status === 'linked'">Marque existante : <Link :href="`/brands/${row.brand_id}/edit`" class="hover:underline">{{ row.brand_name }}</Link></template>
-                            <template v-else>Ignorée : {{ row.ignore_reason }}</template>
+                            <template v-else>Ignorée</template>
                         </span>
                     </template>
                     <template #handled_by="{ value }"><span class="text-sm text-gray-600">{{ value || '-' }}</span></template>

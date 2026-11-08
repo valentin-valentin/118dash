@@ -20,10 +20,10 @@ import { xsrfToken } from '@/lib/csrf'
  *   1. Appels : écoute de la conversation
  *   2. Autres noms : ajoutés à la marque (brands.aliases, un par ligne), cherchés par le softphone
  *   3. Marques existantes proches : « Associer à cette marque » ajoute les autres noms à la marque et classe la demande
- *   4. Créer la marque, ou ignorer la demande
+ *   4. Créer la marque ; « Ignorer la demande » (en-tête) la classe sans rien créer
  * Chaque action porte sur tous les appels de la demande.
  */
-const props = defineProps({ nameKey: String, ignoreReasons: Object, types: Array })
+const props = defineProps({ nameKey: String, types: Array })
 
 const data = ref(null)
 const error = ref(null)
@@ -183,14 +183,9 @@ async function create() {
     }
 }
 
-// Ignorer
-const ignoreReason = ref(null)
-const reasonOptions = computed(() => Object.entries(props.ignoreReasons).map(([value, label]) => ({ value, label })))
+// Ignorer : sans motif
 async function ignore() {
-    if (await post('/data/brand-requests/ignore', { ids: ids.value, reason: ignoreReason.value })) {
-        ignoreReason.value = null
-        after()
-    }
+    if (await post('/data/brand-requests/ignore', { ids: ids.value })) after()
 }
 </script>
 
@@ -200,8 +195,9 @@ async function ignore() {
     <AppLayout width="form">
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
-                <template v-if="data?.next" #actions>
-                    <Button variant="outline" as-child>
+                <template v-if="data" #actions>
+                    <Button v-if="data.calls.length" variant="outline" :disabled="busy" @click="ignore">Ignorer la demande</Button>
+                    <Button v-if="data.next" variant="outline" as-child>
                         <Link :href="`/brands/requests/${data.next}`">Demande suivante</Link>
                     </Button>
                 </template>
@@ -336,19 +332,6 @@ async function ignore() {
                     </footer>
                 </form>
 
-                <!-- ─── Ignorer ─── -->
-                <section class="rounded-lg border border-gray-100 bg-white">
-                    <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
-                        <span class="text-sm font-medium text-gray-900">Ignorer la demande</span>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <select v-model="ignoreReason" class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm w-56" aria-label="Motif">
-                                <option :value="null" disabled>Motif</option>
-                                <option v-for="o in reasonOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-                            </select>
-                            <Button type="button" size="sm" variant="outline" :disabled="busy || !ignoreReason" @click="ignore">Ignorer</Button>
-                        </div>
-                    </div>
-                </section>
             </template>
         </div>
     </AppLayout>

@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,23 +21,15 @@ use Inertia\Response;
  */
 class BrandRequestController extends Controller
 {
-    public const IGNORE_REASONS = [
-        'not_brand' => 'Pas une marque',
-        'person' => 'Un particulier',
-        'out_of_scope' => 'Hors de notre service',
-        'other' => 'Autre',
-    ];
-
     public function index(): Response
     {
-        return Inertia::render('BrandRequests', ['ignoreReasons' => self::IGNORE_REASONS]);
+        return Inertia::render('BrandRequests');
     }
 
     public function show(string $key): Response
     {
         return Inertia::render('BrandRequest', [
             'nameKey' => $key,
-            'ignoreReasons' => self::IGNORE_REASONS,
             'types' => Brand::query()->whereNotNull('type')->distinct()->orderBy('type')->pluck('type'),
         ]);
     }
@@ -71,7 +62,6 @@ class BrandRequestController extends Controller
                 'status' => $r->status,
                 'brand_id' => $r->brand_id,
                 'brand_name' => $r->brand_name,
-                'ignore_reason' => self::IGNORE_REASONS[$r->ignore_reason] ?? $r->ignore_reason,
                 'handled_by' => $r->handled_by,
                 'handled_at' => $this->iso($r->handled_at),
             ])]);
@@ -216,9 +206,8 @@ class BrandRequestController extends Controller
         $data = $request->validate([
             'ids' => 'required|array|min:1',
             'ids.*' => 'integer',
-            'reason' => ['required', Rule::in(array_keys(self::IGNORE_REASONS))],
         ]);
-        $this->handle($data['ids'], ['status' => 'ignored', 'ignore_reason' => $data['reason']]);
+        $this->handle($data['ids'], ['status' => 'ignored']);
 
         return response()->json(['ok' => true]);
     }
@@ -238,7 +227,7 @@ class BrandRequestController extends Controller
             }
             DB::table('brand_requests')->where('id', $id)->update([
                 'status' => 'pending', 'brand_id' => null, 'handled_by' => null, 'handled_at' => null,
-                'ignore_reason' => null, 'added_aliases' => null, 'updated_at' => now(),
+                'added_aliases' => null, 'updated_at' => now(),
             ]);
         });
         Log::info('[Marques demandées] rouverte', ['id' => $id, 'user' => auth()->user()?->email]);
