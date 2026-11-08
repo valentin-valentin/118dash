@@ -125,8 +125,8 @@ const formatDate = (v) => (v ? new Date(v).toLocaleString('fr-FR', { dateStyle: 
 <template>
     <Head title="Superviseur" />
 
-    <AppLayout>
-        <div class="max-w-4xl space-y-5 p-6">
+    <AppLayout width="form">
+        <div class="space-y-5 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Superviseur' }]">
                 <template #actions>
                     <Button as-child>

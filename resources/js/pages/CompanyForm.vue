@@ -89,7 +89,7 @@ function submit() {
 <template>
     <Head :title="isEdit ? 'Modifier Company' : 'Nouvelle Company'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <!-- En-tête -->
             <PageHeader

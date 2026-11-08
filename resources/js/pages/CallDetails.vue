@@ -16,7 +16,7 @@ defineProps({
 <template>
     <Head :title="`Appel #${callId}`" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Appels', href: '/calls' }, { title: `Appel #${callId}` }]">
                 <template #actions>
@@ -26,7 +26,7 @@ defineProps({
                 </template>
             </PageHeader>
 
-            <div class="max-w-3xl rounded-lg border border-gray-100 bg-white p-6">
+            <div class="rounded-lg border border-gray-100 bg-white p-6">
                 <CallDetailPanel :call-id="callId" :centers="centers" />
             </div>
         </div>

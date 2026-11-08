@@ -9,6 +9,8 @@ Une maquette fournie (par exemple par la session voxnode118) s'adapte à ce lang
 | Élément | Modèle à copier |
 |---|---|
 | Page | `<div class="space-y-6 p-6">` + `PageHeader` (fil d'Ariane ; boutons dans `#actions`) — `Brands.vue` |
+| Largeur | décidée par la page via le layout, jamais à la main : `<AppLayout>` (toute la largeur : tableaux, statistiques, grilles) ou `<AppLayout width="form">` (formulaires, fiches, réglages, pages d'action) — `layouts/AppLayout.vue` |
+| Liste de choix fixe | `<select>` natif `flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm` — `BrandForm.vue` ; `FilterSelect` seulement pour les filtres ou une recherche dans une longue liste |
 | Filtres | `FilterBar` + `FilterSelect` / `Input h-8`, tous visibles — `Brands.vue`, `Calls.vue` |
 | Tableau de données | titre `h2 mb-2 text-sm font-semibold text-gray-900` au-dessus d'un `rounded-lg border border-gray-100 bg-white` contenant `DataTable` — `SipServer.vue` (Agents en ligne) |
 | Formulaire / réglages | carte `rounded-lg border border-gray-100 bg-white` ; en-tête `border-b border-gray-100 px-5 py-3` (`h2 font-semibold`, `p text-sm text-gray-500`) ; lignes `divide-y divide-gray-50`, `grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]` ; pied `border-t px-5 py-3` avec `Button size="sm"` — `SipServerSettings.vue` |
@@ -16,7 +18,7 @@ Une maquette fournie (par exemple par la session voxnode118) s'adapte à ce lang
 | Alerte sur une ligne | `flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700` + `AlertTriangle h-4 w-4` — `SipServer.vue` |
 | Statut | pastille `inline-flex rounded-full px-2 py-1 text-xs font-medium` (`bg-green-100 text-green-700`, `bg-gray-100 text-gray-700`…) — `Brands.vue` |
 | Boutons de choix | `h-8 rounded-md px-3 text-xs font-medium`, actif `bg-gray-900 text-white`, sinon `border border-gray-200 bg-white text-gray-600 hover:bg-gray-100` — `WaitLoss.vue` |
-| Contrôles | `Button`, `Input`, `Label`, `Checkbox`, `Textarea`, `FilterSelect` de `components/ui` — jamais de `<select>` ou de bouton stylé à la main |
+| Contrôles | `Button`, `Input`, `Label`, `Checkbox`, `Textarea` de `components/ui`, le `<select>` natif ci-dessus, `FilterSelect` — jamais de bouton ou de liste stylés autrement |
 | Chargement | squelettes `animate-pulse rounded bg-gray-50` (ou ceux de `DataTable`) |
 
 Et toujours :

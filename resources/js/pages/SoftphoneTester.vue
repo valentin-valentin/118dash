@@ -275,7 +275,7 @@ function clearHistory() {
 <template>
     <Head title="Testeur de softphone" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Testeur de softphone' }]" />
 

@@ -60,7 +60,7 @@ function submit() {
 <template>
     <Head :title="isEdit ? 'Modifier Provider' : 'Nouveau Provider'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <!-- En-tête -->
             <PageHeader

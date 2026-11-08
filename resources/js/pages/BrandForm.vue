@@ -81,7 +81,7 @@ function submit() {
 <template>
     <Head :title="isEdit ? `Modifier ${brand.name}` : 'Nouvelle marque'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: isEdit ? `Modifier ${brand.name}` : 'Nouvelle' }]">
                 <template #actions>

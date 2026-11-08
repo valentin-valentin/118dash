@@ -199,7 +199,7 @@ function submit() {
 <template>
     <Head :title="isEdit ? 'Modifier Source' : 'Nouvelle Source'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <!-- En-tête -->
             <PageHeader

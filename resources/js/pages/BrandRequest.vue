@@ -19,7 +19,7 @@ import { xsrfToken } from '@/lib/csrf'
  * Une marque demandée (tous les appels où les agents ont tapé ce nom, ou une variante) :
  *   1. Appels : écoute de la conversation
  *   2. Autres noms : ajoutés à la marque (brands.aliases, un par ligne), cherchés par le softphone
- *   3. Marques existantes proches : « C'est celle-ci » y relie la demande (l'agent ne l'a pas trouvée)
+ *   3. Marques existantes proches : « Associer à cette marque » ajoute les autres noms à la marque et classe la demande
  *   4. Créer la marque, ou ignorer la demande
  * Chaque action porte sur tous les appels de la demande.
  */
@@ -197,7 +197,7 @@ async function ignore() {
 <template>
     <Head :title="data?.name ? `${data.name} · Marques demandées` : 'Marque demandée'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
                 <template v-if="data?.next" #actions>
@@ -259,7 +259,7 @@ async function ignore() {
                 <section class="rounded-lg border border-gray-100 bg-white">
                     <header class="border-b border-gray-100 px-5 py-3">
                         <h2 class="font-semibold text-gray-900">Marques existantes proches</h2>
-                        <p class="text-sm text-gray-500">Si c'est l'une d'elles, la demande lui est reliée : l'agent ne l'avait pas trouvée.</p>
+                        <p class="text-sm text-gray-500">« Associer à cette marque » : les autres noms ci-dessus sont ajoutés à la marque, et la demande passe dans « Traitées » comme marque existante.</p>
                     </header>
                     <div class="divide-y divide-gray-50">
                         <div v-for="b in data.suggestions" :key="b.id" class="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
@@ -267,13 +267,13 @@ async function ignore() {
                             <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
                             <span class="text-gray-500">{{ TYPE_LABELS[b.type] ?? b.type ?? '-' }}</span>
                             <span class="text-gray-500">· {{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template></span>
-                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="link(b.id)">C'est celle-ci</Button>
+                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
                         </div>
                         <p v-if="!data.suggestions.length" class="px-5 py-3 text-sm text-gray-500">Aucune marque proche</p>
                         <div class="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
                             <span class="text-gray-700">Une autre marque</span>
                             <div class="w-72"><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
-                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand" @click="link(otherBrand)">C'est celle-ci</Button>
+                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand" @click="link(otherBrand)">Associer à cette marque</Button>
                         </div>
                     </div>
                 </section>
@@ -314,8 +314,12 @@ async function ignore() {
                         <div class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
                             <span class="pt-2 text-sm font-medium text-gray-900">Pays et catégorie</span>
                             <div class="flex flex-wrap items-center gap-2">
-                                <div class="w-40"><FilterSelect v-model="form.country" :options="countryOptions" placeholder="Pays" :searchable="false" /></div>
-                                <div class="w-56"><FilterSelect v-model="form.type" :options="typeOptions" placeholder="Catégorie" :searchable="false" /></div>
+                                <select v-model="form.country" class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm w-40" aria-label="Pays">
+                                    <option v-for="o in countryOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                </select>
+                                <select v-model="form.type" class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm w-56" aria-label="Catégorie">
+                                    <option v-for="o in typeOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                                </select>
                             </div>
                         </div>
                         <div v-if="phonenumber" class="grid gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
@@ -337,7 +341,10 @@ async function ignore() {
                     <div class="grid items-center gap-3 px-5 py-4 sm:grid-cols-[13rem_1fr]">
                         <span class="text-sm font-medium text-gray-900">Ignorer la demande</span>
                         <div class="flex flex-wrap items-center gap-2">
-                            <div class="w-56"><FilterSelect v-model="ignoreReason" :options="reasonOptions" placeholder="Motif" :searchable="false" /></div>
+                            <select v-model="ignoreReason" class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm w-56" aria-label="Motif">
+                                <option :value="null" disabled>Motif</option>
+                                <option v-for="o in reasonOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                            </select>
                             <Button type="button" size="sm" variant="outline" :disabled="busy || !ignoreReason" @click="ignore">Ignorer</Button>
                         </div>
                     </div>

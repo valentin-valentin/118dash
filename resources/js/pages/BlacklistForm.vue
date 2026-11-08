@@ -37,7 +37,7 @@ function submit() {
 <template>
     <Head :title="isEdit ? 'Modifier Blacklist' : 'Nouvelle Blacklist'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <!-- En-tête -->
             <PageHeader

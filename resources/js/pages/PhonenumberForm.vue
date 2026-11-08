@@ -223,7 +223,7 @@ async function submit() {
 <template>
     <Head :title="isEdit ? 'Modifier Numéro' : 'Ajouter des Numéros'" />
 
-    <AppLayout>
+    <AppLayout width="form">
         <div class="space-y-6 p-6">
             <!-- En-tête -->
             <PageHeader
