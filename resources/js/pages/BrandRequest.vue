@@ -20,7 +20,7 @@ import { xsrfToken } from '@/lib/csrf'
  *   1. Appels : écoute de la conversation
  *   2. Autres noms : ajoutés à la marque (brands.aliases, un par ligne), cherchés par le softphone
  *   3. Marques existantes proches : « Associer à cette marque » ajoute les autres noms à la marque et classe la demande
- *   4. Créer la marque ; « Ignorer la demande » (en-tête) la classe sans rien créer
+ *   4. Créer la marque ; ou « Marquer la demande comme traitée », sans créer ni associer de marque
  * Chaque action porte sur tous les appels de la demande.
  */
 const props = defineProps({ nameKey: String, types: Array })
@@ -111,6 +111,9 @@ async function link(brandId) {
     if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: aliases.value })) after()
 }
 const otherBrand = ref(null)
+// Action principale (bouton noir) = la réponse la plus probable : associer quand une marque a exactement ce nom
+// (sinon on créerait un doublon), créer sinon. Une seule action principale sur la page.
+const identicalId = computed(() => (data.value?.suggestions?.[0]?.rank === 1 ? data.value.suggestions[0].id : null))
 
 // Création
 const COUNTRY = { 33: 'FR', 32: 'BE', 49: 'DE' }
@@ -183,7 +186,7 @@ async function create() {
     }
 }
 
-// Ignorer : sans motif
+// Marquer comme traitée, sans créer ni associer de marque
 async function ignore() {
     if (await post('/data/brand-requests/ignore', { ids: ids.value })) after()
 }
@@ -195,12 +198,6 @@ async function ignore() {
     <AppLayout width="form">
         <div class="space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
-                <template v-if="data" #actions>
-                    <Button v-if="data.calls.length" variant="outline" :disabled="busy" @click="ignore">Ignorer la demande</Button>
-                    <Button v-if="data.next" variant="outline" as-child>
-                        <Link :href="`/brands/requests/${data.next}`">Demande suivante</Link>
-                    </Button>
-                </template>
             </PageHeader>
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
@@ -263,7 +260,7 @@ async function ignore() {
                             <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
                             <span class="text-gray-500">{{ TYPE_LABELS[b.type] ?? b.type ?? '-' }}</span>
                             <span class="text-gray-500">· {{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template></span>
-                            <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
+                            <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
                         </div>
                         <p v-if="!data.suggestions.length" class="px-5 py-3 text-sm text-gray-500">Aucune marque proche</p>
                         <div class="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
@@ -328,10 +325,18 @@ async function ignore() {
                         </div>
                     </div>
                     <footer class="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-3">
-                        <Button type="submit" size="sm" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
+                        <Button type="submit" size="sm" :variant="identicalId ? 'outline' : 'default'" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
                     </footer>
                 </form>
 
+
+                <!-- ─── Sans créer ni associer de marque ─── -->
+                <section class="rounded-lg border border-gray-100 bg-white">
+                    <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+                        <p class="text-sm text-gray-500">Sans créer ni associer de marque.</p>
+                        <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy" @click="ignore">Marquer la demande comme traitée</Button>
+                    </div>
+                </section>
             </template>
         </div>
     </AppLayout>

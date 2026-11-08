@@ -133,7 +133,7 @@ async function reopen(row) {
                             <template v-if="row.status === 'created'">Marque créée : <Link :href="`/brands/${row.brand_id}/edit`" class="hover:underline">{{ row.brand_name }}</Link></template>
                             <template v-else-if="row.status === 'linked' && row.handled_by === 'softphone'">Marque existante, trouvée par le softphone : <Link :href="`/brands/${row.brand_id}/edit`" class="hover:underline">{{ row.brand_name }}</Link></template>
                             <template v-else-if="row.status === 'linked'">Marque existante : <Link :href="`/brands/${row.brand_id}/edit`" class="hover:underline">{{ row.brand_name }}</Link></template>
-                            <template v-else>Ignorée</template>
+                            <template v-else>Marquée comme traitée, sans marque</template>
                         </span>
                     </template>
                     <template #handled_by="{ value }"><span class="text-sm text-gray-600">{{ value || '-' }}</span></template>

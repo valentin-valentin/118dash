@@ -30,6 +30,17 @@ Et toujours :
 - Pas de nouveaux termes inventés (« Perdu », « Pénalisé »…) : les faits, avec les mots du métier.
 - Vérifier le rendu par une capture à 1440 px avant d'annoncer que c'est fini, et le comparer à une page existante.
 
+## Chaque choix d'interface est une décision
+
+Avant d'écrire un élément (bouton, libellé, couleur, bloc, texte), répondre à ces questions. Si une réponse manque, ne pas l'écrire.
+1. **Modèle** : quel élément existant du panel je reprends ? (fichier et classes exactes, voir le tableau ci-dessus)
+2. **Hiérarchie** : quelle est l'action la plus probable pour l'utilisateur sur cet écran ? C'est la seule en bouton noir (`default`). Toutes les autres sont en `outline`, les secondaires discrètes en `ghost`. Jamais deux boutons noirs en concurrence, jamais de noir posé par réflexe (« c'est un submit »).
+3. **Libellé** : verbe + objet, qui dit exactement ce qui se passe au clic (« Associer à cette marque », « Marquer la demande comme traitée »). Pas de « C'est celle-ci », « OK », « Valider ».
+4. **Nécessité** : est-ce que l'élément sert vraiment ? Pas de case, de motif, d'option, de colonne ou de texte « au cas où ». Le plus simple qui répond au besoin.
+5. **Place** : un sujet par bloc, dans l'ordre où l'utilisateur en a besoin ; les actions finales en bas, pas dans l'en-tête.
+
+Au moment de rendre le travail, lister au propriétaire les décisions prises (quel bouton est principal et pourquoi, quel modèle est repris, ce qui a été écarté), pour qu'elles soient vérifiables.
+
 ## Façon de travailler
 - La solution la plus simple d'abord : pas de file d'attente, de cache long, de colonne ni de règle en plus pour un cas rare.
 - Ne pas commiter ni pousser : le propriétaire le fait.
