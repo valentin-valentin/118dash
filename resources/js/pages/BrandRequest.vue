@@ -283,7 +283,7 @@ async function ignore() {
                             <div class="flex flex-wrap items-center gap-2">
                                 <Input id="br-name" v-model="form.name" class="h-9 w-72" required />
                                 <Button type="button" size="sm" variant="outline" as-child>
-                                    <a :href="googleUrl" target="_blank" rel="noopener"><Search class="mr-2 h-4 w-4" />Chercher le service client sur Google<ExternalLink class="ml-2 h-3.5 w-3.5" /></a>
+                                    <a :href="googleUrl" target="_blank" rel="noopener"><Search class="mr-2 h-4 w-4" />Chercher sur Google<ExternalLink class="ml-2 h-3.5 w-3.5" /></a>
                                 </Button>
                             </div>
                         </div>
