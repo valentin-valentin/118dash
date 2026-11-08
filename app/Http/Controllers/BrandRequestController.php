@@ -18,7 +18,7 @@ use Inertia\Response;
  * Marques demandées : les marques que les agents n'ont pas trouvées dans le softphone (table brand_requests de
  * voxnode118, une ligne par appel, regroupées par name_key = BrandName::key du nom tapé).
  * Traitement appel par appel : créer la marque, la relier à une marque existante (l'agent ne l'a pas trouvée) ou
- * ignorer ; « Rouvrir » défait tout (alias ajoutés retirés de la marque). Les appels de test (is_test) sont exclus.
+ * ignorer ; « Rouvrir » défait tout (alias ajoutés retirés de la marque).
  */
 class BrandRequestController extends Controller
 {
@@ -250,7 +250,7 @@ class BrandRequestController extends Controller
 
     private function requests()
     {
-        return DB::table('brand_requests')->where('brand_requests.is_test', 0);
+        return DB::table('brand_requests');
     }
 
     private function handle(array $ids, array $values): void
