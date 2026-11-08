@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
+import { refreshBrandRequests } from '@/composables/useBrandRequests'
 import { xsrfToken } from '@/lib/csrf'
 
 /**
@@ -62,7 +63,10 @@ async function reopen(row) {
     reopening.value = row.id
     const res = await fetch(`/data/brand-requests/${row.id}/reopen`, { method: 'POST', headers: { Accept: 'application/json', 'X-XSRF-TOKEN': xsrfToken() } }).catch(() => null)
     reopening.value = null
-    if (res?.ok) load()
+    if (res?.ok) {
+        refreshBrandRequests(true)
+        load()
+    }
 }
 </script>
 

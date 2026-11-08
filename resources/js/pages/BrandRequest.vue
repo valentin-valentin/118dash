@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ExternalLink, Pause, Phone, Play, Search } from 'lucide-vue-next'
 import { call as softphoneCall } from '@/composables/useSoftphone'
+import { refreshBrandRequests } from '@/composables/useBrandRequests'
 import { xsrfToken } from '@/lib/csrf'
 
 /**
@@ -109,6 +110,7 @@ async function post(url, body) {
 }
 // Après une action : la suite des appels de cette demande, ou la demande suivante, ou la liste
 async function after() {
+    refreshBrandRequests(true)
     await load()
     if (data.value && !data.value.calls.length) router.visit(data.value.next ? `/brands/requests/${data.value.next}` : '/brands/requests')
 }

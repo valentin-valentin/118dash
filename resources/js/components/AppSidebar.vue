@@ -1,8 +1,9 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, Hash, LayoutGrid, MessagesSquare, MonitorPlay, Phone, PhoneCall, PhoneOff, Server, ShieldAlert, Store, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
+import { useBrandRequests } from '@/composables/useBrandRequests'
 import NavUser from '@/components/NavUser.vue'
 import {
     Sidebar,
@@ -40,20 +41,14 @@ async function checkInvalidRouting() {
     }
 }
 
-// Marques demandées par les agents, à traiter
-const brandRequests = ref(0)
-async function checkBrandRequests() {
-    try {
-        const res = await fetch('/data/brand-requests/count', { headers: { Accept: 'application/json' } })
-        if (res.ok) brandRequests.value = (await res.json()).brands
-    } catch {
-        // pastille absente si la requête échoue
-    }
-}
+// Marques demandées par les agents, à traiter (état partagé : pas de clignotement d'une page à l'autre)
+const { count: brandRequests, refresh: checkBrandRequests } = useBrandRequests()
+let brandTimer = null
+onUnmounted(() => clearInterval(brandTimer))
 
 onMounted(() => {
     checkBrandRequests()
-    setInterval(checkBrandRequests, 60000)
+    brandTimer = setInterval(() => checkBrandRequests(true), 60000)
     checkRoutingErrors()
     checkInvalidRouting()
     // Check every 60 seconds
@@ -71,7 +66,7 @@ const navItems = [
     { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
-    { title: 'Marques', href: '/brands', icon: Store, badge: () => brandRequests.value || null },
+    { title: 'Marques', href: '/brands', icon: Store, badge: () => brandRequests.value?.brands || null },
     { title: 'Sources', href: '/sources', icon: Workflow },
     { title: 'Soldes', href: '/soldes', icon: Wallet },
     { title: 'Numéros', href: '/phonenumbers', icon: Hash, badge: () => hasInvalidRouting.value ? 'error' : null },
