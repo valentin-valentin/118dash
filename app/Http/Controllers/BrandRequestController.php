@@ -171,6 +171,7 @@ class BrandRequestController extends Controller
             'type' => 'required|string|max:255',
             'can_transfer' => 'boolean',
             'note' => 'nullable|string',
+            'scenario' => 'nullable|string',
             'aliases' => 'array',
             'aliases.*' => 'string|max:120',
         ], [
@@ -184,6 +185,7 @@ class BrandRequestController extends Controller
                 'country' => $data['country'],
                 'type' => $data['type'],
                 'note' => $data['note'] ?? null,
+                'scenario' => $data['scenario'] ?? null,
                 'enabled' => true,
                 'can_transfer' => !empty($data['phonenumber']) && ($data['can_transfer'] ?? true),
                 'can_offer_callback' => false,

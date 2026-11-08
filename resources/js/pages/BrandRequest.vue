@@ -29,7 +29,9 @@ const props = defineProps({ nameKey: String, types: Array })
 const data = ref(null)
 const error = ref(null)
 // Autres noms à ajouter à la marque : même champ que la fiche marque (un par ligne)
+// Autres noms : un champ pour la marque créée, un pour la marque existante associée (préremplis avec les noms tapés)
 const aliasText = ref('')
+const linkAliasText = ref('')
 async function load() {
     try {
         const res = await fetch(`/data/brand-requests/${props.nameKey}`, { headers: { Accept: 'application/json' } })
@@ -38,6 +40,7 @@ async function load() {
         error.value = null
         // Préremplis avec tous les noms tapés, un par ligne (ceux qui sont déjà le nom ou un autre nom de la marque sont ignorés à l'enregistrement)
         aliasText.value = data.value.names.map((n) => n.name).join('\n')
+        linkAliasText.value = aliasText.value
         if (!form.name) form.name = titleCase(data.value.name ?? '')
     } catch (e) {
         error.value = e.message
@@ -77,7 +80,8 @@ function play(row) {
 onUnmounted(() => audio?.pause())
 
 // ─── Noms tapés → autres noms de la marque ────────────────────────────────────
-const aliases = computed(() => aliasText.value.split('\n').map((x) => x.trim()).filter(Boolean))
+const lines = (text) => text.split('\n').map((x) => x.trim()).filter(Boolean)
+const aliases = computed(() => lines(aliasText.value))
 const ids = computed(() => data.value?.calls.map((c) => c.id) ?? [])
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -109,7 +113,7 @@ async function after() {
     if (data.value && !data.value.calls.length) router.visit(data.value.next ? `/brands/requests/${data.value.next}` : '/brands/requests')
 }
 async function link(brandId) {
-    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: aliases.value })) after()
+    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: lines(linkAliasText.value) })) after()
 }
 const otherBrand = ref(null)
 // Action principale (bouton noir) = la réponse la plus probable : associer quand une marque a exactement ce nom
@@ -118,7 +122,7 @@ const identicalId = computed(() => (data.value?.suggestions?.[0]?.rank === 1 ? d
 
 // Création
 const COUNTRY = { 33: 'FR', 32: 'BE', 49: 'DE' }
-const form = reactive({ name: '', phone: '', country: 'FR', type: 'service', canTransfer: true, note: '' })
+const form = reactive({ name: '', phone: '', country: 'FR', type: 'service', canTransfer: true, note: '', scenario: '' })
 // Numéro saisi librement (01 23…, 0033…, +33…) → +33…
 const phonenumber = computed(() => {
     const d = form.phone.replace(/[^\d+]/g, '')
@@ -157,6 +161,7 @@ async function create() {
         type: form.type,
         can_transfer: !!phonenumber.value && form.canTransfer,
         note: form.note || null,
+        scenario: form.scenario || null,
         aliases: aliases.value,
     })
     if (json) {
@@ -221,9 +226,14 @@ async function ignore() {
                     <Card :class="data.suggestions.length ? 'order-1' : 'order-2'">
                         <CardHeader>
                             <CardTitle>Marques existantes proches</CardTitle>
-                            <p class="text-sm text-gray-500">« Associer à cette marque » ajoute à cette marque les autres noms saisis dans « Créer la marque », et la demande passe dans « Traitées » comme marque existante.</p>
+                            <p class="text-sm text-gray-500">« Associer à cette marque » ajoute les autres noms ci-dessous à la marque choisie, et la demande passe dans « Traitées » comme marque existante.</p>
                         </CardHeader>
                         <CardContent class="space-y-3">
+                            <div class="space-y-2 pb-2">
+                                <Label for="br-link-aliases">Autres noms ajoutés à la marque associée</Label>
+                                <Textarea id="br-link-aliases" v-model="linkAliasText" rows="2" placeholder="Un nom par ligne" />
+                                <p class="text-sm text-gray-500">Préremplis avec les noms tapés. Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
+                            </div>
                             <div v-for="b in data.suggestions" :key="b.id" class="flex items-center gap-4 text-sm">
                                 <Link :href="`/brands/${b.id}/edit`" class="font-medium text-gray-900 hover:underline">{{ b.name }}</Link>
                                 <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
@@ -297,10 +307,14 @@ async function ignore() {
 
                         <Card>
                             <CardHeader><CardTitle>Pour l'agent</CardTitle></CardHeader>
-                            <CardContent>
+                            <CardContent class="space-y-4">
                                 <div class="space-y-2">
                                     <Label for="br-note">Note</Label>
                                     <Textarea id="br-note" v-model="form.note" rows="3" />
+                                </div>
+                                <div class="space-y-2">
+                                    <Label for="br-scenario">Scénario</Label>
+                                    <Textarea id="br-scenario" v-model="form.scenario" rows="6" />
                                 </div>
                             </CardContent>
                         </Card>
