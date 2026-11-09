@@ -219,6 +219,7 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/calls-to-review', [CallReviewController::class, 'data']);
         Route::get('/agent-alerts', [AgentAlertController::class, 'data']);
+        Route::get('/agent-alerts/agent', [AgentAlertController::class, 'agent']);
         Route::get('/calls-to-review/{id}', [CallReviewController::class, 'detail'])->whereNumber('id');
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);

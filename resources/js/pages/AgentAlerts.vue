@@ -4,15 +4,16 @@ import { Head } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
-import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 /**
  * Alertes agents : quel agent pose problème, et de quelle façon.
- *   Filtres : période, centre, agent, sortes d'alerte (avec leur nombre)
- *   Par agent : une ligne par agent, du plus grave au moins grave ; un clic filtre sur cet agent
+ *   Filtres : période, centre, sortes d'alerte (avec leur nombre)
+ *   Par agent : une ligne par agent, du plus grave au moins grave ; un clic ouvre la fenêtre de ses alertes
+ *   (le classement reste entier, la ligne choisie surlignée)
  *   Alertes : la liste, la plus récente d'abord
  */
 const props = defineProps({ centers: { type: Array, default: () => [] } })
@@ -36,7 +37,6 @@ const kindLabel = Object.fromEntries(KINDS.map((k) => [k.key, k.label]))
 
 const period = ref('today')
 const center = ref('')
-const agent = ref('')
 const active = ref(KINDS.map((k) => k.key))
 const page = ref(1)
 const data = ref(null)
@@ -47,7 +47,6 @@ async function load() {
     loading.value = true
     const q = new URLSearchParams({ period: period.value, kinds: active.value.join(','), page: page.value })
     if (center.value) q.set('center', center.value)
-    if (agent.value) q.set('agent', agent.value)
     try {
         const res = await fetch(`/data/agent-alerts?${q}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
@@ -59,18 +58,17 @@ async function load() {
         loading.value = false
     }
 }
-watch([period, center, agent, active], () => (page.value === 1 ? load() : (page.value = 1)), { deep: true })
+watch([period, center, active], () => (page.value === 1 ? load() : (page.value = 1)), { deep: true })
 watch(page, load)
 onMounted(load)
 
 function toggleKind(key) {
     active.value = active.value.includes(key) ? active.value.filter((k) => k !== key) : [...active.value, key]
 }
-const hasFilters = computed(() => period.value !== 'today' || !!center.value || !!agent.value || active.value.length !== KINDS.length)
+const hasFilters = computed(() => period.value !== 'today' || !!center.value || active.value.length !== KINDS.length)
 function reset() {
     period.value = 'today'
     center.value = ''
-    agent.value = ''
     active.value = KINDS.map((k) => k.key)
 }
 const centerLabel = (key) => props.centers.find((c) => c.key === key)?.label ?? '—'
@@ -87,7 +85,7 @@ function detailOf(a) {
     return d.what === 'break' ? 'Fin de pause' : 'Fin de travail'
 }
 
-// Classement : un clic sur un agent filtre la page sur lui ; un nouveau clic retire le filtre
+// Classement : un clic sur un agent ouvre la fenêtre de ses alertes
 const rankingColumns = [
     { key: 'agent', label: 'Agent' },
     { key: 'center', label: 'Centre' },
@@ -96,7 +94,41 @@ const rankingColumns = [
     { key: 'last', label: 'Dernière alerte' },
 ]
 const rankingRows = computed(() => (data.value?.ranking ?? []).map((r) => ({ ...r, ...r.counts })))
-const selectedRowClass = (row) => (row.agent === agent.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+const selectedRowClass = (row) => (row.agent === openAgent.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+
+// ─── Fenêtre d'un agent : ses nombres, puis toutes ses alertes de la période, jour par jour ──
+const openAgent = ref(null)
+const agentData = ref(null)
+const agentError = ref(null)
+const agentOpen = computed({
+    get: () => openAgent.value !== null,
+    set: (open) => !open && (openAgent.value = null),
+})
+watch(openAgent, async (name) => {
+    agentData.value = null
+    agentError.value = null
+    if (name === null) return
+    try {
+        const res = await fetch(`/data/agent-alerts/agent?${new URLSearchParams({ agent: name, period: period.value })}`, { headers: { Accept: 'application/json' } })
+        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
+        if (openAgent.value === name) agentData.value = await res.json()
+    } catch (e) {
+        agentError.value = e.message
+    }
+})
+const periodLabel = computed(() => PERIODS.find((p) => p.key === period.value)?.label ?? '')
+const dayKey = (iso) => new Date(iso).toLocaleDateString('fr-CA', { timeZone: 'Europe/Paris' })
+const dayTitle = (iso) => new Date(iso).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' })
+const timeOf = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const agentDays = computed(() => {
+    const days = []
+    for (const a of agentData.value?.items ?? []) {
+        const key = dayKey(a.at)
+        if (days.at(-1)?.key !== key) days.push({ key, title: dayTitle(a.at), items: [] })
+        days.at(-1).items.push(a)
+    }
+    return days
+})
 
 const listColumns = [
     { key: 'at', label: 'Date' },
@@ -141,8 +173,6 @@ const listColumns = [
                             {{ c.label }}
                         </button>
                     </div>
-                    <span class="text-xs text-gray-500">Agent</span>
-                    <div class="w-56"><FilterSelect v-model="agent" :options="(data?.agents ?? []).map((a) => ({ value: a, label: a }))" placeholder="Tous les agents" searchable /></div>
                     <span class="text-xs text-gray-500">Alertes</span>
                     <!-- Plusieurs sortes à la fois : une case par sorte, avec son nombre sur la période -->
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -169,7 +199,7 @@ const listColumns = [
                         :loading="!data && !error"
                         empty-message="Aucune alerte sur la période"
                         :row-class="selectedRowClass"
-                        :row-click="(row) => (agent = agent === row.agent ? '' : row.agent)"
+                        :row-click="(row) => (openAgent = row.agent)"
                     >
                         <template #agent="{ value }"><span class="text-sm font-medium text-gray-900">{{ value }}</span></template>
                         <template #center="{ value }"><span class="text-sm text-gray-600">{{ centerLabel(value) }}</span></template>
@@ -209,5 +239,48 @@ const listColumns = [
                 </div>
             </section>
         </div>
+
+        <!-- Fenêtre d'un agent -->
+        <Dialog v-model:open="agentOpen">
+            <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+                <DialogHeader>
+                    <DialogTitle>{{ openAgent }}</DialogTitle>
+                    <DialogDescription>{{ agentData ? centerLabel(agentData.center) : '' }} · {{ periodLabel }}</DialogDescription>
+                </DialogHeader>
+
+                <p v-if="agentError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Chargement impossible : {{ agentError }}</p>
+                <div v-else-if="!agentData" class="space-y-3">
+                    <div v-for="i in 3" :key="i" class="h-12 animate-pulse rounded bg-gray-50" />
+                </div>
+                <div v-else class="space-y-6">
+                    <!-- Nombres : la ligne du classement -->
+                    <dl class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-100 px-4 py-3 text-sm">
+                        <div v-for="k in KINDS" :key="k.key">
+                            <dt class="inline text-gray-500">{{ k.column }}</dt>
+                            <dd class="ml-1.5 inline font-semibold tabular-nums" :class="!agentData.counts[k.key] ? 'text-gray-300' : k.key === 'f5' ? 'text-red-600' : 'text-gray-900'">{{ agentData.counts[k.key] }}</dd>
+                        </div>
+                        <div>
+                            <dt class="inline text-gray-500">Appels décrochés</dt>
+                            <dd class="ml-1.5 inline font-semibold tabular-nums text-gray-900">{{ agentData.answered.toLocaleString('fr-FR') }}</dd>
+                        </div>
+                    </dl>
+
+                    <!-- Alertes jour par jour, la plus récente d'abord -->
+                    <p v-if="!agentDays.length" class="text-sm text-gray-500">Aucune alerte sur la période</p>
+                    <section v-for="d in agentDays" :key="d.key">
+                        <h3 class="mb-2 text-sm font-semibold text-gray-900 first-letter:uppercase">
+                            {{ d.title }} <span class="ml-1 font-normal tabular-nums text-gray-400">{{ d.items.length }}</span>
+                        </h3>
+                        <div class="divide-y divide-gray-50 rounded-lg border border-gray-100">
+                            <div v-for="a in d.items" :key="a.id" class="grid grid-cols-[5rem_16rem_1fr] gap-3 px-4 py-2 text-sm">
+                                <span class="tabular-nums text-gray-700">{{ timeOf(a.at) }}</span>
+                                <span :class="a.kind === 'f5' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ kindLabel[a.kind] }}</span>
+                                <span class="text-gray-600">{{ detailOf(a) }}</span>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </DialogContent>
+        </Dialog>
     </AppLayout>
 </template>

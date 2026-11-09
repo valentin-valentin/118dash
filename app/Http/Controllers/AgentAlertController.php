@@ -43,14 +43,11 @@ class AgentAlertController extends Controller
     {
         [$from, $to] = $this->period($request->input('period', 'today'));
         $center = $request->input('center') ?: null;
-        $agent = $request->input('agent') ?: null;
         $kinds = array_values(array_intersect(self::KINDS, explode(',', (string) $request->input('kinds', implode(',', self::KINDS)))));
 
         // Alertes de la période (toutes les sortes), avec leur agent et son centre (comptes de test : centre « Test »)
         $alerts = $this->alerts($from, $to)
             ->filter(fn ($a) => !$center || $a['center'] === $center);
-        $agents = $alerts->pluck('agent')->unique()->sort()->values();
-        $alerts = $alerts->filter(fn ($a) => !$agent || $a['agent'] === $agent);
 
         $counts = collect(self::KINDS)->mapWithKeys(fn ($k) => [$k => $alerts->where('kind', $k)->count()]);
         $shown = $alerts->whereIn('kind', $kinds);
@@ -74,12 +71,34 @@ class AgentAlertController extends Controller
 
         return response()->json([
             'counts' => $counts,
-            'agents' => $agents,
             'ranking' => $ranking,
             'items' => $list->slice(($page - 1) * self::PER_PAGE, self::PER_PAGE)->values(),
             'page' => $page,
             'lastPage' => max(1, (int) ceil($list->count() / self::PER_PAGE)),
             'total' => $list->count(),
+        ]);
+    }
+
+    /**
+     * Toutes les alertes d'un agent sur la période (fenêtre ouverte par un clic dans le classement), avec ses nombres
+     * par sorte et ses appels décrochés. La plus récente d'abord.
+     */
+    public function agent(Request $request): JsonResponse
+    {
+        $name = (string) $request->input('agent');
+        abort_unless(preg_match('/^[A-Za-z0-9_-]{1,40}$/', $name), 422);
+        [$from, $to] = $this->period($request->input('period', 'today'));
+
+        $alerts = $this->alerts($from, $to)->where('agent', $name)
+            ->sortBy(fn ($a) => [$a['at'], $a['id']])->reverse()->values();
+        $agentId = $alerts->first()['agentId'] ?? DB::table('agents')->where('voxnode_username', $name)->value('id');
+
+        return response()->json([
+            'agent' => $name,
+            'center' => $this->centerOf($name),
+            'counts' => collect(self::KINDS)->mapWithKeys(fn ($k) => [$k => $alerts->where('kind', $k)->count()]),
+            'answered' => $agentId ? ($this->answered([$agentId], $from, $to)[$agentId] ?? 0) : 0,
+            'items' => $alerts,
         ]);
     }
 
