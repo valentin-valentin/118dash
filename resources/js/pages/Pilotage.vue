@@ -304,7 +304,7 @@ const freeOf = (f) => (f.live ? (f.live.server?.free ?? 0) + (f.live.voxnode?.fr
 // Deux écarts, deux noms : planning (feuille de présence) et réel (téléphones relevés) ; la différence = les injoignables
 const GAP_LABEL = 'Écart réel (joignables − nécessaires)'
 const PLANNED_LABEL = 'Écart de planning (présents − nécessaires)'
-const LONG_WAIT_TEXT = "Longue attente : 5 min ou plus de vraie attente d'un agent, sur les appels où elle est mesurée"
+const LONG_WAIT_TEXT = "Longue attente : 5 min ou plus de vraie attente d'un agent, sur les appels où elle est mesurée."
 const allRows = computed(() => [...(data.value?.rows ?? []), ...(data.value?.average ? [data.value.average] : [])])
 const cellOf = (row, slot) => row?.cells.find((c) => c.slot === slot)
 // Moyennes (plusieurs jours) : une décimale
@@ -732,7 +732,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                             <td>{{ fmt(t.agentHours) }}</td>
                                             <td>{{ fmt(t.answered) }} <span class="pct">{{ fmt1(t.answeredPct) }} %</span></td>
                                             <td>{{ fmt1(t.answeredPerHour) }}</td>
-                                            <td>{{ fmt1(t.talkPct) }} % <span class="pct">du temps de présence</span></td>
+                                            <td><template v-if="t.talkPct == null">–</template><template v-else>{{ fmt1(t.talkPct) }} % <span class="pct">du temps de présence</span></template></td>
                                             <td>{{ fmt(t.pauseHours) }}</td>
                                             <td>{{ fmt(t.lunchHours) }}</td>
                                             <td>{{ fmt(t.missed) }} <span class="pct">{{ fmt1(t.missedPer100) }} pour 100 décrochés</span></td>
@@ -914,12 +914,13 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                         <p class="legend">
                             Perdus à l'accueil : pendant l'accueil ou l'attente forcée. Présents (feuille) : feuille de présence, hors pause et déjeuner. Occupation : temps en appel / présence.
                             <template v-if="data.needShown"> Nécessaires : agents qu'il fallait pour décrocher {{ data.answerShare }} % des appels en moins de {{ within }} s de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise) ; ce choix change le calcul dans toute la page. Écart de planning : présents − nécessaires. Écart réel : joignables (téléphone connecté) − nécessaires. – : non mesuré.</template>
-                            {{ LONG_WAIT_TEXT }}.
+                            {{ LONG_WAIT_TEXT }}
                         </p>
                             <div v-if="detail" class="mt-6">
                                 <h3 class="mb-2 text-sm font-semibold text-gray-900">{{ detail.title }}<span v-if="detail.avg" class="ml-1 font-normal text-gray-500">moyenne par jour</span></h3>
                                 <!-- Appels à la largeur de ses chiffres (3 plateformes), Agents prend le reste -->
                                 <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[max-content_1fr]">
+                                <div class="space-y-4">
                                 <div class="mini">
                                     <table>
                                         <thead>
@@ -936,6 +937,33 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                         </tbody>
                                     </table>
                                 </div>
+                                <!-- Attente avec ou sans agents libres, minute par minute -->
+                                <div class="mini">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th class="title">
+                                                    {{ detail.causes ? detail.causes[0][0] : "Appelants en attente d'un agent depuis 30 s ou plus" }}
+                                                    <span v-if="detail.causesDays" class="note">moyenne sur {{ detail.causesDays }} jours relevés</span>
+                                                </th>
+                                                <th />
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template v-if="detail.causes">
+                                                <tr v-for="[label, v] in detail.causes.slice(1)" :key="label">
+                                                    <td>{{ label }}</td>
+                                                    <td>{{ v }}</td>
+                                                </tr>
+                                            </template>
+                                            <tr v-else>
+                                                <td class="pct">non mesuré</td>
+                                                <td />
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                </div>
                                 <div class="mini">
                                     <table>
                                         <thead>
@@ -948,17 +976,6 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                             <tr v-for="[label, c] in detail.agents" :key="label" :class="c.sub && 'subrow'">
                                                 <td :colspan="c.sub ? 2 : 1">{{ label }}</td>
                                                 <td v-if="!c.sub" :class="c.red && 'red'">{{ c.text }}</td>
-                                            </tr>
-                                            <!-- Attente avec ou sans agents libres, minute par minute -->
-                                            <template v-if="detail.causes">
-                                                <tr v-for="[label, v] in detail.causes" :key="label" :class="v === null ? 'sep' : 'subrow'">
-                                                    <td :colspan="v === null ? 2 : 1">{{ label }}<span v-if="v === null && detail.causesDays" class="pct">moyenne sur {{ detail.causesDays }} jours relevés</span></td>
-                                                    <td v-if="v !== null">{{ v }}</td>
-                                                </tr>
-                                            </template>
-                                            <tr v-else class="sep">
-                                                <td>Appelants en attente d'un agent depuis 30 s ou plus</td>
-                                                <td class="pct">non mesuré</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -990,8 +1007,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                             <td class="underline decoration-gray-300 underline-offset-2">{{ dayLabel(w.date) }} {{ w.slot }}–{{ endOf(w.slot) }}</td>
                                             <td>{{ fmt(w.calls) }}</td>
                                             <td :title="`Notre serveur ${fmt(w.lostQueueServer)} · Voxnode ${fmt(w.lostQueueVoxnode)}`">
-                                                <span class="red">{{ fmt(w.lostQueue) }}</span>
-                                                <span v-if="(w.lostUnknown ?? 0) > 0" class="pct">+ {{ fmt(w.lostUnknown) }} non mesurés</span>
+                                                <span class="red">{{ fmt(w.lostQueue) }}</span>{{ ' ' }}<span v-if="(w.lostUnknown ?? 0) > 0" class="pct">+ {{ fmt(w.lostUnknown) }} non mesurés</span>
                                             </td>
                                             <td>{{ w.realWaitMeasured === 0 ? '–' : fmt(w.late) }}</td>
                                             <td class="gl">{{ fmt1(w.agents?.present) }}</td>
@@ -1567,6 +1583,9 @@ tr.sep td {
 }
 .ov > .col.on {
     background: #f3f4f6;
+}
+.ov > .col.on.bad {
+    background: var(--red-bg);
 }
 .ov > .lab {
     text-align: left;
