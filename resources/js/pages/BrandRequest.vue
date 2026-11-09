@@ -193,16 +193,21 @@ async function post(url, body) {
         busy.value = false
     }
 }
-// Après une action : la suite des appels de cette demande, ou la demande suivante, ou la liste
-async function after() {
+// Après une action : la demande suivante de la liste « À traiter » (même ordre), ou la liste
+// Sans autre demande en attente, chaque action n'a qu'un bouton : « … et retourner à la liste »
+const hasNext = computed(() => !!data.value?.next)
+function after(goNext) {
     refreshBrandRequests(true)
-    await load()
-    if (data.value && !data.value.calls.length) router.visit(data.value.next ? `/brands/requests/${data.value.next}` : '/brands/requests')
+    router.visit(goNext && data.value?.next ? `/brands/requests/${data.value.next}` : '/brands/requests')
 }
-async function link(brandId) {
-    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: checkedNames(linkAliasOptions.value) })) after()
+async function link(goNext) {
+    if (!chosenId.value) return
+    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: chosenId.value, aliases: checkedNames(linkAliasOptions.value) })) after(goNext)
 }
+// Marque à associer : une ligne cliquée (sélectionnée comme une ligne de tableau), ou celle cherchée dans « Une autre marque »
+const chosenId = ref(null)
 const otherBrand = ref(null)
+watch(otherBrand, (id) => id && (chosenId.value = id))
 // Action principale (bouton noir) = la réponse la plus probable : associer quand une marque a exactement ce nom
 // (sinon on créerait un doublon), créer sinon. Une seule action principale sur la page.
 // Associer est l'action principale quand la transcription correspond à une marque, ou qu'une marque a exactement le nom tapé
@@ -210,6 +215,9 @@ const identicalId = computed(() => data.value?.matches?.[0]?.id ?? (data.value?.
 // Marques proches, hors celles déjà mises en avant par la transcription
 const otherSuggestions = computed(() => (data.value?.suggestions ?? []).filter((b) => !data.value.matches.some((m) => m.id === b.id)))
 const hasExisting = computed(() => !!(data.value?.matches?.length || data.value?.suggestions?.length))
+// Sélection par défaut : la marque qui a exactement ce nom (ou que la transcription donne)
+watch(identicalId, (id) => (chosenId.value = id ?? null), { immediate: true })
+const rowClass = (id) => (chosenId.value === id ? 'shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
 
 // Création
 const COUNTRY = { 33: 'FR', 32: 'BE', 49: 'DE' }
@@ -243,7 +251,7 @@ watch(phonenumber, (n) => {
     }, 400)
 })
 const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURIComponent(`${form.name || data.value?.name || ''} numéro de téléphone service client contact`)}`)
-async function create() {
+async function create(goNext) {
     const json = await post('/data/brand-requests/create', {
         ids: ids.value,
         name: form.name,
@@ -255,15 +263,12 @@ async function create() {
         scenario: form.scenario || null,
         aliases: aliases.value,
     })
-    if (json) {
-        Object.assign(form, { name: '', phone: '', note: '' })
-        after()
-    }
+    if (json) after(goNext)
 }
 
 // Marquer comme traitée, sans créer ni associer de marque
-async function ignore() {
-    if (await post('/data/brand-requests/ignore', { ids: ids.value })) after()
+async function ignore(goNext) {
+    if (await post('/data/brand-requests/ignore', { ids: ids.value })) after(goNext)
 }
 </script>
 
@@ -330,8 +335,8 @@ async function ignore() {
                             v-for="(line, i) in transcriptCall.transcript"
                             :key="i"
                             type="button"
-                            class="grid w-full grid-cols-[3.5rem_4rem_1fr] gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50"
-                            :class="[isMarkLine(transcriptCall, line) ? 'bg-amber-50 hover:bg-amber-100/70' : i === currentLine && player.playing ? 'bg-gray-50' : '']"
+                            class="grid w-full grid-cols-[3.5rem_4rem_1fr] gap-3 px-4 py-2 text-left text-sm"
+                            :class="isMarkLine(transcriptCall, line) ? 'bg-amber-50 hover:bg-amber-100' : i === currentLine && player.playing ? 'bg-gray-50 hover:bg-gray-100' : 'hover:bg-gray-50'"
                             :data-mark="isMarkLine(transcriptCall, line) ? '' : undefined"
                             @click="playAt(transcriptCall, line.s)"
                         >
@@ -350,10 +355,11 @@ async function ignore() {
                      Les cartes et les champs sont ceux de la fiche marque (BrandForm.vue). -->
                 <div class="flex flex-col gap-6">
                     <!-- ─── Marques existantes proches ─── -->
-                    <Card :class="hasExisting ? 'order-1' : 'order-2'">
+                    <div class="space-y-6" :class="hasExisting ? 'order-1' : 'order-2'">
+                    <Card>
                         <CardHeader>
                             <CardTitle>Marques existantes proches</CardTitle>
-                            <p class="text-sm text-gray-500">« Associer à cette marque » ajoute les autres noms ci-dessous à la marque choisie, et la demande passe dans « Traitées » comme marque existante.</p>
+                            <p class="text-sm text-gray-500">Choisir la marque. « Associer à cette marque » lui ajoute les autres noms ci-dessous, et la demande passe dans « Traitées » comme marque existante.</p>
                         </CardHeader>
                         <CardContent class="space-y-3">
                             <div class="space-y-2 pb-2">
@@ -362,29 +368,50 @@ async function ignore() {
                                 <p class="text-sm text-gray-500">Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
                             </div>
                             <!-- La transcription donne exactement le nom (ou un autre nom) d'une marque existante : en premier -->
-                            <div v-for="b in data.matches" :key="`m-${b.id}`" class="flex items-center gap-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-                                <span class="text-amber-800">La transcription correspond à <Link :href="`/brands/${b.id}/edit`" class="font-medium underline">{{ b.name }}</Link></span>
+                            <!-- Une ligne par marque, cliquable ; la marque choisie a le liseré des lignes sélectionnées -->
+                            <div
+                                v-for="b in data.matches"
+                                :key="`m-${b.id}`"
+                                class="flex cursor-pointer items-center gap-4 rounded-md border border-amber-200 px-3 py-2 text-sm"
+                                :class="[chosenId === b.id ? 'bg-amber-100' : 'bg-amber-50 hover:bg-amber-100', rowClass(b.id)]"
+                                @click="chosenId = b.id"
+                            >
+                                <span class="text-amber-800">La transcription correspond à <Link :href="`/brands/${b.id}/edit`" class="font-medium underline" @click.stop>{{ b.name }}</Link></span>
                                 <span class="tabular-nums text-amber-700">{{ b.phonenumber || 'sans numéro' }}</span>
-                                <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
                             </div>
-                            <div v-for="b in otherSuggestions" :key="b.id" class="flex items-center gap-4 text-sm">
-                                <Link :href="`/brands/${b.id}/edit`" class="font-medium text-gray-900 hover:underline">{{ b.name }}</Link>
+                            <div
+                                v-for="b in otherSuggestions"
+                                :key="b.id"
+                                class="flex cursor-pointer items-center gap-4 rounded-md px-3 py-2 text-sm"
+                                :class="[chosenId === b.id ? 'bg-gray-50' : 'hover:bg-gray-50', rowClass(b.id)]"
+                                @click="chosenId = b.id"
+                            >
+                                <Link :href="`/brands/${b.id}/edit`" class="font-medium text-gray-900 hover:underline" @click.stop>{{ b.name }}</Link>
                                 <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
                                 <span class="text-gray-500">{{ b.type || '-' }}</span>
                                 <span class="text-gray-500">{{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template> · {{ b.source }}</span>
-                                <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
                             </div>
-                            <p v-if="!hasExisting" class="text-sm text-gray-500">Aucune marque proche</p>
-                            <div class="flex items-center gap-4 text-sm">
+                            <p v-if="!hasExisting" class="px-3 text-sm text-gray-500">Aucune marque proche</p>
+                            <div
+                                class="flex items-center gap-4 rounded-md px-3 py-2 text-sm"
+                                :class="[otherBrand && chosenId === otherBrand ? 'bg-gray-50' : '', otherBrand && 'cursor-pointer', otherBrand && rowClass(otherBrand)]"
+                                @click="otherBrand && (chosenId = otherBrand)"
+                            >
                                 <span class="text-gray-700">Une autre marque</span>
-                                <div class="w-72"><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
-                                <Button type="button" size="sm" variant="outline" class="ml-auto" :disabled="busy || !otherBrand" @click="link(otherBrand)">Associer à cette marque</Button>
+                                <div class="w-72" @click.stop><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
                             </div>
                         </CardContent>
                     </Card>
+                    <div class="flex justify-end gap-4">
+                        <Button v-if="hasNext" type="button" variant="outline" :disabled="busy || !chosenId" @click="link(false)">Associer à cette marque et retourner à la liste</Button>
+                        <Button type="button" :variant="identicalId ? 'default' : 'outline'" :disabled="busy || !chosenId" @click="link(hasNext)">
+                            {{ hasNext ? 'Associer à cette marque et passer à la suivante' : 'Associer à cette marque et retourner à la liste' }}
+                        </Button>
+                    </div>
+                    </div>
 
                     <!-- ─── Créer la marque : mêmes cartes et mêmes champs que « Nouvelle marque » ─── -->
-                    <form class="space-y-6" :class="hasExisting ? 'order-2' : 'order-1'" @submit.prevent="create">
+                    <form class="space-y-6" :class="hasExisting ? 'order-2' : 'order-1'" @submit.prevent="create(hasNext)">
                         <Card>
                             <CardHeader>
                                 <CardTitle>Créer la marque</CardTitle>
@@ -452,15 +479,21 @@ async function ignore() {
                             </CardContent>
                         </Card>
 
-                        <div class="flex justify-end">
-                            <Button type="submit" :variant="identicalId ? 'outline' : 'default'" :disabled="busy || !form.name || !phoneValid">Créer la marque</Button>
+                        <div class="flex justify-end gap-4">
+                            <Button v-if="hasNext" type="button" variant="outline" :disabled="busy || !form.name || !phoneValid" @click="create(false)">Créer la marque et retourner à la liste</Button>
+                            <Button type="submit" :variant="identicalId ? 'outline' : 'default'" :disabled="busy || !form.name || !phoneValid">
+                                {{ hasNext ? 'Créer la marque et passer à la suivante' : 'Créer la marque et retourner à la liste' }}
+                            </Button>
                         </div>
                     </form>
                 </div>
 
                 <!-- ─── Sans créer ni associer de marque ─── -->
-                <div class="flex justify-end">
-                    <Button type="button" variant="outline" :disabled="busy" @click="ignore">Marquer la demande comme traitée</Button>
+                <div class="flex justify-end gap-4">
+                    <Button v-if="hasNext" type="button" variant="outline" :disabled="busy" @click="ignore(false)">Marquer la demande comme traitée et retourner à la liste</Button>
+                    <Button type="button" variant="outline" :disabled="busy" @click="ignore(hasNext)">
+                        {{ hasNext ? 'Marquer la demande comme traitée et passer à la suivante' : 'Marquer la demande comme traitée et retourner à la liste' }}
+                    </Button>
                 </div>
             </template>
         </div>

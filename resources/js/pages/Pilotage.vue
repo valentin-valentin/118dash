@@ -310,19 +310,30 @@ const cellOf = (row, slot) => row?.cells.find((c) => c.slot === slot)
 // Moyennes (plusieurs jours) : une décimale
 const isAvg = (row) => (row?.days ?? 1) > 1
 
-// ─── 3. Vue d'ensemble ────────────────────────────────────────────────────────
-const ovDay = ref(urlState.get('ov') || null)
-const ovPlat = ref(PLATS.some(([k]) => k === urlState.get('ovplat')) ? urlState.get('ovplat') : 'all')
-const ovDefault = () => (data.value?.average ? 'average' : (data.value?.rows?.at(-1)?.key ?? null))
-watch(allRows, (list) => {
-    if (!list.some((r) => r.key === ovDay.value)) ovDay.value = ovDefault()
+// ─── 3. Demi-heure par demi-heure ─────────────────────────────────────────────
+// Le jour affiché est celui de la demi-heure sélectionnée (clic sur une colonne, ou sur une ligne de la grille des jours)
+const multiDay = computed(() => allRows.value.length > 1)
+const ovRow = computed(() => allRows.value.find((r) => r.key === sel.value?.row) ?? allRows.value.at(-1) ?? null)
+// Colonnes : de la première à la dernière demi-heure ouverte (rien après l'heure actuelle aujourd'hui)
+const ovCols = computed(() => {
+    const cells = ovRow.value?.cells ?? []
+    const first = cells.findIndex((c) => c.state === 'open')
+    const last = cells.findLastIndex((c) => c.state === 'open')
+    return first < 0 ? [] : cells.slice(first, last + 1).map((c) => c.slot)
 })
-const ovRow = computed(() => allRows.value.find((r) => r.key === ovDay.value) ?? null)
-const ovCols = computed(() => (ovRow.value ? ovRow.value.cells.filter((c) => c.state !== 'closed').map((c) => c.slot) : []))
+function selectSlot(slot) {
+    if (ovRow.value && cellOf(ovRow.value, slot)?.state === 'open') sel.value = { row: ovRow.value.key, slot }
+}
+// Ligne de la grille des jours : garde la même demi-heure si elle est ouverte ce jour-là
+function selectRow(row) {
+    const keep = sel.value && cellOf(row, sel.value.slot)?.state === 'open'
+    const open = row.cells.find((c) => c.state === 'open')
+    if (keep || open) sel.value = { row: row.key, slot: keep ? sel.value.slot : open.slot }
+}
 const ov = computed(() => {
     const row = ovRow.value
     if (!row) return null
-    const F = Object.fromEntries(ovCols.value.map((s) => [s, fig(cellOf(row, s), ovPlat.value)]))
+    const F = Object.fromEntries(ovCols.value.map((s) => [s, fig(cellOf(row, s), gPlat.value)]))
     const figs = Object.values(F).filter(Boolean)
     const maxC = Math.max(0, ...figs.map((f) => f.calls))
     const maxA = Math.max(0, ...figs.map((f) => Math.max((f.present ?? 0) + (f.pause ?? 0) + (f.lunch ?? 0), f.need ?? 0)))
@@ -519,7 +530,7 @@ const detail = computed(() => {
             { label: "Perdus en attente d'un agent", v: (f) => (f.stageUnm ? NOT_MEASURED : { text: fmt(f.lq), red: f.lq > 0, pct: f.unknown > 0 ? `+ ${fmt(f.unknown)} non mesurés` : '' }) },
             { label: 'Attente moyenne avant décroché', v: (f) => ({ text: f.wait == null ? '–' : mmss(f.wait) }) },
             { label: 'Vraie attente moyenne', v: (f) => ({ text: f.realWait == null ? '–' : mmss(f.realWait) }) },
-        ].map((r) => ({ label: r.label, cells: PLATS.map(([p]) => r.v(x[p])) })),
+        ].map((r) => ({ label: r.label, cells: COLS.map(([p]) => r.v(x[p])) })),
         agents: [
             ...(data.value?.needShown ? [['Nécessaires', { text: fmt(a.need) }]] : []),
             ['Appels décrochés par ces agents', { text: fmt(a.answered) }],
@@ -557,12 +568,12 @@ function selectWorst(w) {
         pickedDay.value = w.date
         preset.value = 'day'
     }
-    document.getElementById('pilotage-grid')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    document.getElementById('pilotage-halfhours')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 // ─── P6 : état dans l'adresse ─────────────────────────────────────────────────
 watch(
-    () => [preset.value, pickedDay.value, team.value, within.value, mode.value, gPlat.value, ovDay.value, ovPlat.value, sel.value],
+    () => [preset.value, pickedDay.value, team.value, within.value, mode.value, gPlat.value, sel.value],
     () => {
         const q = new URLSearchParams()
         if (preset.value !== 'today') q.set('period', preset.value)
@@ -571,8 +582,6 @@ watch(
         if (within.value !== 45) q.set('within', within.value)
         q.set('mode', mode.value)
         if (gPlat.value !== 'all') q.set('plat', gPlat.value)
-        if (ovDay.value && ovDay.value !== ovDefault()) q.set('ov', ovDay.value)
-        if (ovPlat.value !== 'all') q.set('ovplat', ovPlat.value)
         if (sel.value) q.set('sel', `${sel.value.row}~${sel.value.slot}`)
         try {
             history.replaceState(history.state, '', `${window.location.pathname}?${q}`)
@@ -765,88 +774,15 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                         </div>
                     </section>
 
-                    <!-- ─── 3. Vue d'ensemble ───────────────────────────────── -->
-                    <section v-if="ov">
-                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Vue d'ensemble <span class="ml-1 font-normal text-gray-500">Appels et agents demi-heure par demi-heure, sur les mêmes colonnes</span></h2>
+                    <!-- ─── 3. Demi-heure par demi-heure : grille des jours (plusieurs jours), graphique et chiffres du jour, détail ─── -->
+                    <section v-if="ov" id="pilotage-halfhours">
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Demi-heure par demi-heure <span class="ml-1 font-normal text-gray-500">Cliquer sur une demi-heure pour son détail</span></h2>
                         <div class="toolbar">
-                            <span class="tl">Jour</span>
-                            <div class="chips">
-                                <button v-for="r in allRows" :key="r.key" type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="ovDay === r.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="ovDay = r.key">{{ r.label }}</button>
-                            </div>
-                            <span class="tl">Appels de</span>
-                            <div class="chips">
-                                <button v-for="[k, l] in PLATS" :key="k" type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="ovPlat === k ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="ovPlat = k">{{ l }}</button>
-                            </div>
-                        </div>
-                        <div class="overflow-x-auto rounded-lg border border-gray-100 bg-white p-4">
-                            <div class="ov" :style="{ '--n': ovCols.length }">
-                                <div class="lab hd" />
-                                <div v-for="s in ovCols" :key="s" class="hd">{{ s }}</div>
-                                <div class="lab">État</div>
-                                <div v-for="s in ovCols" :key="s"><div v-if="ov.F[s]" class="stat" :class="STAT_CLASS[ov.F[s].level]" :title="ov.F[s].level === 'unmeasured' ? 'non mesuré' : undefined" /></div>
-
-                                <div class="grp">Appels{{ ovPlat === 'all' ? '' : ' · ' + PLATS.find((p) => p[0] === ovPlat)[1] }}</div>
-                                <div class="lab chart" style="--h: 120px"><span>{{ fmt(ov.maxC) }}</span><span>0</span></div>
-                                <div v-for="s in ovCols" :key="s" class="chart" style="--h: 120px">
-                                    <template v-if="ov.F[s]">
-                                        <div class="answered" :style="{ height: ov.h(ov.F[s].ans - ov.F[s].late, ov.maxC, 116) }" />
-                                        <div class="late" :style="{ height: ov.h(ov.F[s].late, ov.maxC, 116) }" />
-                                        <div class="forced" :style="{ height: ov.h(ov.F[s].lf, ov.maxC, 116) }" />
-                                        <div class="queue" :style="{ height: ov.h(ov.F[s].lq, ov.maxC, 116) }" />
-                                    </template>
-                                </div>
-                                <template v-for="l in ov.calls" :key="l.label">
-                                    <div class="lab" :class="l.cls">{{ l.label }}</div>
-                                    <div v-for="(c, i) in l.cells" :key="i" :class="[c.bad && 'bad', c.zero && 'zero']">{{ c.text }}</div>
-                                </template>
-
-                                <div class="grp">Agents · {{ data.team === 'all' ? 'les deux plateformes' : teamName }}</div>
-                                <div class="lab chart" style="--h: 90px"><span>{{ fmt(ov.maxA) }}</span><span>0</span></div>
-                                <div v-for="s in ovCols" :key="s" class="chart" style="--h: 90px">
-                                    <template v-if="ov.F[s]">
-                                        <div class="busy" :style="{ height: ov.h(ov.F[s].busy, ov.maxA, 86) }" />
-                                        <div class="free" :style="{ height: ov.h(ov.F[s].free, ov.maxA, 86) }" />
-                                        <div class="brk" :style="{ height: ov.h((ov.F[s].pause ?? 0) + (ov.F[s].lunch ?? 0), ov.maxA, 86) }" />
-                                        <div v-if="data.needShown && ov.F[s].need > 0" class="needmark" :style="{ bottom: `${2 + (ov.F[s].need / ov.maxA) * 86}px` }" :title="`Nécessaires : ${fmt1(ov.F[s].need)}`" />
-                                    </template>
-                                </div>
-                                <template v-for="l in ov.agents" :key="l.label">
-                                    <div class="lab" :class="l.cls">{{ l.label }}</div>
-                                    <div v-for="(c, i) in l.cells" :key="i" :class="[c.bad && 'bad', c.zero && 'zero']">{{ c.text }}</div>
-                                </template>
-                            </div>
-                            <div class="legend">
-                                <span><i class="sw answered" />décrochés</span><span><i class="sw late" />décrochés après une longue attente</span>
-                                <span><i class="sw forced" />perdus pendant l'accueil ou l'attente forcée</span><span><i class="sw queue" />perdus en attente d'un agent</span>
-                                <span class="ml-3"><i class="sw busy" />en appel</span>
-                                <span v-if="data.needShown"><i class="sw" style="height: 2px; background: #18181b" />agents nécessaires</span>
-                                <span><i class="sw free" />présents sans appel</span><span><i class="sw brk" />en pause ou déjeuner</span>
-                            </div>
-                            <p class="legend">
-                                Perdus à l'accueil : pendant l'accueil ou l'attente forcée. Présents (feuille) : feuille de présence, hors pause et déjeuner. Occupation : temps en appel / présence.
-                                <template v-if="data.needShown"> Écart de planning : présents − nécessaires. Écart réel : joignables (téléphone connecté) − nécessaires.</template>
-                            </p>
-                        </div>
-                    </section>
-
-                    <!-- ─── 4. Heure par heure ──────────────────────────────── -->
-                    <section>
-                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Heure par heure <span class="ml-1 font-normal text-gray-500">Chiffre : {{ modeText(currentMode.name) }}</span></h2>
-                        <div class="toolbar">
-                            <span class="tl">Chiffre</span>
-                            <select v-model="mode" class="flex h-8 w-72 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" aria-label="Chiffre affiché dans les cases">
-                                <optgroup label="Agents">
-                                    <option v-for="m in MODES.filter((x) => x.agents)" :key="m.key" :value="m.key" :disabled="!!modeDisabled(m)">{{ modeText(m.label) }}{{ modeDisabled(m) ? ' (indisponible)' : '' }}</option>
-                                </optgroup>
-                                <optgroup label="Appels">
-                                    <option v-for="m in MODES.filter((x) => !x.agents)" :key="m.key" :value="m.key">{{ modeText(m.label) }}</option>
-                                </optgroup>
-                            </select>
                             <span class="tl">Appels de</span>
                             <div class="chips">
                                 <button v-for="[k, l] in PLATS" :key="k" type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="gPlat === k ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="gPlat = k">{{ l }}</button>
                             </div>
-                            <template v-if="needMode">
+                            <template v-if="data.needShown">
                                 <span class="tl">Nécessaires</span>
                                 <span class="text-xs text-gray-600">{{ data.answerShare }} % décrochés en moins de</span>
                                 <select v-model.number="within" class="flex h-8 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" aria-label="Attente maximale">
@@ -854,17 +790,33 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                 </select>
                             </template>
                         </div>
-                        <div>
-                            <div class="overflow-x-auto rounded-lg border border-gray-100 bg-white p-4">
-                                <table id="pilotage-grid" class="hgrid">
+
+                        <!-- Plusieurs jours : une ligne par jour, un chiffre par case ; un clic choisit le jour (et la demi-heure) -->
+                        <div v-if="multiDay" class="mb-4 rounded-lg border border-gray-100 bg-white">
+                            <div class="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+                                <span class="text-xs text-gray-500">Chiffre des cases</span>
+                                <select v-model="mode" class="flex h-8 w-72 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" aria-label="Chiffre affiché dans les cases">
+                                    <optgroup label="Agents">
+                                        <option v-for="m in MODES.filter((x) => x.agents)" :key="m.key" :value="m.key" :disabled="!!modeDisabled(m)">{{ modeText(m.label) }}{{ modeDisabled(m) ? ' (indisponible)' : '' }}</option>
+                                    </optgroup>
+                                    <optgroup label="Appels">
+                                        <option v-for="m in MODES.filter((x) => !x.agents)" :key="m.key" :value="m.key">{{ modeText(m.label) }}</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="overflow-x-auto px-4 py-3">
+                                <table class="hgrid">
                                     <thead>
-                                        <tr><th />
+                                        <tr>
+                                            <th />
                                             <th v-for="s in data.slots" :key="s">{{ s }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr v-for="r in data.rows" :key="r.key">
-                                            <th class="day">{{ r.label }}<span v-if="r.days > 1" class="pct">{{ r.days }} j</span></th>
+                                        <tr v-for="r in allRows" :key="r.key" :class="r.key === ovRow?.key && 'selrow'">
+                                            <th class="day">
+                                                <button type="button" class="cursor-pointer text-left hover:underline" @click="selectRow(r)">{{ r.label }}<span v-if="r.days > 1" class="ml-1 text-xs text-gray-500">{{ r.days }} j</span></button>
+                                            </th>
                                             <td v-for="s in data.slots" :key="s">
                                                 <template v-for="c in [cellOf(r, s)]" :key="s">
                                                     <span v-if="!c || c.state === 'closed'" class="cell closed" />
@@ -886,26 +838,84 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                     </tbody>
                                 </table>
                             </div>
-                            <div v-if="needMode" class="legend">
-                                <span><i class="sw" style="background: #fee2e2; outline: 1px solid #dc2626" />il manquait des agents</span>
-                                <span><i class="sw" style="background: #ecfdf3" />effectif juste (0 à 2 en plus)</span>
-                                <span><i class="sw" style="background: #eef4ff" />3 agents ou plus en trop</span>
-                                <span style="flex-basis: 100%">
-                                    Nécessaires : agents qu'il fallait pour décrocher {{ data.answerShare }} % des appels en moins de {{ within }} s de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise). Ce choix change le calcul des agents nécessaires dans toute la page.
-                                    <template v-if="mode === 'gap'">Écart réel : agents joignables (téléphone connecté, hors pause) moins nécessaires. – : téléphones non relevés.</template>
-                                    <template v-else>Écart de planning : agents présents sur la feuille de présence (hors pause et déjeuner) moins nécessaires. – : appels de la demi-heure pas tous mesurés.</template>
-                                </span>
+                            <div class="legend border-t border-gray-100 px-4 py-2.5">
+                                <template v-if="needMode">
+                                    <span><i class="sw" style="background: #fee2e2; outline: 1px solid #dc2626" />il manquait des agents</span>
+                                    <span><i class="sw" style="background: #ecfdf3" />effectif juste (0 à 2 en plus)</span>
+                                    <span><i class="sw" style="background: #eef4ff" />3 agents ou plus en trop</span>
+                                </template>
+                                <template v-else>
+                                    <span><i class="sw" style="background: #fee2e2; outline: 1px solid #dc2626" />3 % des appels ou plus perdus en attente d'un agent ou décrochés après une longue attente</span>
+                                    <span><i class="sw warn-sw" />de 1 à 3 %</span>
+                                    <span><i class="sw" style="background: #ecfdf3" />moins de 1 %</span>
+                                </template>
+                                <span v-if="anyDot"><i class="sw" style="background: #dc2626; border-radius: 50%; width: 7px; height: 7px" />appels perdus en attente d'un agent alors que des agents étaient libres</span>
                             </div>
-                            <div v-else class="legend">
-                                <span><i class="sw" style="background: #fee2e2; outline: 1px solid #dc2626" />3 % des appels ou plus perdus en attente d'un agent ou décrochés après une longue attente</span>
-                                <span><i class="sw warn-sw" />de 1 à 3 %</span>
-                                <span><i class="sw" style="background: #ecfdf3" />moins de 1 %</span>
-                            </div>
-                            <p v-if="anyDot" class="legend">
-                                <span><i class="sw" style="background: #dc2626; border-radius: 50%; width: 7px; height: 7px" />point rouge : des appels perdus en attente d'un agent alors que des agents étaient libres</span>
-                            </p>
-                            <p class="legend">{{ LONG_WAIT_TEXT }}</p>
+                        </div>
 
+                        <!-- Le jour choisi : graphique et chiffres sur les mêmes colonnes, une colonne par demi-heure (cliquable) -->
+                        <!-- Défilement horizontal voulu sur une journée entière : 24 colonnes lisibles ne tiennent pas, les libellés restent fixes à gauche -->
+                        <div class="overflow-x-auto rounded-lg border border-gray-100 bg-white" data-ui-ok>
+                            <div class="ov" :style="{ '--n': ovCols.length }">
+                                <div class="lab hd day">{{ ovRow.label }}<span v-if="isAvg(ovRow)" class="font-normal text-gray-500"> · moyenne par jour</span></div>
+                                <button v-for="s in ovCols" :key="s" type="button" class="hd col" :class="sel?.slot === s && 'on'" @click="selectSlot(s)">{{ s }}</button>
+
+                                <div class="lab">État</div>
+                                <div v-for="s in ovCols" :key="s" class="col" :class="sel?.slot === s && 'on'" @click="selectSlot(s)"><div v-if="ov.F[s]" class="stat" :class="STAT_CLASS[ov.F[s].level]" :title="ov.F[s].level === 'unmeasured' ? 'non mesuré' : undefined" /></div>
+
+                                <div class="grp">Appels{{ gPlat === 'all' ? '' : ' · ' + PLATS.find((p) => p[0] === gPlat)[1] }}</div>
+                                <div class="lab chart" style="--h: 140px"><span>{{ fmt(ov.maxC) }}</span><span>0</span></div>
+                                <div v-for="s in ovCols" :key="s" class="chart col" :class="sel?.slot === s && 'on'" style="--h: 140px" @click="selectSlot(s)">
+                                    <template v-if="ov.F[s]">
+                                        <div class="answered" :style="{ height: ov.h(ov.F[s].ans - ov.F[s].late, ov.maxC, 134) }" />
+                                        <div class="late" :style="{ height: ov.h(ov.F[s].late, ov.maxC, 134) }" />
+                                        <div class="forced" :style="{ height: ov.h(ov.F[s].lf, ov.maxC, 134) }" />
+                                        <div class="queue" :style="{ height: ov.h(ov.F[s].lq, ov.maxC, 134) }" />
+                                    </template>
+                                </div>
+                                <template v-for="l in ov.calls" :key="l.label">
+                                    <div class="lab" :class="l.cls">{{ l.label }}</div>
+                                    <div v-for="(c, i) in l.cells" :key="i" class="col" :class="[c.bad && 'bad', c.zero && 'zero', sel?.slot === ovCols[i] && 'on']" @click="selectSlot(ovCols[i])">{{ c.text }}</div>
+                                </template>
+
+                                <div class="grp">Agents · {{ data.team === 'all' ? 'les deux plateformes' : teamName }}</div>
+                                <div class="lab chart" style="--h: 110px"><span>{{ fmt(ov.maxA) }}</span><span>0</span></div>
+                                <div v-for="s in ovCols" :key="s" class="chart col" :class="sel?.slot === s && 'on'" style="--h: 110px" @click="selectSlot(s)">
+                                    <template v-if="ov.F[s]">
+                                        <div class="busy" :style="{ height: ov.h(ov.F[s].busy, ov.maxA, 104) }" />
+                                        <div class="free" :style="{ height: ov.h(ov.F[s].free, ov.maxA, 104) }" />
+                                        <div class="brk" :style="{ height: ov.h((ov.F[s].pause ?? 0) + (ov.F[s].lunch ?? 0), ov.maxA, 104) }" />
+                                        <div v-if="data.needShown && ov.F[s].need > 0" class="needmark" :style="{ bottom: `${2 + (ov.F[s].need / ov.maxA) * 104}px` }" :title="`Nécessaires : ${fmt1(ov.F[s].need)}`" />
+                                    </template>
+                                </div>
+                                <template v-for="l in ov.agents" :key="l.label">
+                                    <div class="lab" :class="l.cls">{{ l.label }}</div>
+                                    <div v-for="(c, i) in l.cells" :key="i" class="col" :class="[c.bad && 'bad', c.zero && 'zero', sel?.slot === ovCols[i] && 'on']" @click="selectSlot(ovCols[i])">{{ c.text }}</div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- Légende : une ligne par bloc du tableau, dans l'ordre -->
+                        <div class="legend">
+                            <span class="font-medium text-gray-700">État</span>
+                            <span><i class="sw queue" />3 % ou plus des appels perdus en attente d'un agent ou décrochés après une longue attente</span>
+                            <span><i class="sw late" />de 1 à 3 %</span>
+                            <span><i class="sw free" />moins de 1 %</span>
+                        </div>
+                        <div class="legend">
+                            <span class="font-medium text-gray-700">Appels</span>
+                            <span><i class="sw answered" />décrochés</span><span><i class="sw late" />décrochés après une longue attente</span>
+                            <span><i class="sw forced" />perdus pendant l'accueil ou l'attente forcée</span><span><i class="sw queue" />perdus en attente d'un agent</span>
+                        </div>
+                        <div class="legend">
+                            <span class="font-medium text-gray-700">Agents</span>
+                            <span><i class="sw busy" />en appel</span><span><i class="sw free" />présents sans appel</span><span><i class="sw brk" />en pause ou déjeuner</span>
+                            <span v-if="data.needShown"><i class="sw" style="height: 2px; background: #18181b" />agents nécessaires</span>
+                        </div>
+                        <p class="legend">
+                            Perdus à l'accueil : pendant l'accueil ou l'attente forcée. Présents (feuille) : feuille de présence, hors pause et déjeuner. Occupation : temps en appel / présence.
+                            <template v-if="data.needShown"> Nécessaires : agents qu'il fallait pour décrocher {{ data.answerShare }} % des appels en moins de {{ within }} s de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise) ; ce choix change le calcul dans toute la page. Écart de planning : présents − nécessaires. Écart réel : joignables (téléphone connecté) − nécessaires. – : non mesuré.</template>
+                            {{ LONG_WAIT_TEXT }}.
+                        </p>
                             <div v-if="detail" class="mt-6">
                                 <h3 class="mb-2 text-sm font-semibold text-gray-900">{{ detail.title }}<span v-if="detail.avg" class="ml-1 font-normal text-gray-500">moyenne par jour</span></h3>
                                 <!-- Appels à la largeur de ses chiffres (3 plateformes), Agents prend le reste -->
@@ -915,13 +925,13 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                         <thead>
                                             <tr>
                                                 <th class="title">Appels</th>
-                                                <th v-for="[k, l] in PLATS" :key="k" :class="k === 'all' && 'total'">{{ l }}</th>
+                                                <th v-for="[k, l] in COLS" :key="k" :class="k === 'all' && 'total'">{{ l }}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr v-for="r in detail.calls" :key="r.label">
                                                 <td>{{ r.label }}</td>
-                                                <td v-for="(c, i) in r.cells" :key="i" :class="i === 0 && 'total'"><span :class="[c.red && 'red', c.muted && 'pct']">{{ c.text }}</span> <span v-if="c.pct" class="pct">{{ c.pct }}</span></td>
+                                                <td v-for="(c, i) in r.cells" :key="i" :class="COLS[i][0] === 'all' && 'total'"><span :class="[c.red && 'red', c.muted && 'pct']">{{ c.text }}</span> <span v-if="c.pct" class="pct">{{ c.pct }}</span></td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -955,7 +965,6 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                 </div>
                                 </div>
                             </div>
-                        </div>
                     </section>
 
                     <!-- ─── 5. Créneaux à revoir : l'essentiel par créneau, le reste au clic (détail dans la grille) ─── -->
@@ -1224,7 +1233,7 @@ tr.sep td {
     gap: 6px 16px;
     color: var(--muted);
     font-size: 12px;
-    margin-top: 10px;
+    margin-top: 8px;
 }
 .sw {
     display: inline-block;
@@ -1283,7 +1292,7 @@ tr.sep td {
 
 .mini th,
 .mini td {
-    padding: 6px 12px;
+    padding: 6px 10px;
     text-align: right;
     white-space: nowrap;
 }
@@ -1446,12 +1455,12 @@ tr.sep td {
 /* Grille (« grid » est une classe Tailwind) */
 .hgrid {
     border-collapse: separate;
-    border-spacing: 2px;
-    width: auto;
+    border-spacing: 3px;
+    width: 100%;
     font-variant-numeric: tabular-nums;
 }
 .hgrid th {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted);
     font-weight: 500;
     padding: 2px;
@@ -1460,10 +1469,14 @@ tr.sep td {
 }
 .hgrid th.day {
     text-align: left;
-    padding-right: 10px;
+    padding-right: 12px;
     color: var(--fg);
-    font-size: 12px;
+    font-size: 14px;
+    font-weight: 400;
     white-space: nowrap;
+}
+.hgrid tr.selrow th.day {
+    font-weight: 600;
 }
 .hgrid td {
     padding: 0;
@@ -1471,11 +1484,12 @@ tr.sep td {
 }
 .cell {
     display: block;
-    width: 38px;
-    height: 28px;
+    width: 100%;
+    min-width: 34px;
+    height: 32px;
     border: 0;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
     font-variant-numeric: tabular-nums;
     cursor: pointer;
     background: var(--cell);
@@ -1535,21 +1549,29 @@ tr.sep td {
 /* Vue d'ensemble : graphique et chiffres sur la même grille, une colonne par demi-heure */
 .ov {
     display: grid;
-    grid-template-columns: max-content repeat(var(--n), 36px);
+    grid-template-columns: 15rem repeat(var(--n), minmax(3.5rem, 1fr));
     font-variant-numeric: tabular-nums;
-    width: max-content;
+    min-width: max-content;
 }
-.ov > div {
+.ov > div,
+.ov > button {
     border-bottom: 1px solid var(--soft);
-    padding: 4px 2px;
-    text-align: right;
-    font-size: 12px;
+    padding: 7px 4px;
+    text-align: center;
+    font-size: 14px;
     white-space: nowrap;
+}
+/* Colonne d'une demi-heure : cliquable, surlignée quand elle est sélectionnée */
+.ov > .col {
+    cursor: pointer;
+}
+.ov > .col.on {
+    background: #f3f4f6;
 }
 .ov > .lab {
     text-align: left;
     color: var(--fg);
-    padding-left: 0;
+    padding-left: 16px;
     padding-right: 16px;
     position: sticky;
     left: 0;
@@ -1560,20 +1582,35 @@ tr.sep td {
     color: var(--muted);
 }
 .ov > .lab.l1 {
-    padding-left: 14px;
+    padding-left: 32px;
     color: var(--muted);
 }
 .ov > .hd {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 12px;
     text-align: center;
-    font-weight: 500;
+    font-weight: 400;
+    padding-top: 10px;
+    border-bottom-color: var(--line);
+}
+.ov > .hd.day {
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 14px;
+    text-align: left;
+}
+.ov > .hd.col:hover {
+    color: var(--fg);
+}
+.ov > .hd.col.on {
+    color: var(--fg);
+    font-weight: 600;
 }
 .ov > .grp {
     grid-column: 1 / -1;
     text-align: left;
     font-weight: 600;
-    padding-top: 12px;
+    padding: 18px 16px 7px;
     border-bottom: 1px solid #e5e7eb;
     position: sticky;
     left: 0;
@@ -1588,10 +1625,12 @@ tr.sep td {
     border-bottom: 1px solid #e5e7eb;
 }
 .ov > .chart > div {
-    width: 24px;
+    width: 60%;
+    max-width: 32px;
     flex: none;
 }
 .ov > .chart.lab {
+    padding-left: 16px;
     flex-direction: column;
     justify-content: space-between;
     align-items: flex-start;
@@ -1600,7 +1639,8 @@ tr.sep td {
 }
 .ov .stat {
     height: 8px;
-    width: 24px;
+    width: 60%;
+    max-width: 32px;
     border-radius: 2px;
     margin: 0 auto;
 }
