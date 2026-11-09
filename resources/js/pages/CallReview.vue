@@ -1,16 +1,14 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, Link } from '@inertiajs/vue3'
 import { FileText, LoaderCircle, Pause, PhoneForwarded, Play, X } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
-import CallDetailPanel from '@/components/CallDetailPanel.vue'
 import DataTable from '@/components/DataTable.vue'
 import FilterBar from '@/components/FilterBar.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { agentLabel, formatDay, formatDuration, formatPhone } from '@/lib/calls'
 import { formatQuality, qualityClass } from '@/lib/quality'
 
@@ -18,7 +16,7 @@ import { formatQuality, qualityClass } from '@/lib/quality'
  * Appels à vérifier : réécouter vite les appels qui posent question.
  *   Filtres : période, agent, et les cas (avec leur nombre sur la période), tous actifs par défaut
  *   Tableau : un appel par ligne avec tous ses cas ; ▶ écoute la conversation (et le transfert s'il est enregistré)
- *   Lecteur en bas de page et fiche de l'appel : les mêmes que la page Appels
+ *   Barre du bas : l'appel sélectionné, avec le lecteur de la page Appels ; « Fiche » et la date mènent à /calls/{id}
  */
 const PERIODS = [
     { key: 'today', label: "Aujourd'hui" },
@@ -97,14 +95,18 @@ const columns = [
     { key: 'record', label: 'Conversation' },
 ]
 
-// Ligne sélectionnée = l'appel ouvert dans le lecteur. Un clic sur la ligne l'écoute (la conversation, sinon le transfert) ;
-// sans enregistrement, il ouvre la fiche de l'appel.
+// Ligne sélectionnée = l'appel ouvert dans la barre du bas. Un clic sur la ligne l'écoute (la conversation, sinon le
+// transfert) ; sans enregistrement, la barre s'ouvre quand même sur cet appel, avec « Pas d'enregistrement ».
 const selectedRowClass = (row) => (row.id === player.call?.id ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
 function openRow(row) {
     if (row.record_agent) play(row, 'agent')
     else if (row.record_transfer) play(row, 'transfer')
-    else openId.value = row.id
+    else {
+        audio?.pause()
+        Object.assign(player, { call: row, part: 'agent', playing: false, current: 0, duration: 0, loading: false, error: null })
+    }
 }
+const hasRecord = (call) => !!(call?.record_agent || call?.record_transfer)
 
 // ─── Lecteur : le même que la page Appels (un seul enregistrement à la fois, en bas de la page) ──
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
@@ -154,12 +156,6 @@ function closePlayer() {
 const isPlaying = (row, part) => player.call?.id === row.id && player.part === part && player.playing
 onUnmounted(() => audio?.pause())
 
-// Fiche de l'appel : le panneau de la page Appels
-const openId = ref(null)
-const sheetOpen = computed({
-    get: () => openId.value !== null,
-    set: (open) => !open && (openId.value = null),
-})
 </script>
 
 <template>
@@ -213,9 +209,9 @@ const sheetOpen = computed({
                         :row-class="selectedRowClass"
                         :row-click="openRow"
                     >
-                        <!-- Date : ouvre la fiche de l'appel (même panneau que la page Appels) -->
+                        <!-- Date : lien vers la fiche de l'appel (page /calls/{id}) -->
                         <template #at="{ row }">
-                            <button type="button" class="text-sm whitespace-nowrap text-gray-700 tabular-nums underline decoration-gray-300 underline-offset-2 hover:text-gray-900" title="Fiche de l'appel" @click.stop="openId = row.id">{{ when(row.at) }}</button>
+                            <Link :href="`/calls/${row.id}`" class="text-sm whitespace-nowrap text-gray-700 tabular-nums underline decoration-gray-300 underline-offset-2 hover:text-gray-900" title="Fiche de l'appel" @click.stop>{{ when(row.at) }}</Link>
                         </template>
                         <template #agent="{ value }"><span class="text-sm whitespace-nowrap text-gray-900">{{ agentLabel(value) ?? '—' }}</span></template>
                         <template #called="{ value }"><span class="text-sm whitespace-nowrap text-gray-700">{{ calledLabel(value) }}</span></template>
@@ -281,7 +277,13 @@ const sheetOpen = computed({
         <!-- Lecteur (même barre que la page Appels) -->
         <div v-if="player.call" class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64">
             <div class="flex items-center gap-3 py-2.5 pr-20 pl-4">
-                <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800" :title="player.playing ? 'Pause' : 'Lecture'" @click="play(player.call, player.part)">
+                <button
+                    type="button"
+                    class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-200"
+                    :disabled="!hasRecord(player.call)"
+                    :title="player.playing ? 'Pause' : 'Lecture'"
+                    @click="play(player.call, player.part)"
+                >
                     <LoaderCircle v-if="player.loading" class="size-4 animate-spin" />
                     <Pause v-else-if="player.playing" class="size-4" />
                     <Play v-else class="ml-0.5 size-4" />
@@ -290,12 +292,15 @@ const sheetOpen = computed({
                     <div class="truncate text-sm font-medium text-gray-900">{{ player.call.caller ? formatPhone(player.call.caller) : '—' }} · {{ agentLabel(player.call.agent) ?? '—' }}</div>
                     <div class="truncate text-xs text-gray-500">
                         {{ formatDay(player.call.at) }}, {{ new Date(player.call.at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }) }}
-                        · {{ player.part === 'transfer' ? 'transfert' : 'conversation agent' }}
+                        <template v-if="hasRecord(player.call)"> · {{ player.part === 'transfer' ? 'transfert' : 'conversation agent' }}</template>
                     </div>
                 </div>
-                <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
-                <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
-                <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
+                <template v-if="hasRecord(player.call)">
+                    <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
+                    <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
+                    <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
+                </template>
+                <p v-else class="min-w-0 flex-1 text-sm text-gray-400">Pas d'enregistrement</p>
                 <p v-if="player.error" class="shrink-0 text-xs text-red-600">{{ player.error }}</p>
                 <div class="flex shrink-0 items-center gap-1.5">
                     <button
@@ -307,24 +312,12 @@ const sheetOpen = computed({
                     >
                         {{ player.part === 'transfer' ? 'Partie agent' : 'Partie transfert' }}
                     </button>
-                    <button type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
-                    <button type="button" class="flex h-7 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-700 hover:bg-gray-50" @click="openId = player.call.id"><FileText class="size-3.5" /> Fiche</button>
+                    <button v-if="hasRecord(player.call)" type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
+                    <Link :href="`/calls/${player.call.id}`" class="flex h-7 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-700 hover:bg-gray-50"><FileText class="size-3.5" /> Fiche</Link>
                     <button type="button" class="flex size-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Fermer le lecteur" @click="closePlayer"><X class="size-4" /></button>
                 </div>
             </div>
         </div>
 
-        <!-- Fiche d'un appel (même panneau que la page Appels) -->
-        <Sheet v-model:open="sheetOpen">
-            <SheetContent class="w-full overflow-y-auto sm:max-w-xl">
-                <SheetHeader class="sr-only">
-                    <SheetTitle>Fiche de l'appel</SheetTitle>
-                    <SheetDescription>Enregistrements et détail de l'appel</SheetDescription>
-                </SheetHeader>
-                <div class="px-6 pt-6 pb-10">
-                    <CallDetailPanel v-if="openId" :call-id="openId" in-panel @open="(id) => (openId = id)" />
-                </div>
-            </SheetContent>
-        </Sheet>
     </AppLayout>
 </template>
