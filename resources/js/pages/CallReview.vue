@@ -97,9 +97,14 @@ const columns = [
     { key: 'record', label: 'Conversation' },
 ]
 
-// Ligne sélectionnée : la dernière cliquée ou écoutée
-const selectedId = ref(null)
-const selectedRowClass = (row) => (row.id === selectedId.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+// Ligne sélectionnée = l'appel ouvert dans le lecteur. Un clic sur la ligne l'écoute (la conversation, sinon le transfert) ;
+// sans enregistrement, il ouvre la fiche de l'appel.
+const selectedRowClass = (row) => (row.id === player.call?.id ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+function openRow(row) {
+    if (row.record_agent) play(row, 'agent')
+    else if (row.record_transfer) play(row, 'transfer')
+    else openId.value = row.id
+}
 
 // ─── Lecteur : le même que la page Appels (un seul enregistrement à la fois, en bas de la page) ──
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
@@ -126,7 +131,6 @@ function play(call, part = 'agent') {
     if (!audio) return
     const url = part === 'transfer' ? call.record_transfer : call.record_agent
     if (!url) return
-    selectedId.value = call.id
     if (player.call?.id === call.id && player.part === part) {
         audio.paused ? audio.play() : audio.pause()
         return
@@ -207,7 +211,7 @@ const sheetOpen = computed({
                         :loading="!data && !error"
                         empty-message="Aucun appel à vérifier sur la période"
                         :row-class="selectedRowClass"
-                        :row-click="(row) => (selectedId = row.id)"
+                        :row-click="openRow"
                     >
                         <!-- Date : ouvre la fiche de l'appel (même panneau que la page Appels) -->
                         <template #at="{ row }">

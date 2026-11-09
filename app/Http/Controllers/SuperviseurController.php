@@ -24,9 +24,13 @@ use Throwable;
  *   Il pose les données du moment (window.__SUPERVISEUR_INITIAL__), appelle window.updateDashboard, puis relit
  *   /superviseur/data toutes les 5 s. Pour l'historique, il répond à window.onVoxnodeHistoryRequested(date)
  *   en lisant /superviseur/data?date= puis en appelant window.updateDashboardHistory(date, archive).
+ *   Pour les appels d'un agent, il répond à window.onVoxnodeAgentCallsRequested(agentId, date) en lisant
+ *   /superviseur/data?agent=&date= puis en appelant window.updateDashboardAgentCalls(agentId, date, calls[, erreur]).
  * - Isolement : la page est servie avec « Content-Security-Policy: sandbox allow-scripts » (sans allow-same-origin).
  *   Ses scripts tournent normalement (y compris en ligne) mais dans une origine à part : ils n'ont accès ni à la
  *   session ni aux cookies du panel. C'est pourquoi le script de liaison relit les données avec la clé.
+ *   Pas d'autre directive CSP : les enregistrements MP3 (OVH S3, DigitalOcean Spaces) se lisent dans la page.
+ *   allow-popups-to-escape-sandbox : la page d'un appel (callPageUrl, vn.118.ae) s'ouvre normalement, pas isolée.
  */
 class SuperviseurController extends Controller
 {
@@ -49,7 +53,7 @@ class SuperviseurController extends Controller
 
         return response($html, 200, [
             'Content-Type' => 'text/html; charset=UTF-8',
-            'Content-Security-Policy' => 'sandbox allow-scripts allow-popups allow-modals allow-downloads',
+            'Content-Security-Policy' => 'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads',
             'Cache-Control' => 'no-store',
             'X-Robots-Tag' => 'noindex, nofollow',
             'Referrer-Policy' => 'no-referrer',
@@ -63,6 +67,11 @@ class SuperviseurController extends Controller
     public function data(Request $request): HttpResponse|JsonResponse
     {
         abort_unless($this->allowed($request), 403);
+
+        // Appels décrochés par un agent un jour donné (?agent=&date=)
+        if ($request->has('agent')) {
+            return $this->agentCalls((string) $request->query('agent'), (string) $request->query('date'));
+        }
 
         // Archive d'une journée (?date=AAAA-MM-JJ) : 2 à 3 Mo, relayée sans être décodée
         if ($request->has('date')) {
@@ -112,6 +121,50 @@ class SuperviseurController extends Controller
         }
 
         Cache::put("superviseur:archive:{$date}", $response->body(), 600);
+
+        return response($response->body(), 200, ['Content-Type' => 'application/json', ...$cors]);
+    }
+
+    /**
+     * Appels décrochés par un agent un jour donné, relayés depuis voxnode118 (/supervisor/agent-calls), gardés 30 s.
+     * Agent et date vérifiés ici avant d'être transmis ; erreurs renvoyées avec le message de l'API.
+     */
+    private function agentCalls(string $agent, string $date): HttpResponse|JsonResponse
+    {
+        $cors = ['Access-Control-Allow-Origin' => '*', 'Cache-Control' => 'no-store'];
+        if (!preg_match('/^[A-Za-z0-9_-]{1,40}$/', $agent)) {
+            return response()->json(['error' => 'Agent invalide.'], 422, $cors);
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return response()->json(['error' => 'Date invalide (AAAA-MM-JJ attendu).'], 422, $cors);
+        }
+
+        $cacheKey = "superviseur:agent-calls:{$agent}:{$date}";
+        $cached = Cache::get($cacheKey);
+        if (is_string($cached)) {
+            return response($cached, 200, ['Content-Type' => 'application/json', ...$cors]);
+        }
+
+        $url = config('services.telephony_api.url');
+        $token = config('services.telephony_api.token');
+        if (!$url || !$token) {
+            return response()->json(['error' => 'Appels indisponibles'], 502, $cors);
+        }
+        try {
+            $response = Http::withToken($token)->acceptJson()->timeout(20)->get($url . '/supervisor/agent-calls', ['agent' => $agent, 'date' => $date]);
+        } catch (Throwable) {
+            return response()->json(['error' => 'Appels indisponibles'], 502, $cors);
+        }
+        if (!$response->successful()) {
+            // Message {error} de l'API (404 : agent inconnu, 422 : date future ou mal formée), sinon message générique
+            $message = $response->json('error');
+
+            return $message
+                ? response()->json(['error' => $message], in_array($response->status(), [404, 422], true) ? $response->status() : 502, $cors)
+                : response()->json(['error' => 'Appels indisponibles'], 502, $cors);
+        }
+
+        Cache::put($cacheKey, $response->body(), 30);
 
         return response($response->body(), 200, ['Content-Type' => 'application/json', ...$cors]);
     }
@@ -284,6 +337,29 @@ class SuperviseurController extends Controller
       .then(function (snapshot) { window.updateDashboardHistory(day, snapshot); })
       .catch(function (err) { window.updateDashboardHistory(day, null, (err && err.message) || 'Archive indisponible'); })
       .then(function () { delete pendingDays[day]; });
+  };
+  // Appels d'un agent un jour donné : une requête par demande du template (une à la fois par agent et date) ;
+  // la réponse rappelle toujours l'agent et la date demandés
+  var pendingAgentCalls = {};
+  window.onVoxnodeAgentCallsRequested = function (agentId, day) {
+    if (typeof window.updateDashboardAgentCalls !== 'function') return;
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId) || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      window.updateDashboardAgentCalls(agentId, day, null, 'Agent ou date invalide');
+      return;
+    }
+    var id = agentId + '|' + day;
+    if (pendingAgentCalls[id]) return;
+    pendingAgentCalls[id] = true;
+    fetch('/superviseur/data?agent=' + encodeURIComponent(agentId) + '&date=' + encodeURIComponent(day) + '&key=' + encodeURIComponent(KEY), { cache: 'no-store', credentials: 'omit' })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.error || 'Appels indisponibles');
+          return body;
+        });
+      })
+      .then(function (body) { window.updateDashboardAgentCalls(agentId, day, Array.isArray(body.calls) ? body.calls : []); })
+      .catch(function (err) { window.updateDashboardAgentCalls(agentId, day, null, (err && err.message) || 'Appels indisponibles'); })
+      .then(function () { delete pendingAgentCalls[id]; });
   };
   window.__SUPERVISEUR_INITIAL__ = {$data};
   if (!apply(window.__SUPERVISEUR_INITIAL__)) showCover(true);
