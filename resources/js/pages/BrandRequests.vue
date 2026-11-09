@@ -99,6 +99,7 @@ async function reopen(row) {
                     <template #name="{ row }">
                         <Link :href="`/brands/requests/${row.key}`" class="font-medium text-gray-900 hover:underline">{{ row.name }}</Link>
                         <span v-if="row.variants.length" class="ml-2 text-sm text-gray-500">{{ row.variants.join(', ') }}</span>
+                        <span v-if="row.heard" class="block text-xs text-gray-500">Compris : {{ row.heard }}</span>
                     </template>
                     <template #calls="{ value }"><span class="text-sm tabular-nums text-gray-900">{{ value }}</span></template>
                     <template #origin="{ row }">
@@ -109,8 +110,10 @@ async function reopen(row) {
                         </span>
                     </template>
                     <template #last_at="{ value }"><span class="text-sm whitespace-nowrap text-gray-600">{{ date(value) }}</span></template>
-                    <template #suggestion="{ value }">
-                        <span v-if="value" class="text-sm text-gray-700">{{ value.name }} <span class="text-gray-400">· {{ value.reason }}</span></span>
+                    <template #suggestion="{ row }">
+                        <!-- Le nom compris dans l'appel est exactement une marque existante : à associer en un clic depuis la demande -->
+                        <Link v-if="row.exists" :href="`/brands/requests/${row.key}`" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200">Existe : {{ row.exists.name }}</Link>
+                        <span v-else-if="row.suggestion" class="text-sm text-gray-700">{{ row.suggestion.name }} <span class="text-gray-400">· {{ row.suggestion.reason }}</span></span>
                         <span v-else class="text-sm text-gray-400">-</span>
                     </template>
                     <template #actions="{ row }">

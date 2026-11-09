@@ -72,6 +72,7 @@ class BrandRequestController extends Controller
         $items = $pending->groupBy('name_key')->map(function (Collection $group, $key) use ($brands) {
             $names = $this->rankNames($group->countBy('name'));
             $suggestion = $this->suggestions($names->keys()->first(), $brands)->first();
+            $heard = $this->heard($group);
 
             return [
                 'key' => $key,
@@ -82,6 +83,9 @@ class BrandRequestController extends Controller
                 'first_at' => $this->iso($group->min('created_at')),
                 'last_at' => $this->iso($group->max('created_at')),
                 'suggestion' => $suggestion,
+                'heard' => $heard['main'],
+                // Marque existante dont le nom (ou un autre nom) est exactement un nom compris dans l'appel
+                'exists' => $this->heardMatches($heard['all'], $brands)->first(),
             ];
         })->sortByDesc(fn ($i) => [$i['calls'], $i['last_at']])->values();
 
@@ -96,15 +100,28 @@ class BrandRequestController extends Controller
             ->leftJoin('agents', 'agents.id', '=', 'brand_requests.agent_id')
             ->orderByDesc('brand_requests.created_at')
             ->get([
-                'brand_requests.id', 'brand_requests.name', 'brand_requests.called', 'brand_requests.caller', 'brand_requests.created_at', 'brand_requests.audio_at', 'brand_requests.transcript',
+                'brand_requests.id', 'brand_requests.name', 'brand_requests.called', 'brand_requests.caller', 'brand_requests.created_at', 'brand_requests.audio_at', 'brand_requests.transcript', 'brand_requests.heard_names',
                 'calls.record_agent', 'calls.duration_agent', 'calls.agent_name', 'agents.voxnode_username',
             ]);
 
         $names = $this->rankNames($rows->countBy('name'));
         $brands = $this->brandIndex();
-        // Les suggestions portent sur chacun des noms tapés ; une marque n'apparaît qu'une fois, avec sa meilleure raison
-        $suggestions = $names->keys()->flatMap(fn ($n) => $this->suggestions($n, $brands))
-            ->sortBy('rank')->unique('id')->take(5)->values();
+        $heard = $this->heard($rows);
+        // Suggestions sur les noms tapés et sur les noms compris dans l'appel ; une marque n'apparaît qu'une fois,
+        // avec sa meilleure raison et le nom d'où elle vient
+        $typed = $names->keys()->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'nom tapé']));
+        $understood = collect($heard['all'])->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'compris dans l\'appel']));
+        $suggestions = $typed->concat($understood)->sortBy('rank')->unique('id')->take(5)->values();
+        $matches = $this->heardMatches($heard['all'], $brands)->values();
+
+        // Noms proposés en autres noms : tapés (cochés), nom principal compris (coché), autres formes comprises (non cochées).
+        // Un nom qui est déjà le nom ou un autre nom d'une marque n'est pas proposé.
+        $taken = $brands->flatMap(fn ($b) => array_column($b['names'], 'key'))->flip();
+        $aliasOptions = collect([
+            ...$names->keys()->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => true]),
+            ...($heard['main'] ? [['name' => $heard['main'], 'source' => 'compris dans l\'appel', 'checked' => true]] : []),
+            ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
+        ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
 
         // Demande suivante : la plus demandée après celle-ci
         $next = $this->requests()->where('status', 'pending')->where('name_key', '!=', $key)
@@ -127,8 +144,12 @@ class BrandRequestController extends Controller
                 'transcript' => $r->transcript === null ? null : (json_decode($r->transcript, true) ?: []),
                 // Seconde de la première réplique où le client nomme la marque, ou null
                 'audio_at' => $r->audio_at !== null ? (float) $r->audio_at : null,
+                'heard' => $r->heard_names === null ? null : (json_decode($r->heard_names, true) ?: []),
             ]),
             'suggestions' => $suggestions,
+            'matches' => $matches,
+            'heard' => $heard,
+            'aliasOptions' => $aliasOptions,
             'handled' => $this->requests()->where('name_key', $key)->where('status', '!=', 'pending')->count(),
             'next' => $next,
             'brands' => $brands->map(fn ($b) => ['value' => $b['id'], 'label' => $b['name']])->values(),
@@ -365,6 +386,35 @@ class BrandRequestController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Nom de la marque compris dans les appels (heard_names : le plus probable d'abord, puis d'autres formes) :
+     *   main   = le nom principal le plus fréquent parmi les appels ;
+     *   others = les autres formes, sans doublon (même clé) ;
+     *   all    = main + others ;
+     *   state  = names (au moins un nom compris) | never (transcrits, marque jamais nommée) | null (pas encore transcrit).
+     */
+    private function heard(Collection $rows): array
+    {
+        $lists = $rows->map(fn ($r) => $r->heard_names === null ? null : (json_decode($r->heard_names, true) ?: []));
+        $named = $lists->filter(fn ($l) => is_array($l) && $l)->values();
+        if ($named->isEmpty()) {
+            return ['main' => null, 'others' => [], 'all' => [], 'state' => $lists->contains(fn ($l) => $l === []) ? 'never' : null];
+        }
+        $main = $named->map(fn ($l) => $l[0])->countBy()->sortDesc()->keys()->first();
+        $all = collect([$main])->concat($named->flatten())->unique(fn ($n) => BrandName::key($n))->values();
+
+        return ['main' => $main, 'others' => $all->slice(1)->values()->all(), 'all' => $all->all(), 'state' => 'names'];
+    }
+
+    /** Marques existantes dont le nom ou un autre nom a exactement la clé d'un nom compris dans l'appel. */
+    private function heardMatches(array $heard, Collection $brands): Collection
+    {
+        $keys = array_filter(array_map([BrandName::class, 'key'], $heard));
+
+        return $brands->filter(fn ($b) => collect($b['names'])->contains(fn ($n) => in_array($n['key'], $keys, true)))
+            ->map(fn ($b) => ['id' => $b['id'], 'name' => $b['name'], 'phonenumber' => $b['phonenumber'], 'type' => $b['type']])->values();
     }
 
     /** Noms tapés, du plus fréquent au moins fréquent ; à égalité, celui écrit avec majuscules ou espaces (La Poste > laposte). */

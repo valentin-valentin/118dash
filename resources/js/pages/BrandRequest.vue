@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
+import AliasPicker from '@/components/AliasPicker.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -31,8 +32,8 @@ const data = ref(null)
 const error = ref(null)
 // Autres noms à ajouter à la marque : même champ que la fiche marque (un par ligne)
 // Autres noms : un champ pour la marque créée, un pour la marque existante associée (préremplis avec les noms tapés)
-const aliasText = ref('')
-const linkAliasText = ref('')
+const aliasOptions = ref([])
+const linkAliasOptions = ref([])
 async function load() {
     try {
         const res = await fetch(`/data/brand-requests/${props.nameKey}`, { headers: { Accept: 'application/json' } })
@@ -40,9 +41,11 @@ async function load() {
         data.value = await res.json()
         error.value = null
         // Préremplis avec tous les noms tapés, un par ligne (ceux qui sont déjà le nom ou un autre nom de la marque sont ignorés à l'enregistrement)
-        aliasText.value = data.value.names.map((n) => n.name).join('\n')
-        linkAliasText.value = aliasText.value
-        if (!form.name) form.name = titleCase(data.value.name ?? '')
+        // Même proposition pour l'association et la création, chacune modifiable de son côté
+        aliasOptions.value = data.value.aliasOptions.map((o) => ({ ...o }))
+        linkAliasOptions.value = data.value.aliasOptions.map((o) => ({ ...o }))
+        // Nom de la marque : celui compris dans l'appel s'il existe, sinon le nom tapé
+        if (!form.name) form.name = data.value.heard.main ?? titleCase(data.value.name ?? '')
     } catch (e) {
         error.value = e.message
     }
@@ -155,8 +158,8 @@ const isPlaying = (row) => player.call?.id === row.id && player.playing
 onUnmounted(() => audio?.pause())
 
 // ─── Noms tapés → autres noms de la marque ────────────────────────────────────
-const lines = (text) => text.split('\n').map((x) => x.trim()).filter(Boolean)
-const aliases = computed(() => lines(aliasText.value))
+const checkedNames = (opts) => opts.filter((o) => o.checked).map((o) => o.name)
+const aliases = computed(() => checkedNames(aliasOptions.value))
 const ids = computed(() => data.value?.calls.map((c) => c.id) ?? [])
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -188,12 +191,16 @@ async function after() {
     if (data.value && !data.value.calls.length) router.visit(data.value.next ? `/brands/requests/${data.value.next}` : '/brands/requests')
 }
 async function link(brandId) {
-    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: lines(linkAliasText.value) })) after()
+    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: brandId, aliases: checkedNames(linkAliasOptions.value) })) after()
 }
 const otherBrand = ref(null)
 // Action principale (bouton noir) = la réponse la plus probable : associer quand une marque a exactement ce nom
 // (sinon on créerait un doublon), créer sinon. Une seule action principale sur la page.
-const identicalId = computed(() => (data.value?.suggestions?.[0]?.rank === 1 ? data.value.suggestions[0].id : null))
+// Associer est l'action principale quand la transcription correspond à une marque, ou qu'une marque a exactement le nom tapé
+const identicalId = computed(() => data.value?.matches?.[0]?.id ?? (data.value?.suggestions?.[0]?.rank === 1 ? data.value.suggestions[0].id : null))
+// Marques proches, hors celles déjà mises en avant par la transcription
+const otherSuggestions = computed(() => (data.value?.suggestions ?? []).filter((b) => !data.value.matches.some((m) => m.id === b.id)))
+const hasExisting = computed(() => !!(data.value?.matches?.length || data.value?.suggestions?.length))
 
 // Création
 const COUNTRY = { 33: 'FR', 32: 'BE', 49: 'DE' }
@@ -261,6 +268,16 @@ async function ignore() {
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
 
+            <!-- ─── Nom tapé et nom compris dans l'appel (même barre que la page Serveur SIP) ─── -->
+            <div v-if="data" class="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border border-gray-100 bg-white px-4 py-2.5 text-sm">
+                <span><span class="text-gray-500">Nom tapé</span> <span class="ml-1 font-medium text-gray-900">{{ data.names.map((n) => n.name).join(', ') }}</span></span>
+                <span v-if="data.heard.state === 'names'">
+                    <span class="text-gray-500">Compris dans l'appel</span> <span class="ml-1 font-medium text-gray-900">{{ data.heard.main }}</span>
+                    <span v-if="data.heard.others.length" class="ml-2 text-xs text-gray-500">{{ data.heard.others.join(', ') }}</span>
+                </span>
+                <span v-else-if="data.heard.state === 'never'" class="text-gray-500">Marque jamais nommée dans l'appel</span>
+            </div>
+
             <!-- ─── Appels ─── -->
             <section>
                 <h2 class="mb-2 text-sm font-semibold text-gray-900">
@@ -324,25 +341,31 @@ async function ignore() {
                      Les cartes et les champs sont ceux de la fiche marque (BrandForm.vue). -->
                 <div class="flex flex-col gap-6">
                     <!-- ─── Marques existantes proches ─── -->
-                    <Card :class="data.suggestions.length ? 'order-1' : 'order-2'">
+                    <Card :class="hasExisting ? 'order-1' : 'order-2'">
                         <CardHeader>
                             <CardTitle>Marques existantes proches</CardTitle>
                             <p class="text-sm text-gray-500">« Associer à cette marque » ajoute les autres noms ci-dessous à la marque choisie, et la demande passe dans « Traitées » comme marque existante.</p>
                         </CardHeader>
                         <CardContent class="space-y-3">
                             <div class="space-y-2 pb-2">
-                                <Label for="br-link-aliases">Autres noms ajoutés à la marque associée</Label>
-                                <Textarea id="br-link-aliases" v-model="linkAliasText" rows="2" placeholder="Un nom par ligne" />
-                                <p class="text-sm text-gray-500">Préremplis avec les noms tapés. Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
+                                <Label>Autres noms ajoutés à la marque associée</Label>
+                                <AliasPicker id="br-link-aliases" v-model="linkAliasOptions" />
+                                <p class="text-sm text-gray-500">Noms tapés et nom compris cochés. Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
                             </div>
-                            <div v-for="b in data.suggestions" :key="b.id" class="flex items-center gap-4 text-sm">
+                            <!-- La transcription donne exactement le nom (ou un autre nom) d'une marque existante : en premier -->
+                            <div v-for="b in data.matches" :key="`m-${b.id}`" class="flex items-center gap-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                                <span class="text-amber-800">La transcription correspond à <Link :href="`/brands/${b.id}/edit`" class="font-medium underline">{{ b.name }}</Link></span>
+                                <span class="tabular-nums text-amber-700">{{ b.phonenumber || 'sans numéro' }}</span>
+                                <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
+                            </div>
+                            <div v-for="b in otherSuggestions" :key="b.id" class="flex items-center gap-4 text-sm">
                                 <Link :href="`/brands/${b.id}/edit`" class="font-medium text-gray-900 hover:underline">{{ b.name }}</Link>
                                 <span class="tabular-nums text-gray-600">{{ b.phonenumber || 'sans numéro' }}</span>
                                 <span class="text-gray-500">{{ b.type || '-' }}</span>
-                                <span class="text-gray-500">{{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template></span>
+                                <span class="text-gray-500">{{ b.reason }}<template v-if="b.via"> (autre nom « {{ b.via }} »)</template> · {{ b.source }}</span>
                                 <Button type="button" size="sm" :variant="b.id === identicalId ? 'default' : 'outline'" class="ml-auto" :disabled="busy" @click="link(b.id)">Associer à cette marque</Button>
                             </div>
-                            <p v-if="!data.suggestions.length" class="text-sm text-gray-500">Aucune marque proche</p>
+                            <p v-if="!hasExisting" class="text-sm text-gray-500">Aucune marque proche</p>
                             <div class="flex items-center gap-4 text-sm">
                                 <span class="text-gray-700">Une autre marque</span>
                                 <div class="w-72"><FilterSelect v-model="otherBrand" :options="data.brands" placeholder="Chercher une marque" searchable /></div>
@@ -352,7 +375,7 @@ async function ignore() {
                     </Card>
 
                     <!-- ─── Créer la marque : mêmes cartes et mêmes champs que « Nouvelle marque » ─── -->
-                    <form class="space-y-6" :class="data.suggestions.length ? 'order-2' : 'order-1'" @submit.prevent="create">
+                    <form class="space-y-6" :class="hasExisting ? 'order-2' : 'order-1'" @submit.prevent="create">
                         <Card>
                             <CardHeader>
                                 <CardTitle>Créer la marque</CardTitle>
@@ -365,9 +388,9 @@ async function ignore() {
                                     <a :href="googleUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-gray-500 underline hover:text-gray-900">Chercher le service client sur Google <ExternalLink class="h-3.5 w-3.5" /></a>
                                 </div>
                                 <div class="space-y-2 md:col-span-2">
-                                    <Label for="br-aliases">Autres noms</Label>
-                                    <Textarea id="br-aliases" v-model="aliasText" rows="2" placeholder="Un nom par ligne" />
-                                    <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone. Préremplis avec les noms tapés.</p>
+                                    <Label>Autres noms</Label>
+                                    <AliasPicker id="br-aliases" v-model="aliasOptions" :brand-name="form.name" />
+                                    <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone. Noms tapés et nom compris cochés.</p>
                                 </div>
                                 <div class="space-y-2">
                                     <Label for="br-phone">Numéro de transfert</Label>
