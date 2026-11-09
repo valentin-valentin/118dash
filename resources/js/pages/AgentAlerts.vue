@@ -27,9 +27,8 @@ const PERIODS = [
 // Dans l'ordre de gravité
 // label : liste des alertes ; filter : case à cocher ; column : colonne du classement
 const KINDS = [
-    { key: 'f5', label: 'Rechargé au clavier', filter: 'Rechargé au clavier', column: 'Clavier' },
-    { key: 'reload', label: 'Rechargé (bouton ou extension)', filter: 'Rechargé (bouton ou extension)', column: 'Bouton' },
-    { key: 'crash', label: 'Plantage du navigateur', filter: 'Plantage du navigateur', column: 'Plantage' },
+    { key: 'reload', label: 'Rechargé pendant une sonnerie', filter: 'Rechargé pendant une sonnerie', column: 'Rechargés' },
+    { key: 'crash', label: 'Plantage du navigateur', filter: 'Plantage du navigateur', column: 'Plantages' },
     { key: 'missed', label: 'Appel manqué', filter: 'Appel manqué', column: 'Appels manqués' },
     { key: 'endfail', label: 'Échec de fin de travail ou de pause', filter: 'Échec de fin', column: 'Échecs de fin' },
 ]
@@ -87,11 +86,8 @@ const withRing = (text, d) => [text, ring(d)].filter(Boolean).join(', ').replace
 const keyName = (k) => String(k).split('+').map((p) => (p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1))).join('+')
 function detailOf(a) {
     const d = a.detail
-    if (a.kind === 'f5') return withRing(`Touche ${keyName(d.key)}`, d)
-    if (a.kind === 'reload') {
-        const text = ring(d)
-        return text ? text.charAt(0).toUpperCase() + text.slice(1) : '—'
-    }
+    // Rechargement : le moyen (touche ou bouton du navigateur), la sonnerie, l'écran PIN
+    if (a.kind === 'reload') return withRing(d.key ? `Touche ${keyName(d.key)}` : 'Bouton du navigateur', d)
     if (a.kind === 'crash') return withRing('Page rechargée sans la quitter', d)
     if (a.kind === 'missed') return d.origin === 'server' ? 'Sonné sans réponse sur notre serveur, mis en pause par la file' : 'Sonnerie non décrochée'
     return d.what === 'break' ? 'Fin de pause' : 'Fin de travail'
@@ -191,7 +187,7 @@ const listColumns = [
                         <label v-for="k in KINDS" :key="k.key" class="flex cursor-pointer items-center gap-2 text-sm">
                             <Checkbox :model-value="active.includes(k.key)" @update:model-value="toggleKind(k.key)" />
                             <span class="text-gray-700">{{ k.filter }}</span>
-                            <span class="font-semibold tabular-nums" :class="k.key === 'f5' && data?.counts?.f5 ? 'text-red-600' : 'text-gray-900'">{{ data?.counts?.[k.key] ?? '' }}</span>
+                            <span class="font-semibold tabular-nums" :class="k.key === 'reload' && data?.counts?.reload ? 'text-red-600' : 'text-gray-900'">{{ data?.counts?.[k.key] ?? '' }}</span>
                         </label>
                     </div>
                 </div>
@@ -216,7 +212,7 @@ const listColumns = [
                         <template #agent="{ value }"><span class="text-sm font-medium text-gray-900">{{ value }}</span></template>
                         <template #center="{ value }"><span class="text-sm text-gray-600">{{ centerLabel(value) }}</span></template>
                         <template v-for="k in KINDS" :key="k.key" #[k.key]="{ value }">
-                            <span class="text-sm tabular-nums" :class="!value ? 'text-gray-300' : k.key === 'f5' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ value }}</span>
+                            <span class="text-sm tabular-nums" :class="!value ? 'text-gray-300' : k.key === 'reload' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ value }}</span>
                         </template>
                         <template #answered="{ value }"><span class="text-sm tabular-nums text-gray-700">{{ value.toLocaleString('fr-FR') }}</span></template>
                         <template #last="{ value }"><span class="text-sm whitespace-nowrap tabular-nums text-gray-700">{{ when(value) }}</span></template>
@@ -234,7 +230,7 @@ const listColumns = [
                         <template #at="{ value }"><span class="text-sm whitespace-nowrap tabular-nums text-gray-700">{{ when(value) }}</span></template>
                         <template #agent="{ value }"><span class="text-sm text-gray-900">{{ value }}</span></template>
                         <template #kind="{ value }">
-                            <span class="text-sm whitespace-nowrap" :class="value === 'f5' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ kindLabel[value] }}</span>
+                            <span class="text-sm whitespace-nowrap" :class="value === 'reload' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ kindLabel[value] }}</span>
                         </template>
                         <template #detail="{ row }"><span class="text-sm text-gray-600">{{ detailOf(row) }}</span></template>
                     </DataTable>
@@ -269,7 +265,7 @@ const listColumns = [
                     <dl class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-100 px-4 py-3 text-sm">
                         <div v-for="k in KINDS" :key="k.key">
                             <dt class="inline text-gray-500">{{ k.column }}</dt>
-                            <dd class="ml-1.5 inline font-semibold tabular-nums" :class="!agentData.counts[k.key] ? 'text-gray-300' : k.key === 'f5' ? 'text-red-600' : 'text-gray-900'">{{ agentData.counts[k.key] }}</dd>
+                            <dd class="ml-1.5 inline font-semibold tabular-nums" :class="!agentData.counts[k.key] ? 'text-gray-300' : k.key === 'reload' ? 'text-red-600' : 'text-gray-900'">{{ agentData.counts[k.key] }}</dd>
                         </div>
                         <div>
                             <dt class="inline text-gray-500">Appels décrochés</dt>
@@ -286,7 +282,7 @@ const listColumns = [
                         <div class="divide-y divide-gray-50 rounded-lg border border-gray-100">
                             <div v-for="a in d.items" :key="a.id" class="grid grid-cols-[5rem_16rem_1fr] gap-3 px-4 py-2 text-sm">
                                 <span class="tabular-nums text-gray-700">{{ timeOf(a.at) }}</span>
-                                <span :class="a.kind === 'f5' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ kindLabel[a.kind] }}</span>
+                                <span :class="a.kind === 'reload' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ kindLabel[a.kind] }}</span>
                                 <span class="text-gray-600">{{ detailOf(a) }}</span>
                             </div>
                         </div>

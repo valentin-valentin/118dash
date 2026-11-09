@@ -14,9 +14,9 @@ use Inertia\Response;
 
 /**
  * Alertes agents : les alertes graves des journaux des agents (agent_logs), pour voir quel agent pose problème.
- *   f5      rechargement pendant une sonnerie avec une touche (F5, Ctrl+R…) : volontaire
- *   reload  rechargement pendant une sonnerie sans touche, en quittant la page (bouton, extension)
- *   crash   rechargement pendant une sonnerie sans quitter la page : plantage du navigateur
+ *   reload  rechargement volontaire pendant une sonnerie : au clavier (F5, Ctrl+R…) ou en quittant la page (bouton,
+ *           extension) ; le moyen reste dans le détail (key)
+ *   crash   rechargement pendant une sonnerie sans touche ni départ de la page : plantage du navigateur
  *   missed  appel manqué (call_timeout) ; value = origine : null (softphone), 'server' (file de notre serveur).
  *           call_timeout 'reload' n'est pas compté : c'est le même événement que le rechargement ci-dessus
  *   endfail échec de fin de travail ou de pause
@@ -26,7 +26,7 @@ use Inertia\Response;
  */
 class AgentAlertController extends Controller
 {
-    private const KINDS = ['f5', 'reload', 'crash', 'missed', 'endfail'];
+    private const KINDS = ['reload', 'crash', 'missed', 'endfail'];
 
     private const PER_PAGE = 50;
 
@@ -52,7 +52,7 @@ class AgentAlertController extends Controller
         $counts = collect(self::KINDS)->mapWithKeys(fn ($k) => [$k => $alerts->where('kind', $k)->count()]);
         $shown = $alerts->whereIn('kind', $kinds);
 
-        // Classement : une ligne par agent, du plus grave au moins grave (F5, rechargements, plantages, appels manqués)
+        // Classement : une ligne par agent, du plus grave au moins grave (rechargements, plantages, appels manqués, échecs de fin)
         $answered = $this->answered($shown->pluck('agentId')->unique()->values()->all(), $from, $to);
         $ranking = $shown->groupBy('agent')->map(function (Collection $list, $name) use ($answered) {
             $first = $list->first();
@@ -64,7 +64,7 @@ class AgentAlertController extends Controller
                 'answered' => $answered[$first['agentId']] ?? 0,
                 'last' => $list->max('at'),
             ];
-        })->sortBy(fn ($r) => [-$r['counts']['f5'], -$r['counts']['reload'], -$r['counts']['crash'], -$r['counts']['missed'], -$r['counts']['endfail'], $r['agent']])->values();
+        })->sortBy(fn ($r) => [-$r['counts']['reload'], -$r['counts']['crash'], -$r['counts']['missed'], -$r['counts']['endfail'], $r['agent']])->values();
 
         $page = max(1, (int) $request->input('page', 1));
         $list = $shown->sortBy(fn ($a) => [$a['at'], $a['id']])->reverse()->values();
@@ -136,7 +136,7 @@ class AgentAlertController extends Controller
 
         return $rows->map(fn ($r) => $this->classify($r))->filter()
             ->map(function ($a) use ($pins) {
-                if (in_array($a['kind'], ['f5', 'reload', 'crash'], true)) {
+                if (in_array($a['kind'], ['reload', 'crash'], true)) {
                     $at = strtotime($a['at']);
                     $a['detail']['pin'] = $pins->contains(fn ($p) => $p[0] === $a['agentId'] && abs($p[1] - $at) <= 120);
                 }
@@ -152,7 +152,7 @@ class AgentAlertController extends Controller
         $detail = [];
         if ($r->action === 'reload_during_ring') {
             $v = json_decode((string) $value, true) ?: [];
-            $kind = !empty($v['key']) ? 'f5' : (!empty($v['left_page']) ? 'reload' : 'crash');
+            $kind = !empty($v['key']) || !empty($v['left_page']) ? 'reload' : 'crash';
             $detail = ['key' => $v['key'] ?? null, 'ring' => isset($v['ring_s']) ? (int) $v['ring_s'] : null];
         } elseif ($r->action === 'call_timeout') {
             if ($value === 'reload') {

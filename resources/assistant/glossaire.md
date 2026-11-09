@@ -191,10 +191,10 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 
 ### Alertes agents (`AgentAlertController`, `/agent-alerts`)
 - Table `agent_logs`, jours de Paris sur `created_at` (UTC), bornés par une plage d'id (recherche dichotomique sur la clé primaire, gardée 1 h). Centre de l'agent par son nom (`config/callcenters.php`, centres non optionnels) ; comptes `test` + chiffres (testeur de softphone) dans le centre « Test », inclus dans « Tous ».
-- **Rechargé au clavier** : `danger` / `reload_during_ring`, `value.key` non nul (touche affichée « F5 », « Ctrl+R »). **Rechargé (bouton ou extension)** : `key` nul et `left_page` vrai. **Plantage du navigateur** : `key` nul et `left_page` faux. `value.ring_s` = secondes de sonnerie avant le rechargement. « (PIN demandé) » : un `call_timeout` `reload` du même agent à 2 min près.
+- **Rechargé pendant une sonnerie** (rouge, volontaire) : `danger` / `reload_during_ring` avec `value.key` non nul (touche, affichée « Touche F5 », « Touche Ctrl+R ») ou `key` nul et `left_page` vrai (« Bouton du navigateur »). **Plantage du navigateur** (problème de poste) : `key` nul et `left_page` faux. `value.ring_s` = secondes de sonnerie avant le rechargement. « (PIN demandé) » : un `call_timeout` `reload` du même agent à 2 min près.
 - **Appel manqué** : `danger` / `call_timeout`, `value` NULL (softphone) ou `server` (file de notre serveur). `value = 'reload'` n'est pas compté : c'est le même événement que le rechargement.
 - **Échec de fin** : `warning` / `end_work_failed` ou `end_break_failed`.
-- Classement par agent : F5, puis rechargements, plantages, appels manqués, échecs de fin. Appels décrochés = `calls.agent_id` avec `phone_answered_at` dans la période (pas `called_at`, rempli seulement à l'import et jamais pour le testeur), bornés par `id > MAX(id) − 15 000 × jours`, appels de test compris (ceux des comptes de test).
+- Classement par agent : rechargements, puis plantages, appels manqués, échecs de fin. Appels décrochés = `calls.agent_id` avec `phone_answered_at` dans la période (pas `called_at`, rempli seulement à l'import et jamais pour le testeur), bornés par `id > MAX(id) − 15 000 × jours`, appels de test compris (ceux des comptes de test).
 
 ### Partenaires (`PartnerStatsController`, URL `/partners/{ids}/{hash}`)
 - Sources limitées à la liste de l'URL. Appel retenu : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`. Ici **sans** les numéros supprimés (jointure sans `withTrashed` : `phonenumbers.deleted_at IS NULL`).
