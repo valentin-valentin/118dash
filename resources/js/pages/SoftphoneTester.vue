@@ -324,8 +324,8 @@ function clearHistory() {
                         <div class="space-y-2">
                             <Input id="tester-caller" v-model="caller" class="h-9 w-56 font-mono" :placeholder="callerKind === 'masked' ? 'Masqué' : '+33…'" @input="callerKind = 'free'" />
                             <div class="flex items-center gap-2">
-                                <Button type="button" size="sm" :variant="callerKind === 'new' ? 'default' : 'outline'" @click="randomMobile">Nouveau numéro</Button>
-                                <Button type="button" size="sm" :variant="callerKind === 'masked' ? 'default' : 'outline'" @click="(caller = ''), (callerKind = 'masked')">Masqué</Button>
+                                <button type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="callerKind === 'new' ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="randomMobile">Nouveau numéro</button>
+                                <button type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="callerKind === 'masked' ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="(caller = ''), (callerKind = 'masked')">Masqué</button>
                                 <div class="w-44"><FilterSelect v-model="pickBlacklisted" :options="blacklistOptions" placeholder="Liste noire" :searchable="blacklistOptions.length > 8" /></div>
                                 <div class="w-44"><FilterSelect v-model="pickRecent" :options="recentOptions" placeholder="Client récent" searchable /></div>
                             </div>

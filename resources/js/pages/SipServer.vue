@@ -366,6 +366,7 @@ const voxnodeCalls = computed(() =>
         status: STAGES[c.stage] ?? STAGES.waiting,
         agent: c.agent,
         seconds: c.started_at ? Math.max(0, Math.round(Date.now() / 1000 - c.started_at)) : 0,
+        queueSeconds: c.queue_since ? Math.max(0, Math.round(Date.now() / 1000 - c.queue_since)) : null,
     })),
 )
 
@@ -562,6 +563,16 @@ const longestWait = (platform) => {
     const list = byStage('queue').filter((c) => c.platform === platform)
     return list.length ? Math.max(...list.map((c) => c.seconds)) : null
 }
+// Attente réelle d'un agent (depuis l'entrée dans la file, sans l'accueil ni l'attente forcée).
+// Notre serveur : file « main » du PBX (queue.max_wait), seulement si un client y attend. Voxnode : queue_since des appels en file.
+const realWaitOurs = computed(() => {
+    const q = data.value?.queue?.ok ? data.value.queue.data : null
+    return q && q.waiting > 0 ? q.max_wait : null
+})
+const realWaitTheirs = computed(() => {
+    const list = byStage('queue').filter((c) => c.platform === 'voxnode' && c.queueSeconds != null)
+    return list.length ? Math.max(...list.map((c) => c.queueSeconds)) : null
+})
 const shareOurs = computed(() => {
     const m = shareFigure.value.value.match(/^(\d+) %$/)
     return m ? Number(m[1]) : null
@@ -615,9 +626,17 @@ const overviewSections = computed(() => {
                     // Total : le client qui attend depuis le plus longtemps, toutes plateformes confondues
                     total: longOurs === null && longTheirs === null ? '—' : wait(Math.max(longOurs ?? 0, longTheirs ?? 0)),
                     text: true,
-                    oursProblem: longOurs !== null && longOurs > 120,
-                    theirsProblem: longTheirs !== null && longTheirs > 120,
-                    title: "Client qui attend un agent depuis le plus longtemps, compté depuis le début de son appel",
+                    title: "Client en attente d'un agent depuis le plus longtemps, compté depuis le début de son appel (accueil et attente forcée compris)",
+                },
+                {
+                    label: 'Attente réelle la plus longue',
+                    ours: realWaitOurs.value === null ? '—' : wait(realWaitOurs.value),
+                    theirs: realWaitTheirs.value === null ? '—' : wait(realWaitTheirs.value),
+                    total: realWaitOurs.value === null && realWaitTheirs.value === null ? '—' : wait(Math.max(realWaitOurs.value ?? 0, realWaitTheirs.value ?? 0)),
+                    text: true,
+                    oursProblem: realWaitOurs.value !== null && realWaitOurs.value > 120,
+                    theirsProblem: realWaitTheirs.value !== null && realWaitTheirs.value > 120,
+                    title: "Client en attente d'un agent depuis le plus longtemps, compté depuis son entrée dans la file (sans l'accueil ni l'attente forcée)",
                 },
                 row('Avec un agent', busy.ours, busy.theirs),
                 row('Transférés', splitCalls(byStage('transfer')).ours, splitCalls(byStage('transfer')).theirs, { title: 'Appels transférés vers une marque ou le service interne, encore en cours' }),
@@ -757,7 +776,8 @@ const sinceLastRun = computed(() => {
 
             <template v-else>
                 <!-- État : chaque élément dit son état en toutes lettres -->
-                <div class="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border bg-white px-4 py-2.5 text-sm" :class="statusItems.some((i) => i.problem) ? 'border-red-200' : 'border-gray-100'">
+                <!-- data-ui-ok : barre d'état sur plusieurs lignes quand les éléments ne tiennent pas sur une -->
+                <div data-ui-ok class="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-lg border bg-white px-4 py-2.5 text-sm" :class="statusItems.some((i) => i.problem) ? 'border-red-200' : 'border-gray-100'">
                     <div v-if="loading" class="h-5 w-96 animate-pulse rounded bg-gray-100" />
                     <component
                         :is="item.href ? Link : 'span'"
@@ -785,7 +805,7 @@ const sinceLastRun = computed(() => {
 
                 <!-- En ce moment : trois petits tableaux (numéros, appels, agents), notre serveur et Voxnode côte à côte -->
                 <!-- Largeurs selon la longueur des libellés : chaque libellé tient sur une ligne -->
-                <div class="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,0.9fr)]">
+                <div class="grid grid-cols-1 items-start gap-5 lg:grid-cols-[repeat(3,max-content)]">
                     <div v-for="section in overviewSections" :key="section.title" class="overflow-hidden rounded-lg border border-gray-100 bg-white">
                         <table class="w-full text-sm">
                             <thead>
@@ -866,7 +886,8 @@ const sinceLastRun = computed(() => {
                             <div v-if="pauses.usual">
                                 <p v-if="pauses.usual.closedToday" class="text-sm text-gray-600">Fermé aujourd'hui</p>
                                 <template v-else>
-                                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                                    <!-- data-ui-ok : la légende passe sous le texte quand il est long -->
+                                    <div data-ui-ok class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                                         <p class="text-sm text-gray-900">{{ pauses.usualLine }}</p>
                                         <span v-if="pauses.slots.length" class="flex items-center gap-3 text-xs text-gray-400">
                                             <span v-for="(l, key) in SLOT_LEVELS" :key="key" class="inline-flex items-center gap-1"><span class="h-2 w-2 rounded-sm" :class="l.bar" />{{ l.label.charAt(0).toUpperCase() + l.label.slice(1) }}</span>
@@ -888,7 +909,7 @@ const sinceLastRun = computed(() => {
                                             </div>
                                         </div>
                                         <!-- Repères toutes les 2 h, sous la demi-heure qui commence à l'heure -->
-                                        <div class="mt-1 flex gap-0.5 text-xs tabular-nums text-gray-400">
+                                        <div data-ui-ok class="mt-1 flex gap-0.5 text-xs tabular-nums text-gray-400">
                                             <div v-for="sl in pauses.slots" :key="sl.slot" class="min-w-0 flex-1 overflow-visible whitespace-nowrap">{{ sl.tick ? sl.slot : '' }}</div>
                                         </div>
                                     </div>
@@ -1015,7 +1036,7 @@ const sinceLastRun = computed(() => {
                 <details v-if="regulator" class="rounded-lg border border-gray-100 bg-white text-sm">
                     <summary class="flex cursor-pointer items-center gap-3 px-4 py-2.5">
                         <span class="font-semibold text-gray-900">Régulateur</span>
-                        <span class="min-w-0 flex-1 truncate text-gray-600">{{ lastRun?.reason || '—' }}</span>
+                        <span data-ui-ok class="min-w-0 flex-1 truncate text-gray-600" :title="lastRun?.reason">{{ lastRun?.reason || '—' }}</span>
                         <span class="shrink-0 text-xs text-gray-400">{{ sinceLastRun }}</span>
                     </summary>
                     <div class="grid gap-6 border-t border-gray-100 px-4 py-3 lg:grid-cols-[26rem_1fr]">
@@ -1096,7 +1117,8 @@ const sinceLastRun = computed(() => {
                         </span>
                     </summary>
                     <div class="border-t border-gray-100">
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-xs text-gray-500">
+                        <!-- data-ui-ok : l'explication passe sous les boutons de période -->
+                        <div data-ui-ok class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-xs text-gray-500">
                             <div class="inline-flex rounded-md border border-gray-200 p-0.5">
                                 <button
                                     v-for="(label, h) in { 24: '24 h', 168: '7 jours', 720: '30 jours' }"

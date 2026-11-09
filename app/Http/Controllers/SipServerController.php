@@ -166,6 +166,8 @@ class SipServerController extends Controller
                 'agent' => $agent,
                 'stage' => $stage,
                 'started_at' => isset($c['timestamp']) ? (int) $c['timestamp'] : null,
+                // Entrée dans la file d'attente d'un agent (après l'attente forcée), null si l'appel n'a pas été suivi avant
+                'queue_since' => isset($c['queueSince']) ? (int) $c['queueSince'] : null,
             ];
         })->values();
 

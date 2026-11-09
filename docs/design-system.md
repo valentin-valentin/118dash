@@ -71,6 +71,9 @@ Taille `sm` dans les cartes et les tableaux ; taille normale dans l'en-tête de 
 
 ## 6. Vérification obligatoire avant d'annoncer que c'est fini
 
+**Outil : `npm run ui:check -- /chemin [/autre-chemin…]`** (`scripts/ui-check.mjs`). Pour chaque page touchée, à 1440 px, il fait la capture (dans `storage/ui-check/`) et signale : débordement de la page, retours à la ligne, contenu qui déborde ou texte coupé, plus d'un bouton principal noir, erreurs JavaScript. Il doit finir sans aucun « ✗ ». Un retour à la ligne ou un texte coupé **voulu** se déclare dans le template avec `data-ui-ok` (sur l'élément ou un parent), avec un commentaire qui dit pourquoi. Le script ne remplace pas l'œil : on regarde ensuite chaque capture bloc par bloc.
+
+
 1. Capture à **1440 px**, page entière, avec des données réalistes (les plus longues qu'on aura : noms longs, beaucoup de lignes, et aussi l'état vide).
 2. **Regarder chaque bloc** de la capture, pas seulement l'ensemble. Pour chacun :
    - rien n'est passé à la ligne sans le vouloir (bouton sous un champ, texte coupé, en-tête sur 3 lignes) ;
@@ -88,4 +91,6 @@ Taille `sm` dans les cartes et les tableaux ; taille normale dans l'en-tête de 
    Et vérifier qu'aucun élément ne déborde de sa ligne : `document.documentElement.scrollWidth` doit valoir la largeur de la fenêtre.
    Chaque résultat doit être un retour à la ligne **voulu**. Sinon, corriger.
 4. Comparer côte à côte avec la page modèle reprise (même carte, même espacement, mêmes boutons).
-5. Dans le compte rendu au propriétaire : les décisions prises (action principale et pourquoi, modèle repris, ce qui a été écarté) et ce qui a été vérifié.
+5. **Écran qui en reprend un autre** (même enregistrement, même fonction) : lister les éléments de l'original (cartes, champs, libellés, contrôles, boutons, dans l'ordre), lister ceux du nouvel écran, comparer ligne à ligne. Chaque différence est corrigée, ou justifiée dans le compte rendu. Une différence non justifiée = écran non terminé.
+6. Si un élément manque ou diffère et qu'on demande pourquoi : dire ce qui s'est réellement passé (décision, ou absence de vérification), pas « oublié ».
+7. Dans le compte rendu au propriétaire : les décisions prises (action principale et pourquoi, modèle repris, ce qui a été écarté) et ce qui a été vérifié.

@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ExternalLink, Pause, Phone, Play } from 'lucide-vue-next'
+import { ExternalLink, LoaderCircle, Pause, Phone, Play, X } from 'lucide-vue-next'
+import { formatDuration } from '@/lib/calls'
 import { call as softphoneCall } from '@/composables/useSoftphone'
 import { refreshBrandRequests } from '@/composables/useBrandRequests'
 import { xsrfToken } from '@/lib/csrf'
@@ -62,21 +63,46 @@ const callColumns = [
     { key: 'record', label: 'Conversation' },
 ]
 
-// Écoute de la conversation avec l'agent
+// ─── Lecteur : le même que la page Appels (barre en bas : position, vitesse) ──────
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
-const playing = ref(null)
-if (audio) audio.addEventListener('ended', () => (playing.value = null))
+const player = reactive({ call: null, playing: false, current: 0, duration: 0, rate: 1, loading: false, error: null })
+const RATES = [1, 1.25, 1.5, 2]
+if (audio) {
+    audio.preload = 'auto'
+    audio.addEventListener('timeupdate', () => (player.current = audio.currentTime))
+    audio.addEventListener('loadedmetadata', () => (player.duration = audio.duration))
+    audio.addEventListener('play', () => (player.playing = true))
+    audio.addEventListener('pause', () => (player.playing = false))
+    audio.addEventListener('waiting', () => (player.loading = true))
+    audio.addEventListener('playing', () => (player.loading = false))
+    audio.addEventListener('error', () => {
+        player.loading = false
+        player.error = "Impossible de lire l'enregistrement"
+    })
+}
 function play(row) {
     if (!audio || !row.record) return
-    if (playing.value === row.id) {
-        audio.pause()
-        playing.value = null
+    if (player.call?.id === row.id) {
+        audio.paused ? audio.play() : audio.pause()
         return
     }
+    Object.assign(player, { call: row, current: 0, duration: 0, error: null, loading: true })
     audio.src = row.record
-    audio.play().catch(() => (playing.value = null))
-    playing.value = row.id
+    audio.playbackRate = player.rate
+    audio.play().catch(() => {})
 }
+function seek(e) {
+    if (audio && player.duration) audio.currentTime = Number(e.target.value)
+}
+function cycleRate() {
+    player.rate = RATES[(RATES.indexOf(player.rate) + 1) % RATES.length]
+    if (audio) audio.playbackRate = player.rate
+}
+function closePlayer() {
+    audio?.pause()
+    player.call = null
+}
+const isPlaying = (row) => player.call?.id === row.id && player.playing
 onUnmounted(() => audio?.pause())
 
 // ─── Noms tapés → autres noms de la marque ────────────────────────────────────
@@ -180,7 +206,7 @@ async function ignore() {
     <Head :title="data?.name ? `${data.name} · Marques demandées` : 'Marque demandée'" />
 
     <AppLayout width="form">
-        <div class="space-y-6 p-6">
+        <div class="space-y-6 p-6" :class="player.call && 'pb-28'">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
             </PageHeader>
 
@@ -203,10 +229,10 @@ async function ignore() {
                                 v-if="row.record"
                                 type="button"
                                 class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm"
-                                :class="playing === row.id ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
+                                :class="isPlaying(row) ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
                                 @click="play(row)"
                             >
-                                <Pause v-if="playing === row.id" class="size-3.5" />
+                                <Pause v-if="isPlaying(row)" class="size-3.5" />
                                 <Play v-else class="size-3.5" />
                                 {{ mmss(row.duration) }}
                             </button>
@@ -330,6 +356,29 @@ async function ignore() {
                     <Button type="button" variant="outline" :disabled="busy" @click="ignore">Marquer la demande comme traitée</Button>
                 </div>
             </template>
+        </div>
+
+        <!-- Lecteur (même barre que la page Appels) -->
+        <div v-if="player.call" class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64">
+            <div class="flex items-center gap-3 py-2.5 pr-20 pl-4">
+                <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800" :title="player.playing ? 'Pause' : 'Lecture'" @click="play(player.call)">
+                    <LoaderCircle v-if="player.loading" class="size-4 animate-spin" />
+                    <Pause v-else-if="player.playing" class="size-4" />
+                    <Play v-else class="ml-0.5 size-4" />
+                </button>
+                <div class="w-56 min-w-0 shrink-0">
+                    <div class="truncate text-sm font-medium text-gray-900">{{ player.call.caller || '—' }} · {{ player.call.agent || '—' }}</div>
+                    <div class="truncate text-xs text-gray-500">{{ date(player.call.at) }} · conversation agent</div>
+                </div>
+                <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
+                <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
+                <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
+                <p v-if="player.error" class="shrink-0 text-xs text-red-600">{{ player.error }}</p>
+                <div class="flex shrink-0 items-center gap-1.5">
+                    <button type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
+                    <button type="button" class="flex size-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Fermer le lecteur" @click="closePlayer"><X class="size-4" /></button>
+                </div>
+            </div>
         </div>
     </AppLayout>
 </template>
