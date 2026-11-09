@@ -10,7 +10,6 @@ import { ChevronDown, ChevronUp } from 'lucide-vue-next'
  * @prop {String}   emptyMessage Message si pas de résultat
  * @prop {Function} rowClass     Fonction qui prend une row et retourne une classe CSS
  * @prop {Function} rowClick     Clic n'importe où sur la ligne (curseur main sur les lignes)
- * @prop {Function} rowClickable Lignes cliquables quand toutes ne le sont pas (row → booléen)
  *
  * Slots nommés par clé de colonne : #nom-de-colonne="{ row, value }"
  */
@@ -23,7 +22,6 @@ defineProps({
     emptyMessage: String,
     rowClass: Function,
     rowClick: Function,
-    rowClickable: Function,
 })
 
 const emit = defineEmits(['sort'])
@@ -80,8 +78,8 @@ const emit = defineEmits(['sort'])
                         v-for="(row, i) in rows"
                         :key="i"
                         class="border-b border-gray-50 transition-colors hover:bg-gray-100/80"
-                        :class="[rowClass ? rowClass(row) : '', rowClick && (!rowClickable || rowClickable(row)) && 'cursor-pointer']"
-                        @click="rowClick && (!rowClickable || rowClickable(row)) && rowClick(row)"
+                        :class="[rowClass ? rowClass(row) : '', rowClick && 'cursor-pointer']"
+                        @click="rowClick?.(row)"
                     >
                         <td
                             v-for="col in columns"
