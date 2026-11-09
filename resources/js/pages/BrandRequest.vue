@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -65,12 +65,18 @@ const callColumns = [
 
 // ─── Lecteur : le même que la page Appels (barre en bas : position, vitesse) ──────
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
+let pendingStart = null
 const player = reactive({ call: null, playing: false, current: 0, duration: 0, rate: 1, loading: false, error: null })
 const RATES = [1, 1.25, 1.5, 2]
 if (audio) {
     audio.preload = 'auto'
     audio.addEventListener('timeupdate', () => (player.current = audio.currentTime))
-    audio.addEventListener('loadedmetadata', () => (player.duration = audio.duration))
+    audio.addEventListener('loadedmetadata', () => {
+        player.duration = audio.duration
+        // Position de départ appliquée une fois la durée connue (avant, le navigateur l'ignore)
+        if (pendingStart !== null) audio.currentTime = pendingStart
+        pendingStart = null
+    })
     audio.addEventListener('play', () => (player.playing = true))
     audio.addEventListener('pause', () => (player.playing = false))
     audio.addEventListener('waiting', () => (player.loading = true))
@@ -89,8 +95,51 @@ function play(row) {
     Object.assign(player, { call: row, current: 0, duration: 0, error: null, loading: true })
     audio.src = row.record
     audio.playbackRate = player.rate
+    // Lecture juste avant la réplique où le client nomme la marque (audio_at), depuis le début sans repère
+    pendingStart = markStart(row)
     audio.play().catch(() => {})
 }
+const markStart = (row) => (row.audio_at == null ? 0 : Math.max(0, row.audio_at - 2))
+// Clic sur une réplique : lecture à sa seconde (lecteur ouvert sur cet appel au besoin)
+function playAt(row, seconds) {
+    if (!audio || !row.record) return
+    if (player.call?.id !== row.id) {
+        play(row)
+        pendingStart = seconds
+        return
+    }
+    audio.currentTime = seconds
+    audio.play().catch(() => {})
+}
+// Transcription affichée : celle de l'appel ouvert dans le lecteur
+const transcriptCall = computed(() => player.call ?? null)
+// Réplique en cours de lecture : la dernière commencée
+const currentLine = computed(() => {
+    const lines = transcriptCall.value?.transcript ?? []
+    let index = -1
+    lines.forEach((l, i) => l.s <= player.current + 0.2 && (index = i))
+    return index
+})
+const isMarkLine = (row, line) => row.audio_at != null && Math.abs(line.s - row.audio_at) < 0.05
+// À l'ouverture, la réplique du nom est amenée dans la zone visible de la transcription
+const transcriptBox = ref(null)
+watch(
+    () => player.call?.id,
+    async () => {
+        await nextTick()
+        transcriptBox.value?.querySelector('[data-mark]')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    },
+)
+function skip(seconds) {
+    if (audio) audio.currentTime = Math.min(Math.max(0, audio.currentTime + seconds), player.duration || audio.currentTime + seconds)
+}
+function backToMark() {
+    if (!audio || player.call?.audio_at == null) return
+    audio.currentTime = markStart(player.call)
+    audio.play().catch(() => {})
+}
+// Position du repère sur la barre (en %), une fois la durée connue
+const markPct = computed(() => (player.call?.audio_at != null && player.duration ? Math.min(100, (player.call.audio_at / player.duration) * 100) : null))
 function seek(e) {
     if (audio && player.duration) audio.currentTime = Number(e.target.value)
 }
@@ -236,9 +285,35 @@ async function ignore() {
                                 <Play v-else class="size-3.5" />
                                 {{ mmss(row.duration) }}
                             </button>
-                            <span v-else class="text-sm text-gray-400">-</span>
+                            <span v-else class="text-sm text-gray-400">Pas d'enregistrement</span>
                         </template>
                     </DataTable>
+                </div>
+            </section>
+
+            <!-- ─── Transcription de l'appel ouvert dans le lecteur ─── -->
+            <section v-if="transcriptCall">
+                <h2 class="mb-2 text-sm font-semibold text-gray-900">
+                    Transcription <span class="ml-1 font-normal text-gray-500">{{ date(transcriptCall.at) }} · {{ transcriptCall.agent || '—' }} · nom tapé « {{ transcriptCall.name }} »</span>
+                </h2>
+                <div class="rounded-lg border border-gray-100 bg-white">
+                    <p v-if="transcriptCall.transcript === null" class="px-4 py-3 text-sm text-gray-500">Transcription pas encore disponible</p>
+                    <p v-else-if="!transcriptCall.transcript.length" class="px-4 py-3 text-sm text-gray-500">Pas de transcription</p>
+                    <div v-else ref="transcriptBox" class="max-h-96 divide-y divide-gray-50 overflow-y-auto">
+                        <button
+                            v-for="(line, i) in transcriptCall.transcript"
+                            :key="i"
+                            type="button"
+                            class="grid w-full grid-cols-[3.5rem_4rem_1fr] gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50"
+                            :class="[isMarkLine(transcriptCall, line) ? 'bg-amber-50 hover:bg-amber-100/70' : i === currentLine && player.playing ? 'bg-gray-50' : '']"
+                            :data-mark="isMarkLine(transcriptCall, line) ? '' : undefined"
+                            @click="playAt(transcriptCall, line.s)"
+                        >
+                            <span class="tabular-nums text-gray-400">{{ formatDuration(line.s) }}</span>
+                            <span :class="line.who === 'client' ? 'font-medium text-gray-900' : 'text-gray-500'">{{ line.who === 'client' ? 'Client' : 'Agent' }}</span>
+                            <span :class="line.who === 'client' ? 'text-gray-900' : 'text-gray-600'">{{ line.t }}</span>
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -367,14 +442,21 @@ async function ignore() {
                     <Play v-else class="ml-0.5 size-4" />
                 </button>
                 <div class="w-56 min-w-0 shrink-0">
-                    <div class="truncate text-sm font-medium text-gray-900">{{ player.call.caller || '—' }} · {{ player.call.agent || '—' }}</div>
-                    <div class="truncate text-xs text-gray-500">{{ date(player.call.at) }} · conversation agent</div>
+                    <div class="truncate text-sm font-medium text-gray-900">« {{ player.call.name }} » · {{ player.call.agent || '—' }}</div>
+                    <div class="truncate text-xs text-gray-500">{{ date(player.call.at) }} · {{ player.call.caller || '—' }}</div>
                 </div>
                 <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
-                <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
+                <!-- Barre de lecture, avec le repère du moment où le client donne le nom -->
+                <div class="relative flex min-w-0 flex-1 items-center">
+                    <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="w-full accent-gray-900" aria-label="Position" @input="seek" />
+                    <span v-if="markPct !== null" class="pointer-events-none absolute -top-3 h-6 w-0.5 -translate-x-1/2 rounded bg-amber-500" :style="{ left: `${markPct}%` }" title="Le client nomme la marque" />
+                </div>
                 <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
                 <p v-if="player.error" class="shrink-0 text-xs text-red-600">{{ player.error }}</p>
                 <div class="flex shrink-0 items-center gap-1.5">
+                    <button type="button" class="h-7 rounded-md border border-gray-200 px-2 text-xs tabular-nums text-gray-700 hover:bg-gray-50" @click="skip(-10)">−10 s</button>
+                    <button type="button" class="h-7 rounded-md border border-gray-200 px-2 text-xs tabular-nums text-gray-700 hover:bg-gray-50" @click="skip(10)">+10 s</button>
+                    <button v-if="player.call.audio_at != null" type="button" class="h-7 rounded-md border border-gray-200 px-2 text-xs text-gray-700 hover:bg-gray-50" @click="backToMark">Revenir au nom</button>
                     <button type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
                     <button type="button" class="flex size-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Fermer le lecteur" @click="closePlayer"><X class="size-4" /></button>
                 </div>

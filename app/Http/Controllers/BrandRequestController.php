@@ -96,7 +96,7 @@ class BrandRequestController extends Controller
             ->leftJoin('agents', 'agents.id', '=', 'brand_requests.agent_id')
             ->orderByDesc('brand_requests.created_at')
             ->get([
-                'brand_requests.id', 'brand_requests.name', 'brand_requests.called', 'brand_requests.caller', 'brand_requests.created_at',
+                'brand_requests.id', 'brand_requests.name', 'brand_requests.called', 'brand_requests.caller', 'brand_requests.created_at', 'brand_requests.audio_at', 'brand_requests.transcript',
                 'calls.record_agent', 'calls.duration_agent', 'calls.agent_name', 'agents.voxnode_username',
             ]);
 
@@ -123,6 +123,10 @@ class BrandRequestController extends Controller
                 'at' => $this->iso($r->created_at),
                 'record' => $r->record_agent,
                 'duration' => $r->duration_agent ? (int) $r->duration_agent : null,
+                // Transcription (voxnode118, par IA) : [{s, who: agent|client, t}] ; null = pas encore faite, [] = pas d'enregistrement exploitable
+                'transcript' => $r->transcript === null ? null : (json_decode($r->transcript, true) ?: []),
+                // Seconde de la première réplique où le client nomme la marque, ou null
+                'audio_at' => $r->audio_at !== null ? (float) $r->audio_at : null,
             ]),
             'suggestions' => $suggestions,
             'handled' => $this->requests()->where('name_key', $key)->where('status', '!=', 'pending')->count(),
