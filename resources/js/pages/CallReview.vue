@@ -17,9 +17,9 @@ import { formatQuality, qualityClass } from '@/lib/quality'
 /**
  * Appels à vérifier : réécouter vite les appels qui posent question.
  *   Filtres : période, agent, et les cas (avec leur nombre sur la période), tous actifs par défaut
- *   Tableau : un appel par ligne avec tous ses cas ; ▶ écoute la conversation (et le transfert s'il est enregistré)
+ *   Tableau : un appel par ligne avec tous ses cas ; un clic sur la ligne ouvre sa fenêtre, seul ▶ lance l'écoute
  *   Lecteur en bas : celui de la page Appels, seulement pour écouter
- *   Fenêtre d'un appel (clic sur la date, ou « Détail » dans le lecteur) : ses cas en entier, son déroulé, le réseau de
+ *   Fenêtre d'un appel (clic sur la ligne, ou « Détail » dans le lecteur) : ses cas en entier, son déroulé, le réseau de
  *   l'agent (audio mauvais) et l'appelant : liste noire, nombre d'appels, ses autres appels avec leurs cas
  */
 const PERIODS = [
@@ -113,13 +113,13 @@ const historyColumns = [
     { key: 'record', label: 'Conversation' },
 ]
 
-// Ligne sélectionnée = l'appel en cours d'écoute. Un clic sur une ligne avec un enregistrement l'écoute (la conversation,
-// sinon le transfert) ; sur une ligne sans enregistrement, il désélectionne l'appel en cours (lecteur fermé).
-const selectedRowClass = (row) => (row.id === player.call?.id ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+// Un clic sur une ligne ouvre la fenêtre de l'appel, sans lancer le son (seuls les boutons ▶ l'écoutent).
+// Ligne sélectionnée = le dernier appel ouvert, pour retrouver où on en est dans la liste après la fenêtre.
+const lastOpenedId = ref(null)
+const selectedRowClass = (row) => (row.id === lastOpenedId.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
 function openRow(row) {
-    if (row.record_agent) play(row, 'agent')
-    else if (row.record_transfer) play(row, 'transfer')
-    else closePlayer()
+    lastOpenedId.value = row.id
+    reviewId.value = row.id
 }
 
 // ─── Lecteur : le même que la page Appels (un seul enregistrement à la fois, en bas de la page) ──
@@ -251,10 +251,7 @@ onUnmounted(() => audio?.pause())
                         :row-class="selectedRowClass"
                         :row-click="openRow"
                     >
-                        <!-- Date : ouvre la fenêtre de l'appel -->
-                        <template #at="{ row }">
-                            <button type="button" class="text-sm whitespace-nowrap text-gray-700 tabular-nums underline decoration-gray-300 underline-offset-2 hover:text-gray-900" title="Détail de l'appel" @click.stop="reviewId = row.id">{{ when(row.at) }}</button>
-                        </template>
+                        <template #at="{ row }"><span class="text-sm whitespace-nowrap text-gray-700 tabular-nums">{{ when(row.at) }}</span></template>
                         <template #agent="{ value }"><span class="text-sm whitespace-nowrap text-gray-900">{{ agentLabel(value) ?? '—' }}</span></template>
                         <template #called="{ value }"><span class="text-sm whitespace-nowrap text-gray-700">{{ calledLabel(value) }}</span></template>
                         <template #caller="{ value }"><span class="text-sm whitespace-nowrap text-gray-700 tabular-nums">{{ value ? formatPhone(value) : '—' }}</span></template>
