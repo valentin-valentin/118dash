@@ -87,7 +87,7 @@ class BrandRequestController extends Controller
                 // Marque existante dont le nom (ou un autre nom) est exactement un nom compris dans l'appel
                 'exists' => $this->heardMatches($heard['all'], $brands)->first(),
             ];
-        })->sortByDesc(fn ($i) => [$i['calls'], $i['last_at']])->values();
+        })->sortBy(fn ($i) => [-$i['calls'], $i['last_at']])->values(); // plus d'appels d'abord, puis la plus ancienne
 
         return response()->json(['items' => $items]);
     }
@@ -123,9 +123,9 @@ class BrandRequestController extends Controller
             ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
         ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
 
-        // Demande suivante : la plus demandée après celle-ci
+        // Demande suivante : la première de la liste « À traiter » (même ordre) après celle-ci
         $next = $this->requests()->where('status', 'pending')->where('name_key', '!=', $key)
-            ->groupBy('name_key')->orderByRaw('COUNT(*) DESC, MAX(created_at) DESC')->value('name_key');
+            ->groupBy('name_key')->orderByRaw('COUNT(*) DESC, MAX(created_at) ASC')->value('name_key');
 
         return response()->json([
             'key' => $key,
