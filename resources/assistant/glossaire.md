@@ -184,6 +184,11 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - Jours de Paris, bornes via `FROM_UNIXTIME(epoch)` (indépendant du fuseau de session), regroupement heure/jour en Paris.
 - **Exclut `agent_name = 'ai'`.** Groupes : `all`, `voxnode`, `selfhosted`. Pas de filtre de durée.
 
+### Appels à vérifier (`CallReviewController`, `/calls-to-review`)
+- Jours de Paris sur `called_at` (bornes converties en UTC) : aujourd'hui, hier, 7 jours, 30 jours (aujourd'hui compris). Appels de test exclus. Filtre agent = `agent_name` exact.
+- Un appel par ligne, avec tous ses cas. **Signalé par l'agent** : `phone_reported_by_agent = 1` (motif `phone_reported_by_agent_reason`). **Raccroché par l'agent** : `phone_agent_hangup = 1` (motif `phone_agent_hangup_reason`). **Liste noire** : `blacklist_id IS NOT NULL` (motif `blacklist.note`). **Transfert contre la suggestion** : `transfer_against_advice = 1` (colonne absente avant la migration voxnode118 : cas masqué) ; vers Backup si `brand_phonenumber` se termine par les 9 derniers chiffres du numéro de la marque `BACKUP`. **Audio mauvais** : `audio_quality < 3.6`.
+- Nombre de chaque cas : sur la période et l'agent choisis, quels que soient les cas cochés.
+
 ### Partenaires (`PartnerStatsController`, URL `/partners/{ids}/{hash}`)
 - Sources limitées à la liste de l'URL. Appel retenu : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`. Ici **sans** les numéros supprimés (jointure sans `withTrashed` : `phonenumbers.deleted_at IS NULL`).
 - **Toujours `total_duration >= 10`.**

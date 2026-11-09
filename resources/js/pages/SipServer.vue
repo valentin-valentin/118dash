@@ -417,8 +417,13 @@ const onlineAgents = computed(() => {
     return localAgents.value.filter((a) => a.registered).map((a) => ({ ...a, current_platform: 'selfhosted', wanted_platform: 'selfhosted' }))
 })
 const byName = (a, b) => a.username.localeCompare(b.username)
+// Téléphone connecté au SIP (registered ; sans ce champ, API d'avant : relié à une plateforme)
+const isRegistered = (a) => a.registered ?? !!a.current_platform
 const busyAgents = computed(() => onlineAgents.value.filter((a) => a.in_call).sort(byName))
-const freeAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call && a.on_break !== true).sort(byName))
+// Libre = peut recevoir un appel : téléphone connecté, ni en appel (sonnerie comprise) ni en pause (mêmes définitions que voxnode118)
+const freeAgents = computed(() => onlineAgents.value.filter((a) => isRegistered(a) && !a.in_call && a.on_break !== true).sort(byName))
+// Non joignable : softphone ouvert, hors pause, mais téléphone non connecté au SIP
+const unreachableAgents = computed(() => onlineAgents.value.filter((a) => !isRegistered(a) && !a.in_call && a.on_break !== true).sort(byName))
 const pausedAgents = computed(() => onlineAgents.value.filter((a) => !a.in_call && a.on_break === true).sort(byName))
 const BREAK_TYPES = { pause: 'Pause', lunch: 'Déjeuner', manager: 'Manager' }
 const breakLabel = (a) => (a.break_type ? (BREAK_TYPES[a.break_type] ?? a.break_type) : 'Pause')
@@ -430,7 +435,7 @@ function agentState(a) {
         const seconds = a.break_since ? Math.max(0, Math.floor((nowTick.value - Date.parse(a.break_since)) / 1000)) : null
         return { key: 'break', label: breakLabel(a), class: 'text-gray-500', since: seconds === null ? null : wait(seconds) }
     }
-    if (!a.current_platform) return { key: 'nophone', label: 'Sans téléphone', class: 'text-red-600', since: null }
+    if (!isRegistered(a)) return { key: 'unreachable', label: 'Non joignable', class: 'text-red-600', since: null }
     return { key: 'free', label: 'Libre', class: 'text-green-700', since: null }
 }
 const agentFilter = ref('')
@@ -441,7 +446,7 @@ const agentFilters = computed(() => {
         { key: 'call', label: 'En appel', count: count('call') },
         { key: 'free', label: 'Libres', count: count('free') },
         { key: 'break', label: 'En pause', count: count('break') },
-        ...(count('nophone') ? [{ key: 'nophone', label: 'Sans téléphone', count: count('nophone') }] : []),
+        { key: 'unreachable', label: 'Non joignables', count: count('unreachable') },
     ]
 })
 const agentRows = computed(() =>
@@ -594,6 +599,13 @@ const overviewSections = computed(() => {
     const busy = agentsSplit(busyAgents.value)
     const online = agentsSplit(onlineAgents.value)
     const free = agentsSplit(freeAgents.value)
+    // Non joignable sans plateforme actuelle : compté sur la plateforme où il doit être
+    const unreachable = tel.value
+        ? {
+              ours: unreachableAgents.value.filter((a) => (a.current_platform ?? a.wanted_platform) === 'selfhosted').length,
+              theirs: unreachableAgents.value.filter((a) => (a.current_platform ?? a.wanted_platform) === 'voxnode').length,
+          }
+        : { ours: 0, theirs: null }
     const longOurs = longestWait('selfhosted')
     const longTheirs = longestWait('voxnode')
     return [
@@ -644,7 +656,11 @@ const overviewSections = computed(() => {
         }, 'Total en cours'),
         {
             title: 'Agents',
-            rows: [row('En ligne', online.ours, online.theirs), row('Libres', free.ours, free.theirs)],
+            rows: [
+                row('En ligne', online.ours, online.theirs),
+                row('Libres', free.ours, free.theirs),
+                row('Non joignables', unreachable.ours, unreachable.theirs, { oursProblem: unreachable.ours > 0, theirsProblem: unreachable.theirs > 0 }),
+            ],
         },
     ]
 })
