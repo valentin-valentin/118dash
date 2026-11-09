@@ -605,7 +605,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
     <Head title="Attentes et agents" />
 
     <AppLayout>
-        <div class="pilotage space-y-4 p-6">
+        <div class="pilotage space-y-6 p-6">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Attentes et agents' }]">
                 <template v-if="data?.computedAt" #actions>
                     <span class="text-xs text-gray-500">Chiffres calculés à {{ data.computedAt.slice(11, 16) }}</span>
@@ -613,9 +613,9 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
             </PageHeader>
 
             <FilterBar :has-active-filters="preset !== 'today' || team !== 'all'" @reset="(preset = 'today'), (team = 'all')">
-                <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2">
+                    <span class="text-xs text-gray-500">Période</span>
                     <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="mr-1 text-xs text-gray-500">Période</span>
                         <button
                             v-for="p in PERIODS"
                             :key="p.key"
@@ -628,8 +628,8 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                         </button>
                         <Input v-if="preset === 'day'" v-model="pickedDay" type="date" :max="parisDay()" class="ml-1.5 h-8 w-40" />
                     </div>
+                    <span class="text-xs text-gray-500">Équipe</span>
                     <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="mr-1 text-xs text-gray-500">Équipe</span>
                         <button
                             v-for="t in teams"
                             :key="t.id"
@@ -649,23 +649,22 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                 <div v-for="i in 3" :key="i" class="h-40 animate-pulse rounded-lg border border-gray-100 bg-white" />
             </div>
 
-            <section v-if="data && data.open === false" class="card">
-                <div class="body text-gray-700">
+            <section v-if="data && data.open === false" class="rounded-lg border border-gray-100 bg-white px-4 py-3 text-sm text-gray-700">
+                <div>
                     {{ data.from === data.to ? 'Service fermé ce jour' : 'Service fermé sur cette période' }}<template v-if="outsideHours?.calls > 0"> · {{ fmt(outsideHours.calls) }} appels hors horaires</template>
                 </div>
             </section>
 
             <template v-else-if="data">
-                <div class="space-y-4" :class="loading && 'opacity-60'">
+                <div class="space-y-6" :class="loading && 'opacity-60'">
                     <!-- ─── 1. Devenir des appels : quatre petits tableaux ───── -->
-                    <section class="card">
-                        <header>
-                            <h2>Devenir des appels</h2><span class="sub">Pendant les horaires d'ouverture · attentes comptées depuis l'arrivée de l'appel</span>
-                            <span v-if="data.team !== 'all'" class="sub">· Appels : tout le centre d'appels, agents : {{ teamName }}</span>
-                        </header>
-                        <div class="body">
+                    <section>
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">
+                            Devenir des appels <span class="ml-1 font-normal text-gray-500">Pendant les horaires d'ouverture · attentes comptées depuis l'arrivée de l'appel<template v-if="data.team !== 'all'"> · appels : tout le centre d'appels, agents : {{ teamName }}</template></span>
+                        </h2>
+                        <div>
                             <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-                                <div v-for="g in fateGroups" :key="g.title" class="mini fit">
+                                <div v-for="g in fateGroups" :key="g.title" class="mini">
                                     <table>
                                         <thead>
                                             <tr>
@@ -707,14 +706,14 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                     </section>
 
                     <!-- ─── Équipes : une ligne par centre d'appels ─── -->
-                    <section v-if="data.teamSummary?.length" class="card">
-                        <header><h2>Équipes</h2><span class="sub">Agents de chaque centre d'appels sur la période</span></header>
-                        <div class="body">
-                            <div class="mini inline-block max-w-full overflow-x-auto">
+                    <section v-if="data.teamSummary?.length">
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Équipes <span class="ml-1 font-normal text-gray-500">Agents de chaque centre d'appels sur la période</span></h2>
+                        <div>
+                            <div class="mini">
                                 <table>
                                     <thead>
                                         <tr>
-                                            <th class="title">Équipe</th><th>Heures de présence</th><th>Appels décrochés</th><th>Décrochés par heure de présence</th>
+                                            <th>Équipe</th><th>Heures de présence</th><th>Appels décrochés</th><th>Décrochés par heure de présence</th>
                                             <th>Temps en appel</th><th>Pauses (h)</th><th>Déjeuner (h)</th><th>Sonnés sans réponse</th>
                                         </tr>
                                     </thead>
@@ -736,11 +735,11 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                     </section>
 
                     <!-- ─── 2. Quand les appelants raccrochent : un tableau par plateforme ─── -->
-                    <section v-if="hangups" class="card">
-                        <header><h2>Quand les appelants raccrochent</h2><span class="sub">Appels perdus selon le temps passé avant de raccrocher, en % de tous les appels de la plateforme</span></header>
-                        <div class="body">
+                    <section v-if="hangups">
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Quand les appelants raccrochent <span class="ml-1 font-normal text-gray-500">Appels perdus selon le temps passé avant de raccrocher, en % de tous les appels de la plateforme</span></h2>
+                        <div>
                             <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
-                                <div v-for="t in hangups.tables" :key="t.key" class="mini fit">
+                                <div v-for="t in hangups.tables" :key="t.key" class="mini">
                                     <table>
                                         <thead>
                                             <tr>
@@ -767,21 +766,19 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                     </section>
 
                     <!-- ─── 3. Vue d'ensemble ───────────────────────────────── -->
-                    <section v-if="ov" class="card">
-                        <header>
-                            <h2>Vue d'ensemble</h2><span class="sub">Appels et agents demi-heure par demi-heure, sur les mêmes colonnes</span>
-                        </header>
+                    <section v-if="ov">
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Vue d'ensemble <span class="ml-1 font-normal text-gray-500">Appels et agents demi-heure par demi-heure, sur les mêmes colonnes</span></h2>
                         <div class="toolbar">
                             <span class="tl">Jour</span>
                             <div class="chips">
-                                <button v-for="r in allRows" :key="r.key" type="button" class="chip" :aria-pressed="ovDay === r.key" @click="ovDay = r.key">{{ r.label }}</button>
+                                <button v-for="r in allRows" :key="r.key" type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="ovDay === r.key ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="ovDay = r.key">{{ r.label }}</button>
                             </div>
                             <span class="tl">Appels de</span>
                             <div class="chips">
-                                <button v-for="[k, l] in PLATS" :key="k" type="button" class="chip" :aria-pressed="ovPlat === k" @click="ovPlat = k">{{ l }}</button>
+                                <button v-for="[k, l] in PLATS" :key="k" type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="ovPlat === k ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="ovPlat = k">{{ l }}</button>
                             </div>
                         </div>
-                        <div class="body scroll">
+                        <div class="overflow-x-auto rounded-lg border border-gray-100 bg-white p-4">
                             <div class="ov" :style="{ '--n': ovCols.length }">
                                 <div class="lab hd" />
                                 <div v-for="s in ovCols" :key="s" class="hd">{{ s }}</div>
@@ -827,19 +824,17 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                             </div>
                             <p class="legend">
                                 Perdus à l'accueil : pendant l'accueil ou l'attente forcée. Présents (feuille) : feuille de présence, hors pause et déjeuner. Occupation : temps en appel / présence.
-                                <template v-if="data.needShown">Écart de planning : présents − nécessaires. Écart réel : joignables (téléphone connecté) − nécessaires.</template>
+                                <template v-if="data.needShown"> Écart de planning : présents − nécessaires. Écart réel : joignables (téléphone connecté) − nécessaires.</template>
                             </p>
                         </div>
                     </section>
 
                     <!-- ─── 4. Heure par heure ──────────────────────────────── -->
-                    <section class="card">
-                        <header>
-                            <h2>Heure par heure</h2><span class="sub">Chiffre : {{ modeText(currentMode.name) }}</span>
-                        </header>
+                    <section>
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Heure par heure <span class="ml-1 font-normal text-gray-500">Chiffre : {{ modeText(currentMode.name) }}</span></h2>
                         <div class="toolbar">
                             <span class="tl">Chiffre</span>
-                            <select v-model="mode" class="mode-select" aria-label="Chiffre affiché dans les cases">
+                            <select v-model="mode" class="flex h-8 w-72 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" aria-label="Chiffre affiché dans les cases">
                                 <optgroup label="Agents">
                                     <option v-for="m in MODES.filter((x) => x.agents)" :key="m.key" :value="m.key" :disabled="!!modeDisabled(m)">{{ modeText(m.label) }}{{ modeDisabled(m) ? ' (indisponible)' : '' }}</option>
                                 </optgroup>
@@ -849,11 +844,18 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                             </select>
                             <span class="tl">Appels de</span>
                             <div class="chips">
-                                <button v-for="[k, l] in PLATS" :key="k" type="button" class="chip" :aria-pressed="gPlat === k" @click="gPlat = k">{{ l }}</button>
+                                <button v-for="[k, l] in PLATS" :key="k" type="button" class="h-8 rounded-md px-3 text-xs font-medium transition-all" :class="gPlat === k ? 'bg-gray-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-100'" @click="gPlat = k">{{ l }}</button>
                             </div>
+                            <template v-if="needMode">
+                                <span class="tl">Nécessaires</span>
+                                <span class="text-xs text-gray-600">{{ data.answerShare }} % décrochés en moins de</span>
+                                <select v-model.number="within" class="flex h-8 w-24 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" aria-label="Attente maximale">
+                                    <option v-for="v in WITHIN_CHOICES" :key="v" :value="v">{{ v }} s</option>
+                                </select>
+                            </template>
                         </div>
-                        <div class="body">
-                            <div class="scroll">
+                        <div>
+                            <div class="overflow-x-auto rounded-lg border border-gray-100 bg-white p-4">
                                 <table id="pilotage-grid" class="hgrid">
                                     <thead>
                                         <tr><th />
@@ -889,11 +891,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                 <span><i class="sw" style="background: #ecfdf3" />effectif juste (0 à 2 en plus)</span>
                                 <span><i class="sw" style="background: #eef4ff" />3 agents ou plus en trop</span>
                                 <span style="flex-basis: 100%">
-                                    Nécessaires : agents qu'il fallait pour décrocher {{ data.answerShare }} % des appels en moins de
-                                    <select v-model.number="within" class="within" aria-label="Attente maximale">
-                                        <option v-for="v in WITHIN_CHOICES" :key="v" :value="v">{{ v }} s</option>
-                                    </select>
-                                    de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise). Ce choix change le calcul des agents nécessaires dans toute la page.
+                                    Nécessaires : agents qu'il fallait pour décrocher {{ data.answerShare }} % des appels en moins de {{ within }} s de vraie attente, avec la durée de traitement de la demi-heure (temps en appel, attente comprise). Ce choix change le calcul des agents nécessaires dans toute la page.
                                     <template v-if="mode === 'gap'">Écart réel : agents joignables (téléphone connecté, hors pause) moins nécessaires. – : téléphones non relevés.</template>
                                     <template v-else>Écart de planning : agents présents sur la feuille de présence (hors pause et déjeuner) moins nécessaires. – : appels de la demi-heure pas tous mesurés.</template>
                                 </span>
@@ -908,8 +906,10 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                             </p>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
 
-                            <div v-if="detail" class="detail">
-                                <h3>{{ detail.title }}<span v-if="detail.avg" class="sub"> · moyenne par jour</span></h3>
+                            <div v-if="detail" class="mt-6">
+                                <h3 class="mb-2 text-sm font-semibold text-gray-900">{{ detail.title }}<span v-if="detail.avg" class="ml-1 font-normal text-gray-500">moyenne par jour</span></h3>
+                                <!-- Appels à la largeur de ses chiffres (3 plateformes), Agents prend le reste -->
+                                <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-[max-content_1fr]">
                                 <div class="mini">
                                     <table>
                                         <thead>
@@ -953,19 +953,20 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                         </tbody>
                                     </table>
                                 </div>
+                                </div>
                             </div>
                         </div>
                     </section>
 
                     <!-- ─── 5. Créneaux à revoir : l'essentiel par créneau, le reste au clic (détail dans la grille) ─── -->
-                    <section v-if="data.worst?.length" class="card">
-                        <header><h2>Créneaux à revoir</h2><span class="sub">Les demi-heures avec le plus d'appels perdus en attente d'un agent ou décrochés après une longue attente · cliquer pour le détail</span></header>
-                        <div class="body">
+                    <section v-if="data.worst?.length">
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">Créneaux à revoir <span class="ml-1 font-normal text-gray-500">Les demi-heures avec le plus d'appels perdus en attente d'un agent ou décrochés après une longue attente · cliquer pour le détail</span></h2>
+                        <div>
                             <div class="mini">
                                 <table>
                                     <thead>
                                         <tr>
-                                            <th class="title">Demi-heure</th>
+                                            <th>Demi-heure</th>
                                             <th>Appels</th>
                                             <th>Perdus en attente d'un agent</th>
                                             <th>Longue attente</th>
@@ -998,18 +999,18 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                             </div>
                             <p class="legend">
                                 Présents : feuille de présence.
-                                <template v-if="worstPlanned">Écart de planning : présents − nécessaires.</template>
-                                <template v-if="worstGap">Écart réel : joignables (téléphone connecté) − nécessaires.</template>
-                                <template v-if="worstCauses">Attente avec agents libres : minutes où un appelant attendait un agent depuis 30 s ou plus alors que des agents étaient libres.</template>
+                                <template v-if="worstPlanned"> Écart de planning : présents − nécessaires.</template>
+                                <template v-if="worstGap"> Écart réel : joignables (téléphone connecté) − nécessaires.</template>
+                                <template v-if="worstCauses"> Attente avec agents libres : minutes où un appelant attendait un agent depuis 30 s ou plus alors que des agents étaient libres.</template>
                             </p>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
                         </div>
                     </section>
 
                     <!-- ─── 6. Jour par jour, ou semaine par semaine au-delà de 14 jours ──── -->
-                    <section v-if="periodRows.length" class="card">
-                        <header><h2>{{ byWeek ? 'Semaine par semaine' : 'Jour par jour' }}</h2></header>
-                        <div class="body space-y-4">
+                    <section v-if="periodRows.length">
+                        <h2 class="mb-2 text-sm font-semibold text-gray-900">{{ byWeek ? 'Semaine par semaine' : 'Jour par jour' }}</h2>
+                        <div class="space-y-4">
                             <div class="mini">
                                 <table>
                                     <thead>
@@ -1086,7 +1087,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                             </div>
                             <p class="legend">
                                 Occupation : temps en appel / temps de présence. Autres : ni décrochés ni perdus (sans durée ou en cours).
-                                <template v-if="periodPlanned || periodReal">Écarts en heures : en trop / manquantes (planning : feuille de présence ; réel : téléphones relevés).</template>
+                                <template v-if="periodPlanned || periodReal"> Écarts en heures : en trop / manquantes (planning : feuille de présence ; réel : téléphones relevés).</template>
                             </p>
                             <p class="legend">{{ LONG_WAIT_TEXT }}</p>
                         </div>
@@ -1114,39 +1115,6 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
     --grey-bar: #b4b4bb;
     --dark-bar: #52525b;
     --hatch: #dcdce0;
-}
-.card {
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    min-width: 0;
-    font-size: 14px;
-    color: var(--fg);
-}
-.card > header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 14px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--line);
-}
-.card > header .sub + .sub {
-    margin-left: -8px;
-}
-h2 {
-    font-size: 14px;
-    font-weight: 600;
-    margin: 0;
-}
-.sub {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 400;
-}
-.body {
-    padding: 12px 16px;
-    min-width: 0;
 }
 .scroll {
     overflow-x: auto;
@@ -1297,25 +1265,25 @@ tr.sep td {
     background: color-mix(in srgb, var(--red-bg) 45%, #fff);
 }
 /* Petits tableaux : titre dans la première case, valeurs près des libellés */
+/* Tableaux : un cadre chacun, toute la largeur de leur colonne (comme WaitLoss) */
 .mini {
     max-width: 100%;
     overflow-x: auto;
+    background: #fff;
     border: 1px solid var(--line);
     border-radius: 8px;
+    font-size: 14px;
+    color: var(--fg);
 }
 .mini table {
     border-collapse: collapse;
-    width: auto;
-    font-variant-numeric: tabular-nums;
-}
-/* Devenir des appels : chaque tableau occupe sa demi-largeur */
-.mini.fit table {
     width: 100%;
+    font-variant-numeric: tabular-nums;
 }
 
 .mini th,
 .mini td {
-    padding: 5px 7px;
+    padding: 6px 12px;
     text-align: right;
     white-space: nowrap;
 }
@@ -1325,7 +1293,7 @@ tr.sep td {
 }
 .mini thead th {
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 400;
     color: var(--muted);
     border-bottom: 1px solid var(--line);
 }
@@ -1375,20 +1343,19 @@ tr.sep td {
     background: #fafafa;
 }
 /* Barre d'outils sous l'en-tête d'une section */
+/* Choix d'une section, sous son titre */
 .toolbar {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 8px 10px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--line);
+    gap: 8px;
+    margin-bottom: 12px;
 }
 .toolbar .tl {
     font-size: 12px;
     color: var(--muted);
 }
 .toolbar:not(.rows) .tl:not(:first-child) {
-    margin-left: 10px;
+    margin-left: 16px;
 }
 /* Une ligne par groupe de boutons, libellés alignés */
 .toolbar.rows {

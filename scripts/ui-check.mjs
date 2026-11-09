@@ -8,7 +8,7 @@
  *   - capture de la page entière dans storage/ui-check/ (à regarder bloc par bloc) ;
  *   - débordement horizontal de la page ;
  *   - retours à la ligne dans les lignes flex-wrap (chacun doit être voulu) ;
- *   - éléments qui débordent de leur bloc ou dont le texte est coupé ;
+ *   - éléments qui débordent de leur bloc ou dont le texte est coupé, zones qui défilent horizontalement ;
  *   - nombre de boutons principaux (noirs) visibles : un seul attendu ;
  *   - erreurs JavaScript.
  * Un retour à la ligne ou un texte coupé VOULU se déclare dans le template avec l'attribut data-ui-ok (sur l'élément
@@ -54,7 +54,8 @@ function audit() {
     }).map(label)
     const overflow = [...document.querySelectorAll('main *, [data-slot="sidebar-inset"] *')].filter(inScope).filter((el) => {
         const s = getComputedStyle(el)
-        if (['auto', 'scroll'].includes(s.overflowX)) return false
+        // Zone à défilement horizontal : signalée si son contenu dépasse (tableau coupé, colonne cachée)
+        if (['auto', 'scroll'].includes(s.overflowX)) return el.scrollWidth > el.clientWidth + 1
         return el.scrollWidth > el.clientWidth + 1 && (s.overflowX === 'hidden' || s.textOverflow === 'ellipsis' || el.children.length === 0)
     }).map(label)
     // Boutons principaux : les interrupteurs (role=switch) ont aussi la couleur primaire, ce ne sont pas des boutons d'action
