@@ -350,7 +350,7 @@ async function ignore() {
                             <div class="space-y-2 pb-2">
                                 <Label>Autres noms ajoutés à la marque associée</Label>
                                 <AliasPicker id="br-link-aliases" v-model="linkAliasOptions" />
-                                <p class="text-sm text-gray-500">Noms tapés et nom compris cochés. Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
+                                <p class="text-sm text-gray-500">Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
                             </div>
                             <!-- La transcription donne exactement le nom (ou un autre nom) d'une marque existante : en premier -->
                             <div v-for="b in data.matches" :key="`m-${b.id}`" class="flex items-center gap-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
@@ -390,7 +390,7 @@ async function ignore() {
                                 <div class="space-y-2 md:col-span-2">
                                     <Label>Autres noms</Label>
                                     <AliasPicker id="br-aliases" v-model="aliasOptions" :brand-name="form.name" />
-                                    <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone. Noms tapés et nom compris cochés.</p>
+                                    <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone.</p>
                                 </div>
                                 <div class="space-y-2">
                                     <Label for="br-phone">Numéro de transfert</Label>

@@ -118,7 +118,7 @@ class BrandRequestController extends Controller
         // Un nom qui est déjà le nom ou un autre nom d'une marque n'est pas proposé.
         $taken = $brands->flatMap(fn ($b) => array_column($b['names'], 'key'))->flip();
         $aliasOptions = collect([
-            ...$names->keys()->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => true]),
+            ...$names->keys()->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => !$heard['main'] || $this->looksLike($n, $heard['main'])]),
             ...($heard['main'] ? [['name' => $heard['main'], 'source' => 'compris dans l\'appel', 'checked' => true]] : []),
             ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
         ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
@@ -276,6 +276,15 @@ class BrandRequestController extends Controller
             'handled_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    /** Nom tapé assez proche du nom compris pour servir d'autre nom (même seuil que voxnode118 : TranscribeBrandRequests::LOOKS_LIKE). */
+    private function looksLike(string $typed, string $heard): bool
+    {
+        [$a, $b] = [BrandName::key($typed), BrandName::key($heard)];
+        $max = max(strlen($a), strlen($b));
+
+        return $max > 0 && 1 - levenshtein($a, $b) / $max >= 0.7;
     }
 
     /** Ajoute à la marque les noms qu'elle n'a pas déjà (même clé que le nom ou qu'un alias) ; renvoie ceux ajoutés. */
