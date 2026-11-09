@@ -516,10 +516,11 @@ const pauses = computed(() => {
         verdict,
         style: BREAK_VERDICTS[verdict],
         message: live.message,
-        // Agents libres face aux appelants qui auront besoin d'un agent maintenant ou sous 2-3 min (sans objet service fermé)
+        // Agents libres face aux appelants en attente d'un agent : la marge du verdict (voxnode118 ; l'accueil et l'attente
+        // forcée n'y comptent pas). Sans objet service fermé
         callersLine:
-            live.verdict !== 'closed' && agents.free != null && waiting.total != null && intro.total != null
-                ? `${plural(agents.free, 'agent libre', 'agents libres')} pour ${plural(waiting.total + intro.total, 'appelant', 'appelants')} en attente ou dans l'accueil`
+            live.verdict !== 'closed' && agents.free != null && waiting.total != null
+                ? `${plural(agents.free, 'agent libre', 'agents libres')} pour ${plural(waiting.total, 'appelant', 'appelants')} en attente d'un agent`
                 : null,
         callersTitle: `En attente d'un agent : ${side(waiting.server)} chez nous, ${side(waiting.voxnode)} chez Voxnode. Dans l'accueil ou l'attente forcée : ${side(intro.server)} chez nous, ${side(intro.voxnode)} chez Voxnode.`,
         breaksLine:

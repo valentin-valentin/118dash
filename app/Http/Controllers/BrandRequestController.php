@@ -71,13 +71,13 @@ class BrandRequestController extends Controller
         $brands = $this->brandIndex();
         $items = $pending->groupBy('name_key')->map(function (Collection $group, $key) use ($brands) {
             $names = $this->rankNames($group->countBy('name'));
-            $suggestion = $this->suggestions($names->keys()->first(), $brands)->first();
+            $suggestion = $this->suggestions($this->nameList($names)->first(), $brands)->first();
             $heard = $this->heard($group);
 
             return [
                 'key' => $key,
-                'name' => $names->keys()->first(),
-                'variants' => $names->keys()->slice(1)->values(),
+                'name' => $this->nameList($names)->first(),
+                'variants' => $this->nameList($names)->slice(1)->values(),
                 'calls' => $group->count(),
                 'support' => $group->filter(fn ($r) => !preg_match('/^118/', (string) $r->called))->count(),
                 'first_at' => $this->iso($group->min('created_at')),
@@ -109,7 +109,7 @@ class BrandRequestController extends Controller
         $heard = $this->heard($rows);
         // Suggestions sur les noms tapés et sur les noms compris dans l'appel ; une marque n'apparaît qu'une fois,
         // avec sa meilleure raison et le nom d'où elle vient
-        $typed = $names->keys()->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'nom tapé']));
+        $typed = $this->nameList($names)->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'nom tapé']));
         $understood = collect($heard['all'])->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'compris dans l\'appel']));
         $suggestions = $typed->concat($understood)->sortBy('rank')->unique('id')->take(5)->values();
         $matches = $this->heardMatches($heard['all'], $brands)->values();
@@ -118,7 +118,7 @@ class BrandRequestController extends Controller
         // Un nom qui est déjà le nom ou un autre nom d'une marque n'est pas proposé.
         $taken = $brands->flatMap(fn ($b) => array_column($b['names'], 'key'))->flip();
         $aliasOptions = collect([
-            ...$names->keys()->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => !$heard['main'] || $this->looksLike($n, $heard['main'])]),
+            ...$this->nameList($names)->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => !$heard['main'] || $this->looksLike($n, $heard['main'])]),
             ...($heard['main'] ? [['name' => $heard['main'], 'source' => 'compris dans l\'appel', 'checked' => true]] : []),
             ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
         ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
@@ -129,7 +129,7 @@ class BrandRequestController extends Controller
 
         return response()->json([
             'key' => $key,
-            'name' => $names->keys()->first(),
+            'name' => $this->nameList($names)->first(),
             'names' => $names->map(fn ($count, $name) => ['name' => $name, 'calls' => $count, 'found' => $this->findsExisting($name, $brands)])->values(),
             'calls' => $rows->map(fn ($r) => [
                 'id' => $r->id,
@@ -411,7 +411,8 @@ class BrandRequestController extends Controller
         if ($named->isEmpty()) {
             return ['main' => null, 'others' => [], 'all' => [], 'state' => $lists->contains(fn ($l) => $l === []) ? 'never' : null];
         }
-        $main = $named->map(fn ($l) => $l[0])->countBy()->sortDesc()->keys()->first();
+        // (string) : un nom fait de chiffres (« 3949 ») devient une clé entière dans countBy
+        $main = (string) $named->map(fn ($l) => $l[0])->countBy()->sortDesc()->keys()->first();
         $all = collect([$main])->concat($named->flatten())->unique(fn ($n) => BrandName::key($n))->values();
 
         return ['main' => $main, 'others' => $all->slice(1)->values()->all(), 'all' => $all->all(), 'state' => 'names'];
@@ -432,6 +433,12 @@ class BrandRequestController extends Controller
         $styled = fn ($name) => (int) (preg_match('/[A-ZÀ-Ý]/u', $name) === 1) + (int) str_contains($name, ' ');
 
         return $counts->sortBy(fn ($count, $name) => [-$count, -$styled($name)]);
+    }
+
+    /** Noms classés par rankNames, en texte : un nom fait de chiffres (« 3949 ») est une clé entière de la collection. */
+    private function nameList(Collection $names): Collection
+    {
+        return $names->keys()->map(fn ($n) => (string) $n);
     }
 
     private function iso($value): ?string

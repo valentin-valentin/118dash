@@ -45,19 +45,24 @@ const data = ref(null)
 const loading = ref(false)
 const error = ref(null)
 
+// Réponses dans le désordre (filtres changés vite) : seule la dernière demande est affichée
+let lastRequest = 0
 async function load() {
+    const request = ++lastRequest
     loading.value = true
     const q = new URLSearchParams({ period: period.value, cases: active.value.join(','), page: page.value })
     if (agent.value) q.set('agent', agent.value)
     try {
         const res = await fetch(`/data/calls-to-review?${q}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
-        data.value = await res.json()
+        const json = await res.json()
+        if (request !== lastRequest) return
+        data.value = json
         error.value = null
     } catch (e) {
-        error.value = e.message
+        if (request === lastRequest) error.value = e.message
     } finally {
-        loading.value = false
+        if (request === lastRequest) loading.value = false
     }
 }
 watch([period, agent, active], () => (page.value === 1 ? load() : (page.value = 1)), { deep: true })
@@ -82,7 +87,7 @@ const calledLabel = (n) => CALLED[n] ?? 'Support'
 // 19/10 21:22 : l'année n'apporte rien sur 30 jours au plus
 const when = (iso) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', ' ')
 function detailOf(c, row) {
-    if (c.key === 'against') return c.toBackup ? 'Marque proposée → transféré vers Backup' : `Backup proposé → transféré vers ${row.brand || '—'}`
+    if (c.key === 'against') return `Backup proposé → transféré vers ${row.brand || '—'}${c.toInternal ? ' (renvoyé au service interne)' : ''}`
     if (c.key === 'audio') return formatQuality(c.mos)
     return c.detail || '—'
 }
@@ -376,7 +381,7 @@ onUnmounted(() => audio?.pause())
                             Appelant <span class="ml-1 font-normal text-gray-500">{{ review.callerTotal.toLocaleString('fr-FR') }} appel{{ review.callerTotal > 1 ? 's' : '' }} au total</span>
                         </h3>
                         <p v-if="review.blacklist" class="mb-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                            Sur liste noire depuis le {{ dayOf(review.blacklist.created_at) }}<template v-if="review.blacklist.note"> : {{ review.blacklist.note }}</template><template v-if="review.blacklist.source"> ({{ review.blacklist.source }})</template>
+                            Sur liste noire depuis le {{ review.blacklist.created_at ? dayOf(review.blacklist.created_at) : '—' }}<template v-if="review.blacklist.note"> : {{ review.blacklist.note }}</template><template v-if="review.blacklist.source"> ({{ review.blacklist.source }})</template>
                         </p>
                         <div class="rounded-lg border border-gray-100">
                             <DataTable :columns="historyColumns" :rows="review.history" empty-message="Aucun autre appel de ce numéro">

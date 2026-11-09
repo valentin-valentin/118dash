@@ -18,7 +18,8 @@ use Inertia\Response;
  *   reported  signalé par l'agent (motif libre)
  *   hangup    raccroché par l'agent (motif obligatoire)
  *   blacklist appelant sur liste noire
- *   against   transfert contre le choix suggéré (colonne calls.transfer_against_advice, voxnode118)
+ *   against   transfert contre le choix suggéré (colonne calls.transfer_against_advice, voxnode118) : Backup suggéré,
+ *             l'agent a choisi la marque
  *   audio     audio mauvais : note MOS < 3,6 (même seuil que l'API du Superviseur)
  */
 class CallReviewController extends Controller
@@ -44,9 +45,9 @@ class CallReviewController extends Controller
             $cases = array_values(array_diff($cases, ['against']));
         }
 
-        $base = fn () => Call::excludeTests(DB::table('calls'))
-            ->where('calls.called_at', '>=', $from)->where('calls.called_at', '<', $to)
-            ->when($agent, fn ($q) => $q->where('calls.agent_name', $agent));
+        $period = fn () => Call::excludeTests(DB::table('calls'))
+            ->where('calls.called_at', '>=', $from)->where('calls.called_at', '<', $to);
+        $base = fn () => $period()->when($agent, fn ($q) => $q->where('calls.agent_name', $agent));
 
         // Nombre de chaque cas sur la période (et l'agent choisi), quels que soient les cas cochés
         $counts = $base()->selectRaw(implode(', ', array_map(
@@ -65,7 +66,8 @@ class CallReviewController extends Controller
 
         return response()->json([
             'counts' => collect(self::CASES)->mapWithKeys(fn ($c) => [$c => $c === 'against' && !$against ? null : (int) ($counts->{$c} ?? 0)]),
-            'agents' => $base()->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against))))
+            // Agents proposés dans le filtre : tous ceux de la période, quel que soit l'agent choisi
+            'agents' => $period()->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against))))
                 ->whereNotNull('calls.agent_name')->distinct()->orderBy('calls.agent_name')->pluck('calls.agent_name'),
             'items' => collect($rows?->items() ?? [])->map(fn ($r) => $this->row($r, $against, $backup)),
             'page' => $rows?->currentPage() ?? 1,
@@ -113,10 +115,22 @@ class CallReviewController extends Controller
             'quality' => DB::table('call_quality')->where('call_id', $id)->first(['loss_pct', 'sent_loss_pct', 'jitter_median_ms', 'jitter_max_ms', 'rtt_avg_ms', 'rtt_max_ms']),
             'agentDay' => $agentDay,
             // Appelant sur liste noire, même si cet appel est passé avant son ajout
-            'blacklist' => $call->caller ? DB::table('blacklist')->where('phonenumber', $call->caller)->first(['note', 'source', 'created_at']) : null,
+            'blacklist' => $this->blacklist($call->caller),
             'callerTotal' => $call->caller ? Call::excludeTests(DB::table('calls'))->where('caller', $call->caller)->count() : 0,
             'history' => $history,
         ]);
+    }
+
+    /** Entrée de liste noire de l'appelant ; date d'ajout en ISO (UTC), null si inconnue. */
+    private function blacklist(?string $caller): ?array
+    {
+        $entry = $caller ? DB::table('blacklist')->where('phonenumber', $caller)->first(['note', 'source', 'created_at']) : null;
+
+        return $entry ? [
+            'note' => $entry->note,
+            'source' => $entry->source,
+            'created_at' => $entry->created_at ? Carbon::parse($entry->created_at, 'UTC')->toIso8601String() : null,
+        ] : null;
     }
 
     private function columns(bool $against): array
@@ -148,7 +162,9 @@ class CallReviewController extends Controller
                 $r->phone_agent_hangup ? ['key' => 'hangup', 'detail' => $r->phone_agent_hangup_reason] : null,
                 $r->blacklist_id ? ['key' => 'blacklist', 'detail' => $r->blacklist_note] : null,
                 $against && $r->transfer_against_advice
-                    ? ['key' => 'against', 'toBackup' => $backup !== null && str_ends_with((string) $r->brand_phonenumber, $backup)]
+                    // Toujours « Backup proposé, l'agent a choisi la marque » (seul cas marqué par voxnode118) ; renvoyé au service
+                    // interne quand la marque n'était pas joignable par notre serveur (l'import met alors le numéro de BACKUP)
+                    ? ['key' => 'against', 'toInternal' => $backup !== null && str_ends_with((string) $r->brand_phonenumber, $backup)]
                     : null,
                 $r->audio_quality !== null && $r->audio_quality < self::AUDIO_BAD ? ['key' => 'audio', 'mos' => (float) $r->audio_quality] : null,
             ])),

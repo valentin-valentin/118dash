@@ -43,19 +43,24 @@ const data = ref(null)
 const loading = ref(false)
 const error = ref(null)
 
+// Réponses dans le désordre (filtres changés vite) : seule la dernière demande est affichée
+let lastRequest = 0
 async function load() {
+    const request = ++lastRequest
     loading.value = true
     const q = new URLSearchParams({ period: period.value, kinds: active.value.join(','), page: page.value })
     if (center.value) q.set('center', center.value)
     try {
         const res = await fetch(`/data/agent-alerts?${q}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
-        data.value = await res.json()
+        const json = await res.json()
+        if (request !== lastRequest) return
+        data.value = json
         error.value = null
     } catch (e) {
-        error.value = e.message
+        if (request === lastRequest) error.value = e.message
     } finally {
-        loading.value = false
+        if (request === lastRequest) loading.value = false
     }
 }
 watch([period, center, active], () => (page.value === 1 ? load() : (page.value = 1)), { deep: true })

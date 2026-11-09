@@ -34,7 +34,7 @@ const error = ref(null)
 // pour la marque existante associée, une case par nom proposé
 const aliasesText = ref('')
 const linkAliasOptions = ref([])
-const nameKey = (n) => n.normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase()
+const nameKey = (n) => String(n).normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase()
 async function load() {
     try {
         const res = await fetch(`/data/brand-requests/${props.nameKey}`, { headers: { Accept: 'application/json' } })
@@ -52,7 +52,7 @@ async function load() {
 }
 onMounted(load)
 
-const titleCase = (s) => s.replace(/\S+/g, (w) => (w.length > 1 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+const titleCase = (s) => String(s).replace(/\S+/g, (w) => (w.length > 1 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1)))
 const date = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')
 const mmss = (s) => (s == null ? '' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
 

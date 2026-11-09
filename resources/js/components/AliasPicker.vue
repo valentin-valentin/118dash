@@ -14,7 +14,7 @@ defineProps({ id: { type: String, required: true } })
 const extra = ref('')
 function add() {
     const name = extra.value.trim()
-    if (name && !options.value.some((o) => o.name.toLowerCase() === name.toLowerCase())) {
+    if (name && !options.value.some((o) => String(o.name).toLowerCase() === name.toLowerCase())) {
         options.value = [...options.value, { name, source: 'ajouté', checked: true }]
     }
     extra.value = ''

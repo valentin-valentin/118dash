@@ -89,9 +89,8 @@ class AgentAlertController extends Controller
         abort_unless(preg_match('/^[A-Za-z0-9_-]{1,40}$/', $name), 422);
         [$from, $to] = $this->period($request->input('period', 'today'));
 
-        $alerts = $this->alerts($from, $to)->where('agent', $name)
-            ->sortBy(fn ($a) => [$a['at'], $a['id']])->reverse()->values();
-        $agentId = $alerts->first()['agentId'] ?? DB::table('agents')->where('voxnode_username', $name)->value('id');
+        $agentId = DB::table('agents')->where('voxnode_username', $name)->value('id');
+        $alerts = $agentId ? $this->read($from, $to, (int) $agentId)->sortBy(fn ($a) => [$a['at'], $a['id']])->reverse()->values() : collect();
 
         return response()->json([
             'agent' => $name,
@@ -102,8 +101,17 @@ class AgentAlertController extends Controller
         ]);
     }
 
-    /** Alertes de [$from, $to), classées, avec l'agent (nom, centre). */
+    /**
+     * Alertes de [$from, $to), tous agents : relues au plus une fois par minute et par période (la plage d'id peut
+     * compter des millions de lignes), les clics (page, cases, centre) filtrant ensuite ce résultat.
+     */
     private function alerts(Carbon $from, Carbon $to): Collection
+    {
+        return collect(Cache::remember("agent_alerts:{$from->timestamp}:{$to->timestamp}", 60, fn () => $this->read($from, $to)->all()));
+    }
+
+    /** Alertes de [$from, $to), classées, avec l'agent (nom, centre) ; d'un seul agent si $agentId. */
+    private function read(Carbon $from, Carbon $to, ?int $agentId = null): Collection
     {
         $first = $this->firstIdSince($from);
         $last = $to->isFuture() ? null : $this->firstIdSince($to);
@@ -115,6 +123,7 @@ class AgentAlertController extends Controller
             ->join('agents as a', 'a.id', '=', 'l.agent_id')
             ->where('l.id', '>=', $first)
             ->when($last !== null, fn ($q) => $q->where('l.id', '<=', $last + 2000))
+            ->when($agentId !== null, fn ($q) => $q->where('l.agent_id', $agentId))
             ->where('l.created_at', '>=', $from)->where('l.created_at', '<', $to)
             ->where(fn ($q) => $q->where('l.type', 'danger')->whereIn('l.action', ['call_timeout', 'reload_during_ring'])
                 ->orWhere(fn ($q) => $q->where('l.type', 'warning')->whereIn('l.action', ['end_work_failed', 'end_break_failed'])))
