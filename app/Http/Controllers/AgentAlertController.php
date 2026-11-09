@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Call;
 use Carbon\CarbonInterface as Carbon;
 use Illuminate\Support\Carbon as Date;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +20,7 @@ use Inertia\Response;
  *   missed  appel manqué (call_timeout) ; value = origine : null (softphone), 'server' (file de notre serveur).
  *           call_timeout 'reload' n'est pas compté : c'est le même événement que le rechargement ci-dessus
  *   endfail échec de fin de travail ou de pause
+ * Les comptes de test (test01…, testeur de softphone) sont rangés dans le centre « Test ».
  * agent_logs est très grosse (pings) et sans index sur created_at : la période est bornée par une plage d'id trouvée
  * par recherche dichotomique sur la clé primaire (comme SupervisorController::firstIdSince dans voxnode118).
  */
@@ -34,7 +34,8 @@ class AgentAlertController extends Controller
     {
         return Inertia::render('AgentAlerts', [
             'centers' => collect(config('callcenters'))->reject(fn ($c) => $c['optional'] ?? false)
-                ->map(fn ($c, $key) => ['key' => $key, 'label' => $c['label']])->values(),
+                ->map(fn ($c, $key) => ['key' => $key, 'label' => $c['label']])->values()
+                ->push(['key' => 'test', 'label' => 'Test']),
         ]);
     }
 
@@ -45,7 +46,7 @@ class AgentAlertController extends Controller
         $agent = $request->input('agent') ?: null;
         $kinds = array_values(array_intersect(self::KINDS, explode(',', (string) $request->input('kinds', implode(',', self::KINDS)))));
 
-        // Alertes de la période (toutes les sortes), avec leur agent et son centre ; comptes de test exclus
+        // Alertes de la période (toutes les sortes), avec leur agent et son centre (comptes de test : centre « Test »)
         $alerts = $this->alerts($from, $to)
             ->filter(fn ($a) => !$center || $a['center'] === $center);
         $agents = $alerts->pluck('agent')->unique()->sort()->values();
@@ -98,7 +99,6 @@ class AgentAlertController extends Controller
             ->where('l.created_at', '>=', $from)->where('l.created_at', '<', $to)
             ->where(fn ($q) => $q->where('l.type', 'danger')->whereIn('l.action', ['call_timeout', 'reload_during_ring'])
                 ->orWhere(fn ($q) => $q->where('l.type', 'warning')->whereIn('l.action', ['end_work_failed', 'end_break_failed'])))
-            ->whereRaw("a.voxnode_username NOT REGEXP '^test[0-9]+$'")
             ->get(['l.id', 'l.agent_id', 'l.action', 'l.value', 'l.created_at', 'a.voxnode_username'])
             ->map(fn ($r) => $this->classify($r))
             ->filter()
@@ -135,9 +135,15 @@ class AgentAlertController extends Controller
         ];
     }
 
-    /** Centre d'un agent par son nom : noms exacts d'abord, puis le préfixe le plus long (config/callcenters.php). */
+    /**
+     * Centre d'un agent par son nom : les comptes de test (test + chiffres, testeur de softphone) dans « Test », pour
+     * vérifier la chaîne de bout en bout ; sinon noms exacts d'abord, puis le préfixe le plus long (config/callcenters.php).
+     */
     private function centerOf(string $name): ?string
     {
+        if (preg_match('/^test\d+$/', $name)) {
+            return 'test';
+        }
         static $centers = null;
         $centers ??= collect(config('callcenters'))->reject(fn ($c) => $c['optional'] ?? false);
         foreach ($centers as $key => $c) {
@@ -158,14 +164,17 @@ class AgentAlertController extends Controller
         return $best;
     }
 
-    /** Appels décrochés par ces agents sur la période (pour situer leurs alertes). */
+    /**
+     * Appels décrochés par ces agents sur la période (pour situer leurs alertes). Sans exclure les appels de test :
+     * ce sont ceux des comptes de test, affichés ici dans le centre « Test ».
+     */
     private function answered(array $agentIds, Carbon $from, Carbon $to): array
     {
         if (!$agentIds) {
             return [];
         }
 
-        return Call::excludeTests(DB::table('calls'))
+        return DB::table('calls')
             ->whereIn('agent_id', $agentIds)->whereNotNull('phone_answered_at')
             ->where('called_at', '>=', $from)->where('called_at', '<', $to)
             ->groupBy('agent_id')->pluck(DB::raw('COUNT(*)'), 'agent_id')->map(fn ($n) => (int) $n)->all();
