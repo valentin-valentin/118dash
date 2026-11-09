@@ -1,7 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3'
 import { onMounted, onUnmounted, ref } from 'vue'
-import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, Hash, Headphones, LayoutGrid, MessagesSquare, MonitorPlay, Phone, PhoneCall, PhoneOff, Server, ShieldAlert, Store, Users, Wallet, Workflow } from 'lucide-vue-next'
+import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, Hash, Headphones, LayoutGrid, MessagesSquare, MonitorPlay, Phone, PhoneCall, PhoneOff, Server, ShieldAlert, Store, TriangleAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
 import { useBrandRequests } from '@/composables/useBrandRequests'
 import NavUser from '@/components/NavUser.vue'
@@ -63,6 +63,7 @@ const navItems = [
     { title: 'Appels', href: '/calls', icon: Phone },
     { title: 'Appels rejetés', href: '/rejected-calls', icon: PhoneOff },
     { title: 'Appels à vérifier', href: '/calls-to-review', icon: Headphones },
+    { title: 'Alertes agents', href: '/agent-alerts', icon: TriangleAlert },
     { title: 'Attentes et agents', href: '/pilotage', icon: CalendarRange },
     { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
     { title: 'Providers', href: '/providers', icon: Users },

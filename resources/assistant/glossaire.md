@@ -189,6 +189,13 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - Un appel par ligne, avec tous ses cas. **Signalé par l'agent** : `phone_reported_by_agent = 1` (motif `phone_reported_by_agent_reason`). **Raccroché par l'agent** : `phone_agent_hangup = 1` (motif `phone_agent_hangup_reason`). **Liste noire** : `blacklist_id IS NOT NULL` (motif `blacklist.note`). **Transfert contre la suggestion** : `transfer_against_advice = 1` (colonne absente avant la migration voxnode118 : cas masqué) ; vers Backup si `brand_phonenumber` se termine par les 9 derniers chiffres du numéro de la marque `BACKUP`. **Audio mauvais** : `audio_quality < 3.6`.
 - Nombre de chaque cas : sur la période et l'agent choisis, quels que soient les cas cochés.
 
+### Alertes agents (`AgentAlertController`, `/agent-alerts`)
+- Table `agent_logs`, jours de Paris sur `created_at` (UTC), bornés par une plage d'id (recherche dichotomique sur la clé primaire, gardée 1 h). Comptes `test` + chiffres exclus. Centre de l'agent par son nom (`config/callcenters.php`, centres non optionnels).
+- **F5 pendant une sonnerie** : `danger` / `reload_during_ring`, `value.key` non nul. **Rechargé pendant une sonnerie** : `key` nul et `left_page` vrai. **Plantage du navigateur** : `key` nul et `left_page` faux. `value.ring_s` = secondes de sonnerie avant le rechargement.
+- **Appel manqué** : `danger` / `call_timeout`, `value` NULL (softphone) ou `server` (file de notre serveur). `value = 'reload'` n'est pas compté : c'est le même événement que le rechargement.
+- **Échec de fin** : `warning` / `end_work_failed` ou `end_break_failed`.
+- Classement par agent : F5, puis rechargements, plantages, appels manqués, échecs de fin. Appels décrochés = `calls.agent_id`, `phone_answered_at` non nul, sur la période (`called_at`), tests exclus.
+
 ### Partenaires (`PartnerStatsController`, URL `/partners/{ids}/{hash}`)
 - Sources limitées à la liste de l'URL. Appel retenu : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`. Ici **sans** les numéros supprimés (jointure sans `withTrashed` : `phonenumbers.deleted_at IS NULL`).
 - **Toujours `total_duration >= 10`.**

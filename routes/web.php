@@ -12,6 +12,7 @@ use App\Http\Controllers\PartnerStatsController;
 use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
 use App\Http\Controllers\RejectedCallController;
+use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\CallReviewController;
 use App\Http\Controllers\PilotageController;
 use App\Http\Controllers\WaitLossController;
@@ -102,6 +103,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/rejected-calls', [RejectedCallController::class, 'index'])->name('rejected-calls.index');
     Route::get('/calls-to-review', [CallReviewController::class, 'index'])->name('calls-to-review.index');
+    Route::get('/agent-alerts', [AgentAlertController::class, 'index'])->name('agent-alerts.index');
     Route::get('/wait-loss', [WaitLossController::class, 'index'])->name('wait-loss.index');
     Route::get('/pilotage', [PilotageController::class, 'index'])->name('pilotage.index');
     Route::redirect('/staffing', '/pilotage');
@@ -216,6 +218,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/assignment-history', [AssignmentHistoryController::class, 'data']);
 
         Route::get('/calls-to-review', [CallReviewController::class, 'data']);
+        Route::get('/agent-alerts', [AgentAlertController::class, 'data']);
         Route::get('/calls-to-review/{id}', [CallReviewController::class, 'detail'])->whereNumber('id');
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);
