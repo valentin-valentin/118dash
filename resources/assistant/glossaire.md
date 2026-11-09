@@ -194,7 +194,7 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - **F5 pendant une sonnerie** : `danger` / `reload_during_ring`, `value.key` non nul. **Rechargé pendant une sonnerie** : `key` nul et `left_page` vrai. **Plantage du navigateur** : `key` nul et `left_page` faux. `value.ring_s` = secondes de sonnerie avant le rechargement.
 - **Appel manqué** : `danger` / `call_timeout`, `value` NULL (softphone) ou `server` (file de notre serveur). `value = 'reload'` n'est pas compté : c'est le même événement que le rechargement.
 - **Échec de fin** : `warning` / `end_work_failed` ou `end_break_failed`.
-- Classement par agent : F5, puis rechargements, plantages, appels manqués, échecs de fin. Appels décrochés = `calls.agent_id`, `phone_answered_at` non nul, sur la période (`called_at`), appels de test compris (ceux des comptes de test).
+- Classement par agent : F5, puis rechargements, plantages, appels manqués, échecs de fin. Appels décrochés = `calls.agent_id` avec `phone_answered_at` dans la période (pas `called_at`, rempli seulement à l'import et jamais pour le testeur), bornés par `id > MAX(id) − 15 000 × jours`, appels de test compris (ceux des comptes de test).
 
 ### Partenaires (`PartnerStatsController`, URL `/partners/{ids}/{hash}`)
 - Sources limitées à la liste de l'URL. Appel retenu : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`. Ici **sans** les numéros supprimés (jointure sans `withTrashed` : `phonenumbers.deleted_at IS NULL`).

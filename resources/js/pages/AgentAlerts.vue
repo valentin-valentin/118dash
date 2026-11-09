@@ -27,9 +27,9 @@ const PERIODS = [
 // Dans l'ordre de gravité
 // label : liste des alertes ; filter : case à cocher ; column : colonne du classement
 const KINDS = [
-    { key: 'f5', label: 'F5 pendant une sonnerie', filter: 'F5 pendant une sonnerie', column: 'F5' },
-    { key: 'reload', label: 'Rechargé pendant une sonnerie', filter: 'Rechargement', column: 'Rechargements' },
-    { key: 'crash', label: 'Plantage du navigateur', filter: 'Plantage', column: 'Plantages' },
+    { key: 'f5', label: 'Rechargé au clavier', filter: 'Rechargé au clavier', column: 'Clavier' },
+    { key: 'reload', label: 'Rechargé (bouton ou extension)', filter: 'Rechargé (bouton ou extension)', column: 'Bouton' },
+    { key: 'crash', label: 'Plantage du navigateur', filter: 'Plantage du navigateur', column: 'Plantage' },
     { key: 'missed', label: 'Appel manqué', filter: 'Appel manqué', column: 'Appels manqués' },
     { key: 'endfail', label: 'Échec de fin de travail ou de pause', filter: 'Échec de fin', column: 'Échecs de fin' },
 ]
@@ -75,12 +75,19 @@ const centerLabel = (key) => props.centers.find((c) => c.key === key)?.label ?? 
 
 // Heure de Paris : « 19/10 16:02:11 »
 const when = (iso) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-const ring = (s) => (s == null ? '' : `, après ${s} s de sonnerie`)
+// Rechargement pendant une sonnerie : « après N s de sonnerie », et « (PIN demandé) » quand l'écran PIN a suivi
+const ring = (d) => [d.ring == null ? null : `après ${d.ring} s de sonnerie`, d.pin ? '(PIN demandé)' : null].filter(Boolean).join(' ')
+const withRing = (text, d) => [text, ring(d)].filter(Boolean).join(', ').replace(', (', ' (')
+// « ctrl+r » → « Ctrl+R », « F5 » → « F5 », « meta+r » → « Meta+R »
+const keyName = (k) => String(k).split('+').map((p) => (p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1))).join('+')
 function detailOf(a) {
     const d = a.detail
-    if (a.kind === 'f5') return `Touche ${d.key}${ring(d.ring)}`
-    if (a.kind === 'reload') return `Bouton du navigateur ou extension${ring(d.ring)}`
-    if (a.kind === 'crash') return `Page rechargée sans la quitter${ring(d.ring)}`
+    if (a.kind === 'f5') return withRing(`Touche ${keyName(d.key)}`, d)
+    if (a.kind === 'reload') {
+        const text = ring(d)
+        return text ? text.charAt(0).toUpperCase() + text.slice(1) : '—'
+    }
+    if (a.kind === 'crash') return withRing('Page rechargée sans la quitter', d)
     if (a.kind === 'missed') return d.origin === 'server' ? 'Sonné sans réponse sur notre serveur, mis en pause par la file' : 'Sonnerie non décrochée'
     return d.what === 'break' ? 'Fin de pause' : 'Fin de travail'
 }

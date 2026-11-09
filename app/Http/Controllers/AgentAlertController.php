@@ -111,16 +111,29 @@ class AgentAlertController extends Controller
             return collect();
         }
 
-        return DB::table('agent_logs as l')
+        $rows = DB::table('agent_logs as l')
             ->join('agents as a', 'a.id', '=', 'l.agent_id')
             ->where('l.id', '>=', $first)
             ->when($last !== null, fn ($q) => $q->where('l.id', '<=', $last + 2000))
             ->where('l.created_at', '>=', $from)->where('l.created_at', '<', $to)
             ->where(fn ($q) => $q->where('l.type', 'danger')->whereIn('l.action', ['call_timeout', 'reload_during_ring'])
                 ->orWhere(fn ($q) => $q->where('l.type', 'warning')->whereIn('l.action', ['end_work_failed', 'end_break_failed'])))
-            ->get(['l.id', 'l.agent_id', 'l.action', 'l.value', 'l.created_at', 'a.voxnode_username'])
-            ->map(fn ($r) => $this->classify($r))
-            ->filter()
+            ->get(['l.id', 'l.agent_id', 'l.action', 'l.value', 'l.created_at', 'a.voxnode_username']);
+
+        // call_timeout 'reload' : l'écran PIN qui suit un rechargement pendant une sonnerie. Pas compté comme appel
+        // manqué (même événement) ; il marque le rechargement de son agent dans les 2 minutes : « PIN demandé »
+        $pins = $rows->filter(fn ($r) => $r->action === 'call_timeout' && $r->value === 'reload')
+            ->map(fn ($r) => [$r->agent_id, strtotime($r->created_at)])->values();
+
+        return $rows->map(fn ($r) => $this->classify($r))->filter()
+            ->map(function ($a) use ($pins) {
+                if (in_array($a['kind'], ['f5', 'reload', 'crash'], true)) {
+                    $at = strtotime($a['at']);
+                    $a['detail']['pin'] = $pins->contains(fn ($p) => $p[0] === $a['agentId'] && abs($p[1] - $at) <= 120);
+                }
+
+                return $a;
+            })
             ->values();
     }
 
@@ -193,9 +206,15 @@ class AgentAlertController extends Controller
             return [];
         }
 
+        // Sur phone_answered_at (écrit au décroché ; called_at n'est rempli qu'à l'import, jamais pour le testeur).
+        // Sans index : d'abord une plage d'id (au plus 15 000 appels par jour depuis le début de la période)
+        $days = max(1, (int) ceil($from->diffInHours(now(), true) / 24));
+        $minId = (int) DB::table('calls')->max('id') - 15000 * $days;
+
         return DB::table('calls')
-            ->whereIn('agent_id', $agentIds)->whereNotNull('phone_answered_at')
-            ->where('called_at', '>=', $from)->where('called_at', '<', $to)
+            ->where('id', '>', $minId)
+            ->whereIn('agent_id', $agentIds)
+            ->where('phone_answered_at', '>=', $from)->where('phone_answered_at', '<', $to)
             ->groupBy('agent_id')->pluck(DB::raw('COUNT(*)'), 'agent_id')->map(fn ($n) => (int) $n)->all();
     }
 
