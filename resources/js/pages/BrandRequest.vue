@@ -30,7 +30,7 @@ const props = defineProps({ nameKey: String, types: Array })
 
 const data = ref(null)
 const error = ref(null)
-// Autres noms : pour la marque créée, le même champ que la fiche marque (un par ligne), prérempli avec les noms proposés cochés ;
+// Autres noms : pour la marque créée, le même champ que la fiche marque (un par ligne), prérempli avec tous les noms proposés ;
 // pour la marque existante associée, une case par nom proposé
 const aliasesText = ref('')
 const linkAliasOptions = ref([])
@@ -44,8 +44,8 @@ async function load() {
         linkAliasOptions.value = data.value.aliasOptions.map((o) => ({ ...o }))
         // Nom de la marque : celui compris dans l'appel s'il existe, sinon le nom tapé
         if (!form.name) form.name = data.value.heard.main ?? titleCase(data.value.name ?? '')
-        // Autres noms de la marque créée : les noms proposés cochés, sauf le nom de la marque lui-même
-        aliasesText.value = data.value.aliasOptions.filter((o) => o.checked && nameKey(o.name) !== nameKey(form.name)).map((o) => o.name).join('\n')
+        // Autres noms de la marque créée : tous les noms proposés, sauf le nom de la marque lui-même
+        aliasesText.value = data.value.aliasOptions.filter((o) => nameKey(o.name) !== nameKey(form.name)).map((o) => o.name).join('\n')
     } catch (e) {
         error.value = e.message
     }
@@ -425,7 +425,7 @@ async function ignore(goNext) {
                                 </div>
                                 <div class="space-y-2 md:col-span-2">
                                     <Label for="br-aliases">Autres noms</Label>
-                                    <Textarea id="br-aliases" v-model="aliasesText" rows="2" placeholder="Un nom par ligne" />
+                                    <Textarea id="br-aliases" v-model="aliasesText" :rows="Math.max(2, aliasesText.split('\n').length)" placeholder="Un nom par ligne" />
                                     <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone.</p>
                                 </div>
                                 <div class="space-y-2">
