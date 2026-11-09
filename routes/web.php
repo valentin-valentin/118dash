@@ -216,6 +216,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/assignment-history', [AssignmentHistoryController::class, 'data']);
 
         Route::get('/calls-to-review', [CallReviewController::class, 'data']);
+        Route::get('/calls-to-review/{id}', [CallReviewController::class, 'detail'])->whereNumber('id');
         Route::get('/rejected-calls/daily-breakdown', [RejectedCallController::class, 'dailyBreakdown']);
         Route::get('/wait-loss', [WaitLossController::class, 'data']);
         Route::get('/pilotage', [PilotageController::class, 'data']);

@@ -9,14 +9,17 @@ import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { agentLabel, formatDay, formatDuration, formatPhone } from '@/lib/calls'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { agentLabel, formatDay, formatDuration, formatPhone, WHO_HANGUP } from '@/lib/calls'
 import { formatQuality, qualityClass } from '@/lib/quality'
 
 /**
  * Appels à vérifier : réécouter vite les appels qui posent question.
  *   Filtres : période, agent, et les cas (avec leur nombre sur la période), tous actifs par défaut
  *   Tableau : un appel par ligne avec tous ses cas ; ▶ écoute la conversation (et le transfert s'il est enregistré)
- *   Barre du bas : l'appel sélectionné, avec le lecteur de la page Appels ; « Fiche » et la date mènent à /calls/{id}
+ *   Lecteur en bas : celui de la page Appels, seulement pour écouter
+ *   Fenêtre d'un appel (clic sur la date, ou « Détail » dans le lecteur) : ses cas en entier, son déroulé, le réseau de
+ *   l'agent (audio mauvais) et l'appelant : liste noire, nombre d'appels, ses autres appels avec leurs cas
  */
 const PERIODS = [
     { key: 'today', label: "Aujourd'hui" },
@@ -95,18 +98,22 @@ const columns = [
     { key: 'record', label: 'Conversation' },
 ]
 
-// Ligne sélectionnée = l'appel ouvert dans la barre du bas. Un clic sur la ligne l'écoute (la conversation, sinon le
-// transfert) ; sans enregistrement, la barre s'ouvre quand même sur cet appel, avec « Pas d'enregistrement ».
+const historyColumns = [
+    { key: 'at', label: 'Date' },
+    { key: 'agent', label: 'Agent' },
+    { key: 'brand', label: 'Marque' },
+    { key: 'duration_agent', label: 'Durée agent' },
+    { key: 'cases', label: 'Cas' },
+]
+
+// Ligne sélectionnée = l'appel en cours d'écoute. Un clic sur une ligne avec un enregistrement l'écoute (la conversation,
+// sinon le transfert) ; une ligne sans enregistrement n'est pas cliquable.
 const selectedRowClass = (row) => (row.id === player.call?.id ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
 function openRow(row) {
     if (row.record_agent) play(row, 'agent')
     else if (row.record_transfer) play(row, 'transfer')
-    else {
-        audio?.pause()
-        Object.assign(player, { call: row, part: 'agent', playing: false, current: 0, duration: 0, loading: false, error: null })
-    }
 }
-const hasRecord = (call) => !!(call?.record_agent || call?.record_transfer)
+const hasRecord = (row) => !!(row.record_agent || row.record_transfer)
 
 // ─── Lecteur : le même que la page Appels (un seul enregistrement à la fois, en bas de la page) ──
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
@@ -154,6 +161,30 @@ function closePlayer() {
     player.call = null
 }
 const isPlaying = (row, part) => player.call?.id === row.id && player.part === part && player.playing
+
+// ─── Fenêtre d'un appel : ce qui aide à le juger (cas, déroulé, réseau, appelant et ses autres appels) ──
+const reviewId = ref(null)
+const review = ref(null)
+const reviewError = ref(null)
+const reviewOpen = computed({
+    get: () => reviewId.value !== null,
+    set: (open) => !open && (reviewId.value = null),
+})
+watch(reviewId, async (id) => {
+    review.value = null
+    reviewError.value = null
+    if (id === null) return
+    try {
+        const res = await fetch(`/data/calls-to-review/${id}`, { headers: { Accept: 'application/json' } })
+        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
+        if (reviewId.value === id) review.value = await res.json()
+    } catch (e) {
+        reviewError.value = e.message
+    }
+})
+const ms = (v) => (v == null ? '—' : `${Math.round(v)} ms`)
+const pctOf = (v) => (v == null ? '—' : `${String(Number(v)).replace('.', ',')} %`)
+const dayOf = (iso) => new Date(iso).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: 'numeric' })
 onUnmounted(() => audio?.pause())
 
 </script>
@@ -208,10 +239,11 @@ onUnmounted(() => audio?.pause())
                         empty-message="Aucun appel à vérifier sur la période"
                         :row-class="selectedRowClass"
                         :row-click="openRow"
+                        :row-clickable="hasRecord"
                     >
-                        <!-- Date : lien vers la fiche de l'appel (page /calls/{id}) -->
+                        <!-- Date : ouvre la fenêtre de l'appel -->
                         <template #at="{ row }">
-                            <Link :href="`/calls/${row.id}`" class="text-sm whitespace-nowrap text-gray-700 tabular-nums underline decoration-gray-300 underline-offset-2 hover:text-gray-900" title="Fiche de l'appel" @click.stop>{{ when(row.at) }}</Link>
+                            <button type="button" class="text-sm whitespace-nowrap text-gray-700 tabular-nums underline decoration-gray-300 underline-offset-2 hover:text-gray-900" title="Détail de l'appel" @click.stop="reviewId = row.id">{{ when(row.at) }}</button>
                         </template>
                         <template #agent="{ value }"><span class="text-sm whitespace-nowrap text-gray-900">{{ agentLabel(value) ?? '—' }}</span></template>
                         <template #called="{ value }"><span class="text-sm whitespace-nowrap text-gray-700">{{ calledLabel(value) }}</span></template>
@@ -277,13 +309,7 @@ onUnmounted(() => audio?.pause())
         <!-- Lecteur (même barre que la page Appels) -->
         <div v-if="player.call" class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64">
             <div class="flex items-center gap-3 py-2.5 pr-20 pl-4">
-                <button
-                    type="button"
-                    class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-200"
-                    :disabled="!hasRecord(player.call)"
-                    :title="player.playing ? 'Pause' : 'Lecture'"
-                    @click="play(player.call, player.part)"
-                >
+                <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800" :title="player.playing ? 'Pause' : 'Lecture'" @click="play(player.call, player.part)">
                     <LoaderCircle v-if="player.loading" class="size-4 animate-spin" />
                     <Pause v-else-if="player.playing" class="size-4" />
                     <Play v-else class="ml-0.5 size-4" />
@@ -292,15 +318,12 @@ onUnmounted(() => audio?.pause())
                     <div class="truncate text-sm font-medium text-gray-900">{{ player.call.caller ? formatPhone(player.call.caller) : '—' }} · {{ agentLabel(player.call.agent) ?? '—' }}</div>
                     <div class="truncate text-xs text-gray-500">
                         {{ formatDay(player.call.at) }}, {{ new Date(player.call.at).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }) }}
-                        <template v-if="hasRecord(player.call)"> · {{ player.part === 'transfer' ? 'transfert' : 'conversation agent' }}</template>
+                        · {{ player.part === 'transfer' ? 'transfert' : 'conversation agent' }}
                     </div>
                 </div>
-                <template v-if="hasRecord(player.call)">
-                    <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
-                    <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
-                    <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
-                </template>
-                <p v-else class="min-w-0 flex-1 text-sm text-gray-400">Pas d'enregistrement</p>
+                <span class="w-10 shrink-0 text-right text-xs tabular-nums text-gray-500">{{ formatDuration(player.current) }}</span>
+                <input type="range" min="0" :max="player.duration || 0" step="0.1" :value="player.current" class="min-w-0 flex-1 accent-gray-900" aria-label="Position" @input="seek" />
+                <span class="w-10 shrink-0 text-xs tabular-nums text-gray-500">{{ formatDuration(player.duration) }}</span>
                 <p v-if="player.error" class="shrink-0 text-xs text-red-600">{{ player.error }}</p>
                 <div class="flex shrink-0 items-center gap-1.5">
                     <button
@@ -312,12 +335,91 @@ onUnmounted(() => audio?.pause())
                     >
                         {{ player.part === 'transfer' ? 'Partie agent' : 'Partie transfert' }}
                     </button>
-                    <button v-if="hasRecord(player.call)" type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
-                    <Link :href="`/calls/${player.call.id}`" class="flex h-7 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-700 hover:bg-gray-50"><FileText class="size-3.5" /> Fiche</Link>
+                    <button type="button" class="h-7 w-12 rounded-md border border-gray-200 text-xs tabular-nums text-gray-700 hover:bg-gray-50" title="Vitesse de lecture" @click="cycleRate">{{ String(player.rate).replace('.', ',') }}×</button>
+                    <button type="button" class="flex h-7 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-700 hover:bg-gray-50" @click="reviewId = player.call.id"><FileText class="size-3.5" /> Détail</button>
                     <button type="button" class="flex size-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Fermer le lecteur" @click="closePlayer"><X class="size-4" /></button>
                 </div>
             </div>
         </div>
 
+
+        <!-- Fenêtre d'un appel -->
+        <Dialog v-model:open="reviewOpen">
+            <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+                <DialogHeader>
+                    <DialogTitle>{{ review ? `Appel du ${when(review.call.at)}` : 'Appel' }}</DialogTitle>
+                    <DialogDescription v-if="review">
+                        {{ agentLabel(review.call.agent) ?? 'Sans agent' }} · {{ review.call.caller ? formatPhone(review.call.caller) : 'Appelant inconnu' }} vers {{ calledLabel(review.call.called) }} · Marque : {{ review.call.brand || '—' }}
+                    </DialogDescription>
+                </DialogHeader>
+
+                <p v-if="reviewError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Chargement impossible : {{ reviewError }}</p>
+                <div v-else-if="!review" class="space-y-3">
+                    <div v-for="i in 3" :key="i" class="h-16 animate-pulse rounded bg-gray-50" />
+                </div>
+                <div v-else class="space-y-6">
+                    <!-- Cas : le motif en entier ; pour l'audio, le réseau de l'agent pendant l'appel et sa journée -->
+                    <section>
+                        <h3 class="mb-2 text-sm font-semibold text-gray-900">Cas</h3>
+                        <div class="divide-y divide-gray-50 rounded-lg border border-gray-100">
+                            <div v-for="c in review.call.cases" :key="c.key" class="grid grid-cols-[13rem_1fr] gap-3 px-4 py-3 text-sm">
+                                <span><span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">{{ caseLabel[c.key] }}</span></span>
+                                <div class="space-y-1">
+                                    <p :class="c.key === 'audio' ? qualityClass(c.mos) || 'text-gray-900' : 'text-gray-900'">{{ detailOf(c, review.call) }}</p>
+                                    <template v-if="c.key === 'audio'">
+                                        <p v-if="review.quality" class="text-gray-600">
+                                            Pertes reçues {{ pctOf(review.quality.loss_pct) }} · envoyées {{ pctOf(review.quality.sent_loss_pct) }} · gigue max {{ ms(review.quality.jitter_max_ms) }} · aller-retour {{ ms(review.quality.rtt_avg_ms) }} (max {{ ms(review.quality.rtt_max_ms) }})
+                                        </p>
+                                        <p v-if="review.agentDay" class="text-gray-600">
+                                            {{ agentLabel(review.call.agent) }} ce jour-là : {{ review.agentDay.bad }} appel{{ review.agentDay.bad > 1 ? 's' : '' }} en audio mauvais sur {{ review.agentDay.measured }} mesurés, note moyenne {{ formatQuality(review.agentDay.mos) }}
+                                        </p>
+                                    </template>
+                                    <p v-if="c.key === 'against'" class="text-gray-600">Durée du transfert : {{ formatDuration(review.call.duration_transfer) }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Déroulé -->
+                    <section>
+                        <h3 class="mb-2 text-sm font-semibold text-gray-900">Déroulé</h3>
+                        <dl class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border border-gray-100 px-4 py-3 text-sm">
+                            <div><dt class="inline text-gray-500">Durée totale</dt> <dd class="ml-1 inline tabular-nums text-gray-900">{{ formatDuration(review.call.total_duration) }}</dd></div>
+                            <div><dt class="inline text-gray-500">Avec l'agent</dt> <dd class="ml-1 inline tabular-nums text-gray-900">{{ formatDuration(review.call.duration_agent) }}</dd></div>
+                            <div><dt class="inline text-gray-500">Transfert</dt> <dd class="ml-1 inline tabular-nums text-gray-900">{{ formatDuration(review.call.duration_transfer) }}</dd></div>
+                            <div><dt class="inline text-gray-500">Raccroché par</dt> <dd class="ml-1 inline text-gray-900">{{ WHO_HANGUP[review.call.who_hangup] ?? '—' }}</dd></div>
+                        </dl>
+                    </section>
+
+                    <!-- Appelant : liste noire, ses autres appels (les plus récents) avec leurs cas -->
+                    <section>
+                        <h3 class="mb-2 text-sm font-semibold text-gray-900">
+                            Appelant <span class="ml-1 font-normal text-gray-500">{{ review.callerTotal.toLocaleString('fr-FR') }} appel{{ review.callerTotal > 1 ? 's' : '' }} au total</span>
+                        </h3>
+                        <p v-if="review.blacklist" class="mb-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            Sur liste noire depuis le {{ dayOf(review.blacklist.created_at) }}<template v-if="review.blacklist.note"> : {{ review.blacklist.note }}</template><template v-if="review.blacklist.source"> ({{ review.blacklist.source }})</template>
+                        </p>
+                        <div class="rounded-lg border border-gray-100">
+                            <DataTable :columns="historyColumns" :rows="review.history" empty-message="Aucun autre appel de ce numéro">
+                                <template #at="{ row }"><span class="text-sm whitespace-nowrap text-gray-700 tabular-nums">{{ dayOf(row.at) }} {{ when(row.at).slice(-5) }}</span></template>
+                                <template #agent="{ value }"><span class="text-sm whitespace-nowrap text-gray-900">{{ agentLabel(value) ?? '—' }}</span></template>
+                                <template #brand="{ value }"><span class="text-sm text-gray-700">{{ value || '—' }}</span></template>
+                                <template #duration_agent="{ value }"><span class="text-sm text-gray-700 tabular-nums">{{ formatDuration(value) }}</span></template>
+                                <template #cases="{ row }">
+                                    <div class="flex flex-wrap gap-1">
+                                        <span v-for="c in row.cases" :key="c.key" class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-medium whitespace-nowrap text-gray-700" :title="detailOf(c, row)">{{ caseLabel[c.key] }}</span>
+                                        <span v-if="!row.cases.length" class="text-sm text-gray-400">—</span>
+                                    </div>
+                                </template>
+                            </DataTable>
+                        </div>
+                    </section>
+                </div>
+
+                <DialogFooter v-if="review">
+                    <Button variant="outline" as-child><Link :href="`/calls/${review.call.id}`">Ouvrir la page de l'appel</Link></Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </AppLayout>
 </template>
