@@ -289,7 +289,13 @@ onUnmounted(() => audio?.pause())
         </div>
 
         <!-- Lecteur (même barre que la page Appels) -->
-        <div v-if="player.call" data-player class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64">
+        <!-- Fenêtre ouverte : le lecteur passe devant son fond sombre et reste cliquable (la fenêtre bloque le reste de la page) -->
+        <div
+            v-if="player.call"
+            data-player
+            class="fixed inset-x-0 bottom-0 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64"
+            :class="reviewOpen ? 'pointer-events-auto z-[60]' : 'z-40'"
+        >
             <div class="flex items-center gap-3 py-2.5 pr-20 pl-4">
                 <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800" :title="player.playing ? 'Pause' : 'Lecture'" @click="play(player.call, player.part)">
                     <LoaderCircle v-if="player.loading" class="size-4 animate-spin" />
@@ -326,9 +332,10 @@ onUnmounted(() => audio?.pause())
 
 
         <!-- Fenêtre d'un appel -->
-        <!-- Non bloquante (modal=false) : le lecteur en bas reste utilisable, et un clic dessus ne ferme pas la fenêtre -->
-        <Dialog v-model:open="reviewOpen" :modal="false">
-            <DialogContent class="max-h-[calc(100vh-10rem)] overflow-y-auto shadow-2xl sm:max-w-4xl" @interact-outside="keepOpenForPlayer">
+        <!-- Fenêtre avec son fond sombre ; le lecteur reste devant et utilisable, un clic dessus ne ferme pas la fenêtre.
+             Hauteur limitée pour ne pas passer sous le lecteur -->
+        <Dialog v-model:open="reviewOpen">
+            <DialogContent class="max-h-[calc(100vh-10rem)] overflow-y-auto sm:max-w-4xl" @interact-outside="keepOpenForPlayer">
                 <DialogHeader>
                     <DialogTitle>{{ review ? `Appel du ${when(review.call.at)}` : 'Appel' }}</DialogTitle>
                     <DialogDescription v-if="review" as="div" class="flex items-center gap-4">
