@@ -9,11 +9,7 @@ import { Input } from '@/components/ui/input'
  * v-model = [{ name, source, checked }]
  */
 const options = defineModel({ type: Array, required: true })
-const props = defineProps({ id: { type: String, required: true }, brandName: { type: String, default: '' } })
-
-// Le nom de la marque lui-même n'est pas proposé comme autre nom (le serveur l'ignorerait de toute façon)
-const key = (s) => s.normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase()
-const isBrandName = (o) => !!props.brandName.trim() && key(o.name) === key(props.brandName)
+defineProps({ id: { type: String, required: true } })
 
 const extra = ref('')
 function add() {
@@ -27,7 +23,7 @@ function add() {
 
 <template>
     <div class="space-y-2">
-        <label v-for="(o, i) in options" v-show="!isBrandName(o)" :key="o.name" class="flex items-center gap-2 text-sm">
+        <label v-for="(o, i) in options" :key="o.name" class="flex items-center gap-2 text-sm">
             <Checkbox :model-value="o.checked" @update:model-value="options[i].checked = !!$event" />
             <span class="text-gray-900">{{ o.name }}</span>
             <span class="text-gray-500">{{ o.source }}</span>

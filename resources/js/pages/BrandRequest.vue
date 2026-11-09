@@ -30,22 +30,22 @@ const props = defineProps({ nameKey: String, types: Array })
 
 const data = ref(null)
 const error = ref(null)
-// Autres noms à ajouter à la marque : même champ que la fiche marque (un par ligne)
-// Autres noms : un champ pour la marque créée, un pour la marque existante associée (préremplis avec les noms tapés)
-const aliasOptions = ref([])
+// Autres noms : pour la marque créée, le même champ que la fiche marque (un par ligne), prérempli avec les noms proposés cochés ;
+// pour la marque existante associée, une case par nom proposé
+const aliasesText = ref('')
 const linkAliasOptions = ref([])
+const nameKey = (n) => n.normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase()
 async function load() {
     try {
         const res = await fetch(`/data/brand-requests/${props.nameKey}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
         data.value = await res.json()
         error.value = null
-        // Préremplis avec tous les noms tapés, un par ligne (ceux qui sont déjà le nom ou un autre nom de la marque sont ignorés à l'enregistrement)
-        // Même proposition pour l'association et la création, chacune modifiable de son côté
-        aliasOptions.value = data.value.aliasOptions.map((o) => ({ ...o }))
         linkAliasOptions.value = data.value.aliasOptions.map((o) => ({ ...o }))
         // Nom de la marque : celui compris dans l'appel s'il existe, sinon le nom tapé
         if (!form.name) form.name = data.value.heard.main ?? titleCase(data.value.name ?? '')
+        // Autres noms de la marque créée : les noms proposés cochés, sauf le nom de la marque lui-même
+        aliasesText.value = data.value.aliasOptions.filter((o) => o.checked && nameKey(o.name) !== nameKey(form.name)).map((o) => o.name).join('\n')
     } catch (e) {
         error.value = e.message
     }
@@ -168,7 +168,7 @@ onUnmounted(() => audio?.pause())
 
 // ─── Noms tapés → autres noms de la marque ────────────────────────────────────
 const checkedNames = (opts) => opts.filter((o) => o.checked).map((o) => o.name)
-const aliases = computed(() => checkedNames(aliasOptions.value))
+const aliases = computed(() => aliasesText.value.split('\n').map((n) => n.trim()).filter(Boolean))
 const ids = computed(() => data.value?.calls.map((c) => c.id) ?? [])
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -424,8 +424,8 @@ async function ignore(goNext) {
                                     <a :href="googleUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-gray-500 underline hover:text-gray-900">Chercher le service client sur Google <ExternalLink class="h-3.5 w-3.5" /></a>
                                 </div>
                                 <div class="space-y-2 md:col-span-2">
-                                    <Label>Autres noms</Label>
-                                    <AliasPicker id="br-aliases" v-model="aliasOptions" :brand-name="form.name" />
+                                    <Label for="br-aliases">Autres noms</Label>
+                                    <Textarea id="br-aliases" v-model="aliasesText" rows="2" placeholder="Un nom par ligne" />
                                     <p class="text-sm text-gray-500">Noms sous lesquels les agents cherchent aussi la marque dans le softphone.</p>
                                 </div>
                                 <div class="space-y-2">
