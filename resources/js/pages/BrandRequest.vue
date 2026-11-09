@@ -95,6 +95,7 @@ function play(row) {
         audio.paused ? audio.play() : audio.pause()
         return
     }
+    selectedId.value = row.id
     Object.assign(player, { call: row, current: 0, duration: 0, error: null, loading: true })
     audio.src = row.record
     audio.playbackRate = player.rate
@@ -114,23 +115,31 @@ function playAt(row, seconds) {
     audio.currentTime = seconds
     audio.play().catch(() => {})
 }
-// Transcription affichée : celle de l'appel ouvert dans le lecteur
-const transcriptCall = computed(() => player.call ?? null)
-// Réplique en cours de lecture : la dernière commencée
+// Transcription affichée : celle de l'appel sélectionné dans le tableau (le premier à l'ouverture), sans dépendre de la lecture
+const selectedId = ref(null)
+const transcriptCall = computed(() => {
+    const calls = data.value?.calls ?? []
+    return calls.find((c) => c.id === selectedId.value) ?? calls[0] ?? null
+})
+const selectedRowClass = (row) => (row.id === transcriptCall.value?.id ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+// Réplique en cours de lecture : la dernière commencée (seulement si l'appel lu est celui affiché)
 const currentLine = computed(() => {
+    if (player.call?.id !== transcriptCall.value?.id) return -1
     const lines = transcriptCall.value?.transcript ?? []
     let index = -1
     lines.forEach((l, i) => l.s <= player.current + 0.2 && (index = i))
     return index
 })
 const isMarkLine = (row, line) => row.audio_at != null && Math.abs(line.s - row.audio_at) < 0.05
-// À l'ouverture, la réplique du nom est amenée dans la zone visible de la transcription
+// À l'affichage d'une transcription, la réplique du nom est centrée dans sa zone, sans faire défiler la page
 const transcriptBox = ref(null)
 watch(
-    () => player.call?.id,
+    () => transcriptCall.value?.id,
     async () => {
         await nextTick()
-        transcriptBox.value?.querySelector('[data-mark]')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        const box = transcriptBox.value
+        const mark = box?.querySelector('[data-mark]')
+        box && (box.scrollTop = mark ? mark.offsetTop - (box.clientHeight - mark.offsetHeight) / 2 : 0)
     },
 )
 function skip(seconds) {
@@ -284,7 +293,7 @@ async function ignore() {
                     Appels <span class="ml-1 font-normal tabular-nums text-gray-400">{{ data?.calls.length ?? '' }}</span>
                 </h2>
                 <div class="rounded-lg border border-gray-100 bg-white">
-                    <DataTable :columns="callColumns" :rows="data?.calls ?? []" :loading="!data && !error" empty-message="Aucun appel à traiter">
+                    <DataTable :columns="callColumns" :rows="data?.calls ?? []" :loading="!data && !error" empty-message="Aucun appel à traiter" :row-class="selectedRowClass" :row-click="(row) => (selectedId = row.id)">
                         <template #at="{ value }"><span class="text-sm whitespace-nowrap text-gray-700">{{ date(value) }}</span></template>
                         <template #called="{ value }"><span class="text-sm text-gray-700">{{ value || '-' }}</span></template>
                         <template #caller="{ value }"><span class="font-mono text-sm text-gray-600">{{ value || '-' }}</span></template>
@@ -308,7 +317,7 @@ async function ignore() {
                 </div>
             </section>
 
-            <!-- ─── Transcription de l'appel ouvert dans le lecteur ─── -->
+            <!-- ─── Transcription de l'appel sélectionné ─── -->
             <section v-if="transcriptCall">
                 <h2 class="mb-2 text-sm font-semibold text-gray-900">
                     Transcription <span class="ml-1 font-normal text-gray-500">{{ date(transcriptCall.at) }} · {{ transcriptCall.agent || '—' }} · nom tapé « {{ transcriptCall.name }} »</span>
@@ -316,7 +325,7 @@ async function ignore() {
                 <div class="rounded-lg border border-gray-100 bg-white">
                     <p v-if="transcriptCall.transcript === null" class="px-4 py-3 text-sm text-gray-500">Transcription pas encore disponible</p>
                     <p v-else-if="!transcriptCall.transcript.length" class="px-4 py-3 text-sm text-gray-500">Pas de transcription</p>
-                    <div v-else ref="transcriptBox" class="max-h-96 divide-y divide-gray-50 overflow-y-auto">
+                    <div v-else ref="transcriptBox" class="relative max-h-96 divide-y divide-gray-50 overflow-y-auto">
                         <button
                             v-for="(line, i) in transcriptCall.transcript"
                             :key="i"
