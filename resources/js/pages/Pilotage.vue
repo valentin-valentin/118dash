@@ -150,8 +150,8 @@ const NOT_MEASURED = { text: 'non mesuré', muted: true }
 // ─── 1. Devenir des appels ────────────────────────────────────────────────────
 const REAL_WAITS = ['en moins de 30 s', 'de 30 s à 1 min', 'de 1 à 2 min', 'de 2 à 5 min', 'après plus de 5 min']
 const ANSWER_WAITS = ['en moins de 30 s', 'de 30 s à 1 min', 'de 1 à 3 min', 'de 3 à 5 min', 'de 5 à 8 min', 'après plus de 8 min']
-// Quatre petits tableaux côte à côte (notre serveur, Voxnode, ensemble) : vue générale, puis le détail des décrochés,
-// des perdus et des attentes mesurées
+// Quatre petits tableaux côte à côte (notre serveur, Voxnode, ensemble) : vue générale, puis le détail des perdus,
+// des décrochés (attente totale et vraie attente d'un agent) et de l'attente forcée
 const fateGroups = computed(() => {
     const F = data.value?.fate
     if (!F) return []
@@ -192,6 +192,8 @@ const fateGroups = computed(() => {
                 { label: 'médiane', cell: (x) => ({ text: mmss(x.lostWaitMedianSec) }) },
             ],
         },
+        // Décrochés : les deux attentes, sur le même modèle (répartition, puis moyenne et médiane) ; la vraie attente
+        // (sans l'accueil ni l'attente forcée) seulement sur les décrochés où elle est mesurée
         {
             title: 'Décrochés',
             rows: [
@@ -199,29 +201,32 @@ const fateGroups = computed(() => {
                 ...ANSWER_WAITS.map((label, i) => ({ label, cell: (x) => ({ text: fmt(x.answeredByWait?.[i]?.calls ?? 0), pct: pct(x.answeredByWait?.[i]?.calls ?? 0, x.answered) }) })),
                 { label: 'moyenne', sep: true, cell: (x) => ({ text: mmss(x.answerWaitAvgSec) }) },
                 { label: 'médiane', cell: (x) => ({ text: mmss(x.answerWaitMedianSec) }) },
-            ],
-        },
-        {
-            title: 'Attentes mesurées',
-            rows: [
-                { heading: 'Attente forcée faite (y compris ceux qui raccrochent pendant)' },
-                { label: 'moyenne', cell: (x) => (x.forcedWaitAvgSec == null ? NOT_MEASURED : { text: mmss(x.forcedWaitAvgSec) }) },
-                { label: 'médiane', cell: (x) => (x.forcedWaitMedianSec == null ? NOT_MEASURED : { text: mmss(x.forcedWaitMedianSec) }) },
-                { heading: "Vraie attente d'un agent, après l'attente forcée" },
-                { label: 'moyenne', cell: real((x) => ({ text: mmss(x.realWaitAvgSec) })) },
-                { label: 'médiane', cell: real((x) => ({ text: mmss(x.realWaitMedianSec) })) },
-                // Répartition complète de la vraie attente des décrochés mesurés (100 %) ; un seul « non mesuré » par colonne
+                { heading: "Vraie attente d'un agent, sans l'accueil ni l'attente forcée" },
+                // Répartition complète des décrochés mesurés (100 %) ; un seul « non mesuré » par colonne
                 ...REAL_WAITS.map((label, i) => ({
                     label,
-                    sep: i === 0,
                     cell: (x) =>
                         x.realWaitMeasured
                             ? { text: fmt(x.realWaitByWait?.[i]?.calls ?? 0), pct: pct(x.realWaitByWait?.[i]?.calls ?? 0, x.realWaitMeasured) }
                             : { text: i === 0 ? 'non mesuré' : '', muted: true },
                 })),
+                { label: 'moyenne', sep: true, cell: real((x) => ({ text: mmss(x.realWaitAvgSec) })) },
+                { label: 'médiane', cell: real((x) => ({ text: mmss(x.realWaitMedianSec) })) },
+            ],
+        },
+        {
+            title: 'Attente forcée',
+            rows: [
+                { heading: 'Faite, y compris par ceux qui raccrochent pendant' },
+                { label: 'moyenne', cell: (x) => (x.forcedWaitAvgSec == null ? NOT_MEASURED : { text: mmss(x.forcedWaitAvgSec) }) },
+                { label: 'médiane', cell: (x) => (x.forcedWaitMedianSec == null ? NOT_MEASURED : { text: mmss(x.forcedWaitMedianSec) }) },
             ],
         },
     ]
+})
+const fateColumns = computed(() => {
+    const by = Object.fromEntries(fateGroups.value.map((g) => [g.title, g]))
+    return [[by['Appels'], by['Perdus'], by['Attente forcée']].filter(Boolean), [by['Décrochés']].filter(Boolean)]
 })
 const outsideHours = computed(() => data.value?.fate?.outsideHours ?? null)
 
@@ -672,8 +677,10 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                             Devenir des appels <span class="ml-1 font-normal text-gray-500">Pendant les horaires d'ouverture · attentes comptées depuis l'arrivée de l'appel<template v-if="data.team !== 'all'"> · appels : tout le centre d'appels, agents : {{ teamName }}</template></span>
                         </h2>
                         <div>
+                            <!-- Deux colonnes de hauteur proche : Appels, Perdus et Attente forcée à gauche, Décrochés (le plus long) à droite -->
                             <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-                                <div v-for="g in fateGroups" :key="g.title" class="mini">
+                                <div v-for="(column, ci) in fateColumns" :key="ci" class="space-y-4">
+                                <div v-for="g in column" :key="g.title" class="mini">
                                     <table>
                                         <thead>
                                             <tr>
@@ -702,6 +709,7 @@ const daysUnknown = computed(() => periodRows.value.some((d) => (d.lostUnknown ?
                                             </template>
                                         </tbody>
                                     </table>
+                                </div>
                                 </div>
                             </div>
                             <p v-if="data.fate.all?.lostMeasuredPct != null" class="legend">
