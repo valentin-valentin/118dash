@@ -119,3 +119,15 @@ export function formatPhone(number) {
     const short = String(number).match(/^\+33(\d{1,8})$/)
     return short ? short[1] : number
 }
+
+// Numéro saisi ou collé au format international : « 01 70 81 46 02 » → +33170814602, « 0033 1… » → +331…,
+// « +33 (0)1 70… » → +33170… ; laissé tel quel si ce n'est pas un numéro (lettres, vide)
+export function toInternational(input) {
+    const raw = String(input ?? '').trim()
+    if (!raw || /[a-z]/i.test(raw)) return raw
+    const d = raw.replace(/\(0\)/g, '').replace(/[^\d+]/g, '')
+    if (d.startsWith('+')) return d
+    if (d.startsWith('00')) return `+${d.slice(2)}`
+    if (/^0\d{9}$/.test(d)) return `+33${d.slice(1)}`
+    return d
+}

@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ExternalLink, LoaderCircle, Pause, Phone, Play, X } from 'lucide-vue-next'
-import { formatDuration } from '@/lib/calls'
+import { formatDuration, toInternational } from '@/lib/calls'
 import { call as softphoneCall } from '@/composables/useSoftphone'
 import { refreshBrandRequests } from '@/composables/useBrandRequests'
 import { xsrfToken } from '@/lib/csrf'
@@ -222,14 +222,9 @@ const rowClass = (id) => (chosenId.value === id ? 'shadow-[inset_2px_0_0_var(--c
 const COUNTRY = { 33: 'FR', 32: 'BE', 49: 'DE' }
 const form = reactive({ name: '', phone: '', country: 'FR', type: 'service', canTransfer: true, note: '', scenario: '' })
 // Numéro saisi librement (01 23…, 0033…, +33…) → +33…
-const phonenumber = computed(() => {
-    const d = form.phone.replace(/[^\d+]/g, '')
-    if (!d) return ''
-    if (d.startsWith('+')) return d
-    if (d.startsWith('00')) return `+${d.slice(2)}`
-    if (d.startsWith('0')) return `+33${d.slice(1)}`
-    return d
-})
+const phonenumber = computed(() => toInternational(form.phone))
+// Numéro collé ou saisi : remis au format international dans le champ, dès le collage et en quittant le champ
+const formatPhoneField = () => setTimeout(() => (form.phone = toInternational(form.phone)))
 const phoneValid = computed(() => !phonenumber.value || /^\+(33|32|49)\d{8,11}$/.test(phonenumber.value))
 const premium = computed(() => /^\+3389/.test(phonenumber.value))
 // Pays déduit du numéro (modifiable)
@@ -430,7 +425,7 @@ async function ignore(goNext) {
                                 <div class="space-y-2">
                                     <Label for="br-phone">Numéro de transfert</Label>
                                     <div class="flex items-center gap-2">
-                                        <Input id="br-phone" v-model="form.phone" placeholder="+33123456789" class="tabular-nums" />
+                                        <Input id="br-phone" v-model="form.phone" placeholder="+33123456789" class="tabular-nums" @paste="formatPhoneField" @blur="formatPhoneField" />
                                         <Button v-if="phonenumber && phoneValid" type="button" size="sm" variant="outline" @click="softphoneCall(phonenumber)"><Phone class="mr-2 h-4 w-4" />Appeler</Button>
                                     </div>
                                     <p v-if="phonenumber && phoneValid && phonenumber !== form.phone.trim()" class="text-sm tabular-nums text-gray-500">{{ phonenumber }}</p>

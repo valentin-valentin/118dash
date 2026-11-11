@@ -5,7 +5,7 @@ import { ArrowLeft } from 'lucide-vue-next'
 import AppLayout from '@/layouts/AppLayout.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
-import { formatPhone } from '@/lib/calls'
+import { formatPhone, toInternational } from '@/lib/calls'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,9 @@ const props = defineProps({
 })
 
 const isEdit = computed(() => !!props.brand)
+
+// Numéro collé ou saisi (« 01 70 81 46 02 ») : remis au format international dans le champ, dès le collage et en quittant le champ
+const formatPhoneField = () => setTimeout(() => (form.phonenumber = toInternational(form.phonenumber)))
 const b = props.brand ?? {}
 
 const form = useForm({
@@ -107,7 +110,15 @@ function submit() {
                         </div>
                         <div class="space-y-2">
                             <Label for="phonenumber">Numéro de transfert</Label>
-                            <Input id="phonenumber" v-model="form.phonenumber" placeholder="+33123456789" class="tabular-nums" :class="{ 'border-red-500': form.errors.phonenumber }" />
+                            <Input
+                                id="phonenumber"
+                                v-model="form.phonenumber"
+                                placeholder="+33123456789"
+                                class="tabular-nums"
+                                :class="{ 'border-red-500': form.errors.phonenumber }"
+                                @paste="formatPhoneField"
+                                @blur="formatPhoneField"
+                            />
                             <p v-if="form.errors.phonenumber" class="text-sm text-red-600">{{ form.errors.phonenumber }}</p>
                         </div>
                         <div class="space-y-2">
