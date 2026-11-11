@@ -87,7 +87,7 @@ class BrandRequestController extends Controller
                 // Marque existante dont le nom (ou un autre nom) est exactement un nom compris dans l'appel
                 'exists' => $this->heardMatches($heard['all'], $brands)->first(),
             ];
-        })->sortBy(fn ($i) => [-$i['calls'], $i['last_at']])->values(); // plus d'appels d'abord, puis la plus ancienne
+        })->sortBy(fn ($i) => [-$i['calls'], $i['last_at'], (string) $i['key']])->values(); // plus d'appels d'abord, puis la plus ancienne
 
         return response()->json(['items' => $items]);
     }
@@ -123,9 +123,14 @@ class BrandRequestController extends Controller
             ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
         ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
 
-        // Demande suivante : la première de la liste « À traiter » (même ordre) après celle-ci
-        $next = $this->requests()->where('status', 'pending')->where('name_key', '!=', $key)
-            ->groupBy('name_key')->orderByRaw('COUNT(*) DESC, MAX(created_at) ASC')->value('name_key');
+        // Demande suivante : celle qui suit celle-ci dans la liste « À traiter » (même ordre), pas la première de la liste
+        // (celles qu'on a laissées de côté plus haut restent pour plus tard) ; après la dernière, on repart du début
+        $order = $this->requests()->where('status', 'pending')
+            ->groupBy('name_key')->orderByRaw('COUNT(*) DESC, MAX(created_at) ASC, name_key ASC')->pluck('name_key')
+            ->map(fn ($k) => (string) $k)->values();
+        $position = $order->search((string) $key);
+        $others = $order->reject(fn ($k) => $k === (string) $key)->values();
+        $next = $position === false ? $others->first() : ($order->slice($position + 1)->first() ?? $others->first());
 
         return response()->json([
             'key' => $key,

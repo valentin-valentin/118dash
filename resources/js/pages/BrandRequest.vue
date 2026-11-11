@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { Head, Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
-import AliasPicker from '@/components/AliasPicker.vue'
 import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -30,10 +29,10 @@ const props = defineProps({ nameKey: String, types: Array })
 
 const data = ref(null)
 const error = ref(null)
-// Autres noms : pour la marque créée, le même champ que la fiche marque (un par ligne), prérempli avec tous les noms proposés ;
-// pour la marque existante associée, une case par nom proposé
+// Autres noms : le même champ que la fiche marque (un par ligne), un pour la marque créée et un pour la marque existante
+// associée, chacun prérempli avec tous les noms proposés et modifiable de son côté
 const aliasesText = ref('')
-const linkAliasOptions = ref([])
+const linkAliasesText = ref('')
 const nameKey = (n) => String(n).normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase()
 async function load() {
     try {
@@ -41,7 +40,7 @@ async function load() {
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
         data.value = await res.json()
         error.value = null
-        linkAliasOptions.value = data.value.aliasOptions.map((o) => ({ ...o }))
+        linkAliasesText.value = data.value.aliasOptions.map((o) => o.name).join('\n')
         // Nom de la marque : celui compris dans l'appel s'il existe, sinon le nom tapé
         if (!form.name) form.name = data.value.heard.main ?? titleCase(data.value.name ?? '')
         // Autres noms de la marque créée : tous les noms proposés, sauf le nom de la marque lui-même
@@ -167,8 +166,8 @@ const isPlaying = (row) => player.call?.id === row.id && player.playing
 onUnmounted(() => audio?.pause())
 
 // ─── Noms tapés → autres noms de la marque ────────────────────────────────────
-const checkedNames = (opts) => opts.filter((o) => o.checked).map((o) => o.name)
-const aliases = computed(() => aliasesText.value.split('\n').map((n) => n.trim()).filter(Boolean))
+const lines = (text) => text.split('\n').map((n) => n.trim()).filter(Boolean)
+const aliases = computed(() => lines(aliasesText.value))
 const ids = computed(() => data.value?.calls.map((c) => c.id) ?? [])
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -202,7 +201,7 @@ function after(goNext) {
 }
 async function link(goNext) {
     if (!chosenId.value) return
-    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: chosenId.value, aliases: checkedNames(linkAliasOptions.value) })) after(goNext)
+    if (await post('/data/brand-requests/link', { ids: ids.value, brand_id: chosenId.value, aliases: lines(linkAliasesText.value) })) after(goNext)
 }
 // Marque à associer : une ligne cliquée (sélectionnée comme une ligne de tableau), ou celle cherchée dans « Une autre marque »
 const chosenId = ref(null)
@@ -363,8 +362,8 @@ async function ignore(goNext) {
                         </CardHeader>
                         <CardContent class="space-y-3">
                             <div class="space-y-2 pb-2">
-                                <Label>Autres noms ajoutés à la marque associée</Label>
-                                <AliasPicker id="br-link-aliases" v-model="linkAliasOptions" />
+                                <Label for="br-link-aliases">Autres noms ajoutés à la marque associée</Label>
+                                <Textarea id="br-link-aliases" v-model="linkAliasesText" :rows="Math.max(2, linkAliasesText.split('\n').length)" placeholder="Un nom par ligne" />
                                 <p class="text-sm text-gray-500">Ceux que la marque a déjà ne sont pas ajoutés en double.</p>
                             </div>
                             <!-- La transcription donne exactement le nom (ou un autre nom) d'une marque existante : en premier -->
