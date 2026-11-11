@@ -13,6 +13,9 @@ class CallController extends Controller
 {
     private const TZ = 'Europe/Paris';
 
+    // Service interne (Backup) : fin du numéro composé (calls.brand_phonenumber)
+    private const BACKUP_NUMBER = '184131572';
+
     public function index(): Response
     {
         return Inertia::render('Calls', ['centers' => $this->centersForDisplay()]);
@@ -183,6 +186,9 @@ class CallController extends Controller
                 'answered' => $query->where('duration_agent', '>', 0),
                 'lost' => $query->where(fn ($q) => $q->whereNull('duration_agent')->orWhere('duration_agent', '<=', 0)),
                 'transferred' => $query->where('duration_transfer', '>', 0),
+                // Un transfert vers Backup garde le nom de la marque demandée : seul le numéro composé les distingue
+                'to_brand' => $query->where('duration_transfer', '>', 0)->where(fn ($q) => $q->whereNull('brand_phonenumber')->orWhereRaw('RIGHT(brand_phonenumber, 9) <> ?', [self::BACKUP_NUMBER])),
+                'to_backup' => $query->where('duration_transfer', '>', 0)->whereRaw('RIGHT(brand_phonenumber, 9) = ?', [self::BACKUP_NUMBER]),
                 default => null,
             };
         }

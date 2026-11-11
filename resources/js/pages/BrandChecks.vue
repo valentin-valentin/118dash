@@ -14,7 +14,7 @@ import { agentLabel, formatDateTime, formatDuration, formatPhone, platformLabel 
 /**
  * Vérifier les transferts (page Marques) : marques dont les transferts durent anormalement peu.
  * Une seule mesure : la médiane de la durée réelle des transferts, sur 30 jours par défaut, ou 7 (au moins 5 transferts mesurés).
- * Seules les marques sous le seuil sont listées, la plus basse en premier ; les 10 derniers transferts s'écoutent en un clic.
+ * Seules les marques sous le seuil sont listées, la plus basse en premier ; les 10 derniers transferts et les 5 plus longs (hors ces derniers) s'écoutent en un clic.
  * À l'ouverture, la page mesure d'abord les transferts pas encore mesurés (taille de chaque enregistrement).
  */
 const xsrf = () => decodeURIComponent(document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '')
@@ -270,7 +270,7 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
                                 <th class="cursor-pointer px-2 py-2 text-right font-medium tracking-wide select-none hover:text-gray-700" @click="toggleSort('measured')">
                                     Transferts mesurés<template v-if="sort.key === 'measured'"> {{ sort.dir === 'asc' ? '↑' : '↓' }}</template>
                                 </th>
-                                <th class="px-2 py-2 font-medium tracking-wide">10 derniers transferts</th>
+                                <th class="px-2 py-2 font-medium tracking-wide">Transferts à écouter</th>
                                 <th class="px-4 py-2" />
                             </tr>
                         </thead>
@@ -302,9 +302,10 @@ const formatDay = (v) => new Date(v).toLocaleDateString('fr-FR', { day: '2-digit
                                 <td class="px-2 py-2.5 text-right font-medium tabular-nums text-gray-900">{{ formatDuration(b.median) }}</td>
                                 <td class="px-2 py-2.5 text-right tabular-nums text-gray-700">{{ b.measured }}</td>
                                 <td class="px-2 py-2.5">
-                                    <div class="flex flex-wrap gap-1">
+                                    <div v-for="group in [{ label: 'Derniers', items: b.last }, { label: 'Plus longs', items: b.longest ?? [] }].filter((g) => g.items.length)" :key="group.label" class="mt-1.5 flex flex-wrap items-center gap-1 first:mt-0">
+                                        <span class="w-16 shrink-0 text-xs text-gray-400">{{ group.label }}</span>
                                         <!-- Reste affichée quand on clique pour écouter -->
-                                        <Tooltip v-for="t in b.last" :key="t.id" disable-closing-trigger>
+                                        <Tooltip v-for="t in group.items" :key="t.id" disable-closing-trigger>
                                             <TooltipTrigger as-child>
                                                 <button
                                                     type="button"

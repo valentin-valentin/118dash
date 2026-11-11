@@ -55,6 +55,8 @@ const OUTCOMES = [
     { value: 'answered', label: 'Décrochés par un agent' },
     { value: 'lost', label: 'Non décrochés' },
     { value: 'transferred', label: 'Transférés' },
+    { value: 'to_brand', label: 'Transférés vers la marque' },
+    { value: 'to_backup', label: 'Transférés vers Backup' },
 ]
 const DEFAULTS = {
     caller: '',
@@ -512,7 +514,11 @@ const COLUMNS = [
                                     <ColorBadge v-if="row.source ?? row.phonenumber?.source" :color="(row.source ?? row.phonenumber.source).color" :label="(row.source ?? row.phonenumber.source).name" />
                                     <span v-else class="text-xs text-gray-400">-</span>
                                 </td>
-                                <td class="px-1.5 py-1.5 text-gray-900">{{ row.brand_name || '-' }}</td>
+                                <td class="px-1.5 py-1.5 text-gray-900">
+                                    {{ row.brand_name || '-' }}
+                                    <!-- Transféré au service interne : le nom reste celui de la marque demandée -->
+                                    <div v-if="row.duration_transfer > 0 && String(row.brand_phonenumber ?? '').endsWith('184131572')" class="text-xs text-gray-400">via Backup</div>
+                                </td>
                                 <td class="px-1.5 py-1.5 whitespace-nowrap">
                                     <div class="text-xs text-gray-900">{{ agentLabel(row.agent_name) ?? '-' }}</div>
                                     <div v-if="centerOf(row.agent_name, centers)" class="text-xs text-gray-400">{{ centerOf(row.agent_name, centers).label }}</div>

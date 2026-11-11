@@ -46,6 +46,9 @@ class BrandCheckController extends Controller
 
     private const LAST_TRANSFERS = 10;
 
+    // Les plus longs de la période en plus des derniers : ce que donne le numéro quand il marche
+    private const LONGEST_TRANSFERS = 5;
+
     private const MEASURE_BATCH = 300;
 
     public function index(): Response
@@ -163,25 +166,32 @@ class BrandCheckController extends Controller
                 'durations' => [],
                 'durations_after_check' => [],
                 'last' => [],
+                'longest' => [],
             ];
             $brands[$key]['durations'][] = $real;
             if ($checkedAt && $r->ts > strtotime($checkedAt . ' UTC')) {
                 $brands[$key]['durations_after_check'][] = $real;
             }
+            $transfer = fn () => [
+                'id' => $r->id,
+                'called_at' => $r->called_at,
+                'seconds' => $real,
+                // Fichier Voxnode absent (mesuré 0 s) : rien à écouter
+                'record_transfer' => $r->record_transfer && !($real === 0 && $r->platform !== 'selfhosted') ? $r->record_transfer : null,
+                'caller' => $r->caller,
+                'agent_name' => $r->agent_name,
+                'duration_agent' => (int) $r->duration_agent,
+                'platform' => $r->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
+                'who_hangup' => $r->who_hangup ?: null,
+                'dialed' => $r->brand_phonenumber,
+            ];
             if (count($brands[$key]['last']) < self::LAST_TRANSFERS) {
-                $brands[$key]['last'][] = [
-                    'id' => $r->id,
-                    'called_at' => $r->called_at,
-                    'seconds' => $real,
-                    // Fichier Voxnode absent (mesuré 0 s) : rien à écouter
-                    'record_transfer' => $r->record_transfer && !($real === 0 && $r->platform !== 'selfhosted') ? $r->record_transfer : null,
-                    'caller' => $r->caller,
-                    'agent_name' => $r->agent_name,
-                    'duration_agent' => (int) $r->duration_agent,
-                    'platform' => $r->platform === 'selfhosted' ? 'selfhosted' : 'voxnode',
-                    'who_hangup' => $r->who_hangup ?: null,
-                    'dialed' => $r->brand_phonenumber,
-                ];
+                $brands[$key]['last'][] = $transfer();
+            } elseif ($real > 0 && (count($brands[$key]['longest']) < self::LONGEST_TRANSFERS || $real > end($brands[$key]['longest'])['seconds'])) {
+                // Les plus longs hors des derniers (déjà affichés), du plus long au plus court
+                $brands[$key]['longest'][] = $transfer();
+                usort($brands[$key]['longest'], fn ($x, $y) => $y['seconds'] <=> $x['seconds']);
+                $brands[$key]['longest'] = array_slice($brands[$key]['longest'], 0, self::LONGEST_TRANSFERS);
             }
         }
 
@@ -202,6 +212,7 @@ class BrandCheckController extends Controller
                 'median' => $median,
                 'measured' => count($b['durations']),
                 'last' => $b['last'],
+                'longest' => $b['longest'],
                 'brand_id' => $b['brand_id'],
                 'checked_at' => $b['checked_at'],
                 'verified' => $b['checked_at'] !== null && !$stillShort,
