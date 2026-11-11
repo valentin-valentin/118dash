@@ -64,7 +64,28 @@ class CallReviewController extends Controller
 
         $backup = $this->backupNumber();
 
+        // Par agent (tous les agents de la période, quel que soit l'agent choisi) : nombre de chaque cas, appels à vérifier
+        // (au moins un des cas cochés : les lignes qu'il aurait dans la liste) et appels décrochés pour situer
+        $available = array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against));
+        $anyChecked = $cases ? '('.implode(' OR ', array_map(fn ($c) => $this->condition($c), $cases)).')' : '0';
+        $byAgent = $period()->whereNotNull('calls.agent_name')
+            ->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), $available))
+            ->groupBy('calls.agent_name')
+            ->selectRaw('calls.agent_name AS agent, '.implode(', ', [
+                ...array_map(fn ($c) => "SUM(CASE WHEN {$this->condition($c)} THEN 1 ELSE 0 END) AS `{$c}`", $available),
+                "SUM(CASE WHEN {$anyChecked} THEN 1 ELSE 0 END) AS `review`",
+            ]))->get();
+        $answered = $byAgent->isEmpty() ? collect() : $period()->whereIn('calls.agent_name', $byAgent->pluck('agent'))
+            ->whereNotNull('calls.phone_answered_at')->groupBy('calls.agent_name')->pluck(DB::raw('COUNT(*)'), 'calls.agent_name');
+        $ranking = $byAgent->map(fn ($r) => [
+            'agent' => $r->agent,
+            'counts' => collect(self::CASES)->mapWithKeys(fn ($c) => [$c => in_array($c, $available, true) ? (int) $r->{$c} : null]),
+            'review' => (int) $r->review,
+            'answered' => (int) ($answered[$r->agent] ?? 0),
+        ])->filter(fn ($r) => $r['review'] > 0)->sortBy(fn ($r) => [-$r['review'], $r['agent']])->values();
+
         return response()->json([
+            'ranking' => $ranking,
             'counts' => collect(self::CASES)->mapWithKeys(fn ($c) => [$c => $c === 'against' && !$against ? null : (int) ($counts->{$c} ?? 0)]),
             // Agents proposés dans le filtre : tous ceux de la période, quel que soit l'agent choisi
             'agents' => $period()->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against))))

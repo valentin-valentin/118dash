@@ -17,6 +17,7 @@ import { formatQuality, qualityClass } from '@/lib/quality'
 /**
  * Appels à vérifier : réécouter vite les appels qui posent question.
  *   Filtres : période, agent, et les cas (avec leur nombre sur la période), tous actifs par défaut
+ *   Par agent : nombre de chaque cas, appels à vérifier, appels décrochés ; un clic choisit l'agent dans la liste
  *   Tableau : un appel par ligne avec tous ses cas ; un clic sur la ligne ouvre sa fenêtre, seul ▶ lance l'écoute
  *   Lecteur en bas : celui de la page Appels, seulement pour écouter
  *   Fenêtre d'un appel (clic sur la ligne, ou « Détail » dans le lecteur) : ses cas en entier, son déroulé, le réseau de
@@ -28,12 +29,13 @@ const PERIODS = [
     { key: 'week', label: '7 jours' },
     { key: 'month', label: '30 jours' },
 ]
+// column : colonne du tableau « Par agent »
 const CASES = [
-    { key: 'reported', label: "Signalé par l'agent" },
-    { key: 'hangup', label: "Raccroché par l'agent" },
-    { key: 'blacklist', label: 'Liste noire' },
-    { key: 'against', label: 'Transfert contre la suggestion' },
-    { key: 'audio', label: 'Audio mauvais' },
+    { key: 'reported', label: "Signalé par l'agent", column: 'Signalés' },
+    { key: 'hangup', label: "Raccroché par l'agent", column: 'Raccrochés' },
+    { key: 'blacklist', label: 'Liste noire', column: 'Liste noire' },
+    { key: 'against', label: 'Transfert contre la suggestion', column: 'Contre la suggestion' },
+    { key: 'audio', label: 'Audio mauvais', column: 'Audio mauvais' },
 ]
 const caseLabel = Object.fromEntries(CASES.map((c) => [c.key, c.label]))
 
@@ -90,6 +92,22 @@ function detailOf(c, row) {
     if (c.key === 'against') return `Backup proposé → transféré vers ${row.brand || '—'}${c.toInternal ? ' (renvoyé au service interne)' : ''}`
     if (c.key === 'audio') return formatQuality(c.mos)
     return c.detail || '—'
+}
+
+// Par agent : un clic choisit l'agent dans la liste des appels (le tableau reste entier, la ligne surlignée) et y descend ;
+// un nouveau clic retire le choix
+const rankingColumns = computed(() => [
+    { key: 'agent', label: 'Agent' },
+    ...caseFilters.value.map((c) => ({ key: c.key, label: c.column })),
+    { key: 'review', label: 'À vérifier' },
+    { key: 'answered', label: 'Appels décrochés' },
+])
+const rankingRows = computed(() => (data.value?.ranking ?? []).map((r) => ({ ...r, ...r.counts })))
+const rankingRowClass = (row) => (row.agent === agent.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
+const callsSection = ref(null)
+function pickAgent(row) {
+    agent.value = agent.value === row.agent ? '' : row.agent
+    if (agent.value) callsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 const columns = [
@@ -238,7 +256,31 @@ onUnmounted(() => audio?.pause())
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Chargement impossible : {{ error }}</p>
 
+            <!-- Par agent : du plus grand nombre d'appels à vérifier au plus petit -->
             <section>
+                <h2 class="mb-2 text-sm font-semibold text-gray-900">
+                    Par agent <span class="ml-1 font-normal tabular-nums text-gray-400">{{ data ? data.ranking.length : '' }}</span>
+                </h2>
+                <div class="rounded-lg border border-gray-100 bg-white" :class="loading && data && 'opacity-60'">
+                    <DataTable
+                        :columns="rankingColumns"
+                        :rows="rankingRows"
+                        :loading="!data && !error"
+                        empty-message="Aucun appel à vérifier sur la période"
+                        :row-class="rankingRowClass"
+                        :row-click="pickAgent"
+                    >
+                        <template #agent="{ value }"><span class="text-sm font-medium text-gray-900">{{ agentLabel(value) ?? value }}</span></template>
+                        <template v-for="c in caseFilters" :key="c.key" #[c.key]="{ value }">
+                            <span class="text-sm tabular-nums" :class="value ? 'text-gray-900' : 'text-gray-300'">{{ value }}</span>
+                        </template>
+                        <template #review="{ value }"><span class="text-sm font-semibold tabular-nums text-gray-900">{{ value }}</span></template>
+                        <template #answered="{ value }"><span class="text-sm tabular-nums text-gray-700">{{ value.toLocaleString('fr-FR') }}</span></template>
+                    </DataTable>
+                </div>
+            </section>
+
+            <section ref="callsSection" class="scroll-mt-20">
                 <h2 class="mb-2 text-sm font-semibold text-gray-900">
                     Appels <span class="ml-1 font-normal tabular-nums text-gray-400">{{ data ? data.total.toLocaleString('fr-FR') : '' }}</span>
                 </h2>
