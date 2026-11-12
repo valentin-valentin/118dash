@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ExternalLink, LoaderCircle, Pause, Phone, Play, X } from 'lucide-vue-next'
+import { ArrowRight, ExternalLink, LoaderCircle, Pause, Phone, Play, X } from 'lucide-vue-next'
 import { formatDuration, formatPhone, toInternational } from '@/lib/calls'
 import { call as softphoneCall } from '@/composables/useSoftphone'
 import { refreshBrandRequests } from '@/composables/useBrandRequests'
@@ -274,6 +274,12 @@ async function ignore(goNext) {
     <AppLayout width="form">
         <div class="space-y-6 p-6" :class="player.call && 'pb-28'">
             <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
+                <!-- Navigation : ouvre la demande suivante de la liste sans rien enregistrer sur celle-ci -->
+                <template v-if="hasNext" #actions>
+                    <Button variant="outline" as-child>
+                        <Link :href="`/brands/requests/${data.next}`">Passer à la demande suivante <ArrowRight class="ml-2 h-4 w-4" /></Link>
+                    </Button>
+                </template>
             </PageHeader>
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
