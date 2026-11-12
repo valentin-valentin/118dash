@@ -60,8 +60,10 @@ const countStyle = (kind, value) => (value ? { color: KIND[kind].color[0], fontW
 
 const period = ref('today')
 const center = ref('')
-const family = ref('behaviour')
-const active = ref({ behaviour: KINDS.behaviour.map((k) => k.key), technical: KINDS.technical.map((k) => k.key) })
+// Famille : all (les deux), behaviour ou technical ; sortes cochées : une liste pour les deux familles
+const family = ref('all')
+const ALL_KINDS = [...KINDS.behaviour, ...KINDS.technical].map((k) => k.key)
+const active = ref([...ALL_KINDS])
 const page = ref(1)
 const data = ref(null)
 const loading = ref(false)
@@ -72,7 +74,7 @@ let lastRequest = 0
 async function load() {
     const request = ++lastRequest
     loading.value = true
-    const q = new URLSearchParams({ period: period.value, family: family.value, kinds: active.value[family.value].join(','), page: page.value })
+    const q = new URLSearchParams({ period: period.value, family: family.value, kinds: active.value.join(','), page: page.value })
     if (center.value) q.set('center', center.value)
     try {
         const res = await fetch(`/data/agent-alerts?${q}`, { headers: { Accept: 'application/json' } })
@@ -92,15 +94,22 @@ watch(page, load)
 onMounted(load)
 
 function toggleKind(key) {
-    const list = active.value[family.value]
-    active.value[family.value] = list.includes(key) ? list.filter((k) => k !== key) : [...list, key]
+    active.value = active.value.includes(key) ? active.value.filter((k) => k !== key) : [...active.value, key]
 }
-const hasFilters = computed(() => period.value !== 'today' || !!center.value)
+const hasFilters = computed(() => period.value !== 'today' || !!center.value || family.value !== 'all' || active.value.length !== ALL_KINDS.length)
 function reset() {
     period.value = 'today'
     center.value = ''
+    family.value = 'all'
+    active.value = [...ALL_KINDS]
 }
-const familyTotal = (f) => KINDS[f].reduce((sum, k) => sum + (data.value?.counts?.[k.key] ?? 0), 0)
+const familyTotal = (f) => (f === 'all' ? familyTotal('behaviour') + familyTotal('technical') : KINDS[f].reduce((sum, k) => sum + (data.value?.counts?.[k.key] ?? 0), 0))
+// Familles affichées (cases des sortes) et leur description
+const shownFamilies = computed(() => (family.value === 'all' ? ['behaviour', 'technical'] : [family.value]))
+const FAMILY_HELP = {
+    behaviour: "Ce que l'agent aurait pu éviter. Un appel n'y figure que si la sonnerie est allée au bout et que sa page l'a vue en entier.",
+    technical: "Ce qui ne vient pas de l'agent : réseau, navigateur, serveur SIP, Voxnode, notre serveur. Jamais reproché à l'agent.",
+}
 const centerLabel = (key) => props.centers.find((c) => c.key === key)?.label ?? '—'
 const periodLabel = computed(() => PERIODS.find((p) => p.key === period.value)?.label ?? '')
 
@@ -243,12 +252,19 @@ function detailOf(a) {
 
 // ─── Classement et liste ──────────────────────────────────────────────────────
 // « Autre » (événement comportement inconnu) : case et colonne seulement s'il y en a sur la période
-const shownKinds = computed(() => KINDS[family.value].filter((k) => k.key !== 'other' || data.value?.counts?.other))
+const kindsOf = (f) => KINDS[f].filter((k) => k.key !== 'other' || data.value?.counts?.other)
+const shownKinds = computed(() => (family.value === 'all' ? [] : kindsOf(family.value)))
+// Sur « Tous » : une colonne par famille (une par sorte ne tiendrait pas) ; sur une famille : une par sorte
 const rankingColumns = computed(() => [
     // Centre en petit sous le nom (comme « Compris : » sous le nom tapé des marques demandées) : une colonne de moins
     { key: 'agent', label: 'Agent' },
-    ...shownKinds.value.map((k) => ({ key: k.key, label: k.column })),
-    ...(family.value === 'behaviour'
+    ...(family.value === 'all'
+        ? [
+              { key: 'behaviour', label: 'Comportement' },
+              { key: 'technical', label: 'Technique' },
+          ]
+        : shownKinds.value.map((k) => ({ key: k.key, label: k.column }))),
+    ...(family.value !== 'technical'
         ? [
               { key: 'answered', label: 'Décrochés' },
               { key: 'breakSec', label: 'Pauses' },
@@ -344,35 +360,51 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                             {{ c.label }}
                         </button>
                     </div>
+                    <span class="text-xs text-gray-500">Famille</span>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button
+                            v-for="f in ['all', 'behaviour', 'technical']"
+                            :key="f"
+                            type="button"
+                            class="flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-all"
+                            :class="choice(family === f)"
+                            @click="family = f"
+                        >
+                            {{ f === 'all' ? 'Tous' : FAMILIES[f] }}
+                            <span class="text-sm font-semibold tabular-nums">{{ data ? familyTotal(f) : '' }}</span>
+                        </button>
+                    </div>
+                    <!-- Sortes : une case de même taille chacune (grille de 3), groupées par famille avec sa description -->
+                    <span class="self-start pt-1 text-xs text-gray-500">Alertes</span>
+                    <div class="space-y-3">
+                        <div v-for="f in shownFamilies" :key="f">
+                            <p class="mb-1.5 text-xs text-gray-500">
+                                <span class="font-medium text-gray-700">{{ FAMILIES[f] }}</span> · {{ FAMILY_HELP[f] }}
+                            </p>
+                            <div class="grid grid-cols-3 gap-2">
+                                <label
+                                    v-for="k in kindsOf(f)"
+                                    :key="k.key"
+                                    class="flex h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors"
+                                    :class="active.includes(k.key) ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50'"
+                                >
+                                    <Checkbox :model-value="active.includes(k.key)" @update:model-value="toggleKind(k.key)" />
+                                    <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: k.color[2] }" />
+                                    <span class="min-w-0 flex-1 leading-tight" :class="active.includes(k.key) ? 'text-gray-700' : 'text-gray-400'">{{ k.label }}</span>
+                                    <span class="shrink-0 font-semibold tabular-nums" :style="data?.counts?.[k.key] && active.includes(k.key) ? { color: k.color[0] } : { color: '#9ca3af' }">{{ data?.counts?.[k.key] ?? '' }}</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </FilterBar>
-
-            <!-- Deux familles, avec leur total sur la période -->
-            <div class="flex items-center gap-1.5">
-                <button
-                    v-for="f in ['behaviour', 'technical']"
-                    :key="f"
-                    type="button"
-                    class="flex h-8 items-center gap-2 rounded-md px-3 text-xs font-medium transition-all"
-                    :class="choice(family === f)"
-                    @click="family = f"
-                >
-                    {{ FAMILIES[f] }}
-                    <span class="text-sm font-semibold tabular-nums">{{ data ? familyTotal(f) : '' }}</span>
-                </button>
-            </div>
 
             <p v-if="error" class="rounded-md bg-red-50 p-3 text-sm text-red-700">Chargement impossible : {{ error }}</p>
 
             <div class="space-y-6" :class="loading && data && 'opacity-60'">
-                <p class="text-sm text-gray-500">
-                    <template v-if="family === 'behaviour'">Ce que l'agent aurait pu éviter. Un appel n'y figure que si la sonnerie est allée au bout et que sa page l'a vue en entier.</template>
-                    <template v-else>Ce qui ne vient pas de l'agent : réseau, navigateur, serveur SIP, Voxnode, notre serveur. Jamais reproché à l'agent.</template>
-                </p>
-
                 <!-- Incidents collectifs : tous les agents à la fois, pas d'alerte individuelle -->
                 <div
-                    v-for="inc in family === 'technical' ? (data?.incidents ?? []) : []"
+                    v-for="inc in family !== 'behaviour' ? (data?.incidents ?? []) : []"
                     :key="inc.at"
                     class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
                 >
@@ -386,16 +418,6 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                             <template v-if="inc.seconds"> pendant {{ duration(inc.seconds) }}</template> : rien n'a été fermé, aucune alerte individuelle.
                         </p>
                     </div>
-                </div>
-
-                <!-- Une case par sorte : pastille de sa couleur et nombre sur la période. Retour à la ligne voulu : jusqu'à 9 sortes -->
-                <div class="flex flex-wrap items-center gap-x-6 gap-y-2" data-ui-ok>
-                    <label v-for="k in shownKinds" :key="k.key" class="flex cursor-pointer items-center gap-2 text-sm">
-                        <Checkbox :model-value="active[family].includes(k.key)" @update:model-value="toggleKind(k.key)" />
-                        <span class="h-2.5 w-2.5 rounded-full" :style="{ background: k.color[2] }" />
-                        <span class="text-gray-700">{{ k.label }}</span>
-                        <span class="font-semibold tabular-nums" :style="data?.counts?.[k.key] ? { color: k.color[0] } : {}">{{ data?.counts?.[k.key] ?? '' }}</span>
-                    </label>
                 </div>
 
                 <!-- Par agent : du plus grand nombre d'alertes au plus petit ; un clic ouvre sa fenêtre -->
@@ -419,6 +441,8 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                             <template v-for="k in shownKinds" :key="k.key" #[k.key]="{ value }">
                                 <span class="text-sm tabular-nums" :style="countStyle(k.key, value)">{{ value }}</span>
                             </template>
+                            <template #behaviour="{ value }"><span class="text-sm tabular-nums" :class="value ? 'font-semibold text-gray-900' : 'text-gray-300'">{{ value }}</span></template>
+                            <template #technical="{ value }"><span class="text-sm tabular-nums" :class="value ? 'text-gray-700' : 'text-gray-300'">{{ value }}</span></template>
                             <template #answered="{ value }"><span class="text-sm tabular-nums text-gray-700">{{ value.toLocaleString('fr-FR') }}</span></template>
                             <template #breakSec="{ value }"><span class="text-sm whitespace-nowrap tabular-nums text-gray-700">{{ value ? duration(value) : '—' }}</span></template>
                             <template #last="{ value }"><span class="text-sm whitespace-nowrap tabular-nums text-gray-700">{{ lastWhen(value) }}</span></template>

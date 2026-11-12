@@ -62,35 +62,40 @@ class AgentAlertController extends Controller
         ]);
     }
 
-    /** La page : nombres des deux familles, classement et liste de la famille choisie, incidents collectifs. */
+    /**
+     * La page : nombre de chaque sorte, classement et liste de la famille choisie (all = les deux), incidents collectifs.
+     * Sur all, le classement compte par famille (une colonne par sorte ne tiendrait pas) ; sur une famille, par sorte.
+     */
     public function data(Request $request): JsonResponse
     {
         [$from, $to] = $this->period($request->input('period', 'today'));
         $center = $request->input('center') ?: null;
-        $family = $request->input('family') === 'technical' ? 'technical' : 'behaviour';
-        $kinds = array_values(array_intersect(self::KINDS[$family], explode(',', (string) $request->input('kinds', implode(',', self::KINDS[$family])))));
+        $family = in_array($request->input('family'), ['behaviour', 'technical'], true) ? $request->input('family') : 'all';
+        $allowed = $family === 'all' ? [...self::KINDS['behaviour'], ...self::KINDS['technical']] : self::KINDS[$family];
+        $kinds = array_values(array_intersect($allowed, explode(',', (string) $request->input('kinds', implode(',', $allowed)))));
+        $columns = $family === 'all' ? ['behaviour', 'technical'] : self::KINDS[$family];
 
         $all = $this->alerts($from, $to);
         $alerts = $all['alerts']->filter(fn ($a) => !$center || $a['center'] === $center);
         $counts = collect(self::KINDS)->flatten()->mapWithKeys(fn ($k) => [$k => $alerts->where('kind', $k)->count()]);
-        $shown = $alerts->where('family', $family)->whereIn('kind', $kinds);
+        $shown = $alerts->whereIn('kind', $kinds);
 
         // Classement : une ligne par agent, du plus grand nombre d'alertes au plus petit, puis sorte par sorte dans l'ordre
         $ids = $shown->pluck('agentId')->unique()->values()->all();
-        $answered = $family === 'behaviour' ? $this->answered($ids, $from, $to) : [];
-        $breaks = $family === 'behaviour' ? $this->breakSeconds($ids, $from, $to) : [];
-        $ranking = $shown->groupBy('agent')->map(function (Collection $list, $name) use ($family, $answered, $breaks) {
+        $answered = $family !== 'technical' ? $this->answered($ids, $from, $to) : [];
+        $breaks = $family !== 'technical' ? $this->breakSeconds($ids, $from, $to) : [];
+        $ranking = $shown->groupBy('agent')->map(function (Collection $list, $name) use ($family, $columns, $answered, $breaks) {
             $first = $list->first();
 
             return [
                 'agent' => $name,
                 'center' => $first['center'],
-                'counts' => collect(self::KINDS[$family])->mapWithKeys(fn ($k) => [$k => $list->where('kind', $k)->count()]),
+                'counts' => collect($columns)->mapWithKeys(fn ($k) => [$k => $list->where($family === 'all' ? 'family' : 'kind', $k)->count()]),
                 'answered' => $answered[$first['agentId']] ?? 0,
                 'breakSec' => $breaks[$first['agentId']] ?? 0,
                 'last' => $list->max('at'),
             ];
-        })->sortBy(fn ($r) => [-array_sum($r['counts']->all()), ...array_map(fn ($k) => -$r['counts'][$k], self::KINDS[$family]), $r['agent']])->values();
+        })->sortBy(fn ($r) => [-array_sum($r['counts']->all()), ...array_map(fn ($k) => -$r['counts'][$k], $columns), $r['agent']])->values();
 
         $page = max(1, (int) $request->input('page', 1));
         $list = $shown->sortBy(fn ($a) => [$a['at'], (string) $a['id']])->reverse()->values();
@@ -98,8 +103,8 @@ class AgentAlertController extends Controller
         return response()->json([
             'counts' => $counts,
             'ranking' => $ranking,
-            // Incidents collectifs : sur l'onglet Technique, tous centres (ils touchent toute la plateforme)
-            'incidents' => $family === 'technical' ? $all['incidents'] : [],
+            // Incidents collectifs : avec la famille Technique (ou toutes), tous centres (ils touchent toute la plateforme)
+            'incidents' => $family !== 'behaviour' ? $all['incidents'] : [],
             'items' => $list->slice(($page - 1) * self::PER_PAGE, self::PER_PAGE)->values(),
             'page' => $page,
             'lastPage' => max(1, (int) ceil($list->count() / self::PER_PAGE)),
