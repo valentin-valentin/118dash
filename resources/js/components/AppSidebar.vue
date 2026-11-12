@@ -5,6 +5,7 @@ import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, H
 import NavMain from '@/components/NavMain.vue'
 import { useBrandRequests } from '@/composables/useBrandRequests'
 import { useReportedCalls } from '@/composables/useReportedCalls'
+import { useRoutingErrors } from '@/composables/useRoutingErrors'
 import NavUser from '@/components/NavUser.vue'
 import {
     Sidebar,
@@ -18,19 +19,11 @@ import {
 import { dashboard } from '@/routes'
 
 // ─── Navigation ──────────────────────────────────────────────────────────────
-// Check for routing log errors
-const hasRoutingErrors = ref(false)
+// Erreurs de routage des dernières 24 h : leur nombre en pastille rouge, relu toutes les 10 s (état partagé)
+const { count: routingErrors, refresh: checkRoutingErrors } = useRoutingErrors()
+let routingTimer = null
+onUnmounted(() => clearInterval(routingTimer))
 const hasInvalidRouting = ref(false)
-
-async function checkRoutingErrors() {
-    try {
-        const res = await fetch('/data/routing-logs/has-errors')
-        const data = await res.json()
-        hasRoutingErrors.value = data.has_errors
-    } catch (error) {
-        console.error('Error checking routing errors:', error)
-    }
-}
 
 async function checkInvalidRouting() {
     try {
@@ -58,8 +51,7 @@ onMounted(() => {
     }, 60000)
     checkRoutingErrors()
     checkInvalidRouting()
-    // Check every 60 seconds
-    setInterval(checkRoutingErrors, 60000)
+    routingTimer = setInterval(checkRoutingErrors, 10000)
     setInterval(checkInvalidRouting, 60000)
 })
 
@@ -83,7 +75,7 @@ const navItems = [
     { title: 'Superviseur', href: '/superviseur/settings', icon: MonitorPlay },
     { title: 'Blacklists', href: '/blacklists', icon: ShieldAlert },
     { title: 'Assignment History', href: '/assignment-history', icon: Clock },
-    { title: 'Routing Logs', href: '/routing-logs', icon: FileText, badge: () => hasRoutingErrors.value ? 'error' : null },
+    { title: 'Routing Logs', href: '/routing-logs', icon: FileText, alert: () => routingErrors.value || null },
     { title: 'API Tester', href: '/api-tester', icon: FlaskConical },
     { title: 'Testeur de softphone', href: '/softphone-tester', icon: PhoneCall },
 ]

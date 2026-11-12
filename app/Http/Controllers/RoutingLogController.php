@@ -195,10 +195,11 @@ class RoutingLogController extends Controller
      */
     public function hasErrors(): JsonResponse
     {
-        $hasErrors = RoutingLog::whereIn('status', ['error', 'failed', 'failure'])
+        // Erreurs de routage des dernières 24 h : leur nombre (pastille rouge du menu)
+        $count = RoutingLog::whereIn('status', ['error', 'failed', 'failure'])
             ->where('created_at', '>=', now()->subDay())
-            ->exists();
+            ->count();
 
-        return response()->json(['has_errors' => $hasErrors]);
+        return response()->json(['has_errors' => $count > 0, 'count' => $count]);
     }
 }
