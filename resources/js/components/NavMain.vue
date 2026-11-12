@@ -30,8 +30,13 @@ const { isCurrentUrl } = useCurrentUrl();
                     <Link :href="item.href">
                         <component :is="item.icon" />
                         <span>{{ item.title }}</span>
+                        <!-- Nombre d'éléments à regarder en priorité (rouge) -->
                         <span
-                            v-if="item.badge && item.badge() === 'error'"
+                            v-if="item.alert && item.alert()"
+                            class="ml-auto rounded-full bg-red-500 px-1.5 text-[11px] font-medium tabular-nums text-white"
+                        >{{ item.alert() }}</span>
+                        <span
+                            v-else-if="item.badge && item.badge() === 'error'"
                             class="ml-auto h-2 w-2 rounded-full bg-red-500"
                         />
                         <!-- Nombre d'éléments à traiter (information, pas une erreur) -->

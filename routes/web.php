@@ -218,6 +218,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/assignment-history', [AssignmentHistoryController::class, 'data']);
 
         Route::get('/calls-to-review', [CallReviewController::class, 'data']);
+        Route::get('/calls-to-review/reported-today', [CallReviewController::class, 'reportedToday']);
         Route::get('/agent-alerts', [AgentAlertController::class, 'data']);
         Route::get('/agent-alerts/agent', [AgentAlertController::class, 'agent']);
         Route::get('/calls-to-review/{id}', [CallReviewController::class, 'detail'])->whereNumber('id');

@@ -4,6 +4,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { Building2, CalendarRange, ChartColumn, Clock, FileText, FlaskConical, Hash, Headphones, LayoutGrid, MessagesSquare, MonitorPlay, Phone, PhoneCall, PhoneOff, Server, ShieldAlert, Store, TriangleAlert, Users, Wallet, Workflow } from 'lucide-vue-next'
 import NavMain from '@/components/NavMain.vue'
 import { useBrandRequests } from '@/composables/useBrandRequests'
+import { useReportedCalls } from '@/composables/useReportedCalls'
 import NavUser from '@/components/NavUser.vue'
 import {
     Sidebar,
@@ -43,12 +44,18 @@ async function checkInvalidRouting() {
 
 // Marques demandées par les agents, à traiter (état partagé : pas de clignotement d'une page à l'autre)
 const { count: brandRequests, refresh: checkBrandRequests } = useBrandRequests()
+// Appels signalés par l'agent aujourd'hui (pastille rouge, état partagé)
+const { count: reportedCalls, refresh: checkReportedCalls } = useReportedCalls()
 let brandTimer = null
 onUnmounted(() => clearInterval(brandTimer))
 
 onMounted(() => {
     checkBrandRequests()
-    brandTimer = setInterval(() => checkBrandRequests(true), 60000)
+    checkReportedCalls()
+    brandTimer = setInterval(() => {
+        checkBrandRequests(true)
+        checkReportedCalls(true)
+    }, 60000)
     checkRoutingErrors()
     checkInvalidRouting()
     // Check every 60 seconds
@@ -62,7 +69,7 @@ const navItems = [
     { title: 'Assistant', href: '/assistant', icon: MessagesSquare },
     { title: 'Appels', href: '/calls', icon: Phone },
     { title: 'Appels rejetés', href: '/rejected-calls', icon: PhoneOff },
-    { title: 'Appels à vérifier', href: '/calls-to-review', icon: Headphones },
+    { title: 'Appels à vérifier', href: '/calls-to-review', icon: Headphones, alert: () => reportedCalls.value || null },
     { title: 'Alertes agents', href: '/agent-alerts', icon: TriangleAlert },
     { title: 'Attentes et agents', href: '/pilotage', icon: CalendarRange },
     { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },

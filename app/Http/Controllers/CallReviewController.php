@@ -97,6 +97,16 @@ class CallReviewController extends Controller
         ]);
     }
 
+    /** Appels signalés par l'agent aujourd'hui (pastille du menu) : même compte que la case de la page sur « Aujourd'hui ». */
+    public function reportedToday(): JsonResponse
+    {
+        [$from, $to] = $this->period('today');
+
+        return response()->json(['count' => Call::excludeTests(DB::table('calls'))
+            ->where('called_at', '>=', $from)->where('called_at', '<', $to)
+            ->whereRaw($this->condition('reported'))->count()]);
+    }
+
     /**
      * Détail d'un appel pour la fenêtre de vérification : ses cas, son déroulé, la qualité réseau (audio mauvais),
      * l'appelant (liste noire, ses autres appels avec leurs cas) et, pour l'audio, les autres appels de l'agent ce jour-là.

@@ -38,6 +38,8 @@ const CASES = [
     { key: 'audio', label: 'Audio mauvais', column: 'Audio mauvais' },
 ]
 const caseLabel = Object.fromEntries(CASES.map((c) => [c.key, c.label]))
+// Signalé par l'agent : mis en avant en rouge partout (pastille, nombres) ; les autres cas en gris
+const casePill = (key) => (key === 'reported' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700')
 
 const period = ref('today')
 const agent = ref('')
@@ -248,7 +250,7 @@ onUnmounted(() => audio?.pause())
                         <label v-for="c in caseFilters" :key="c.key" class="flex cursor-pointer items-center gap-2 text-sm">
                             <Checkbox :model-value="active.includes(c.key)" @update:model-value="toggleCase(c.key)" />
                             <span class="text-gray-700">{{ c.label }}</span>
-                            <span class="font-semibold tabular-nums text-gray-900">{{ data?.counts?.[c.key] ?? '' }}</span>
+                            <span class="font-semibold tabular-nums" :class="c.key === 'reported' && data?.counts?.reported ? 'text-red-600' : 'text-gray-900'">{{ data?.counts?.[c.key] ?? '' }}</span>
                         </label>
                     </div>
                 </div>
@@ -272,7 +274,7 @@ onUnmounted(() => audio?.pause())
                     >
                         <template #agent="{ value }"><span class="text-sm font-medium text-gray-900">{{ agentLabel(value) ?? value }}</span></template>
                         <template v-for="c in caseFilters" :key="c.key" #[c.key]="{ value }">
-                            <span class="text-sm tabular-nums" :class="value ? 'text-gray-900' : 'text-gray-300'">{{ value }}</span>
+                            <span class="text-sm tabular-nums" :class="!value ? 'text-gray-300' : c.key === 'reported' ? 'font-semibold text-red-600' : 'text-gray-900'">{{ value }}</span>
                         </template>
                         <template #review="{ value }"><span class="text-sm font-semibold tabular-nums text-gray-900">{{ value }}</span></template>
                         <template #answered="{ value }"><span class="text-sm tabular-nums text-gray-700">{{ value.toLocaleString('fr-FR') }}</span></template>
@@ -300,7 +302,7 @@ onUnmounted(() => audio?.pause())
                         <!-- Cas et détail : une ligne par cas, alignées d'une colonne à l'autre -->
                         <template #cases="{ row }">
                             <div class="flex flex-col items-start gap-1">
-                                <span v-for="c in row.cases" :key="c.key" class="inline-flex h-6 items-center rounded-full bg-gray-100 px-2 text-xs font-medium whitespace-nowrap text-gray-700">{{ caseLabel[c.key] }}</span>
+                                <span v-for="c in row.cases" :key="c.key" :class="casePill(c.key)" class="inline-flex h-6 items-center rounded-full px-2 text-xs font-medium whitespace-nowrap">{{ caseLabel[c.key] }}</span>
                             </div>
                         </template>
                         <template #detail="{ row }">
@@ -393,7 +395,7 @@ onUnmounted(() => audio?.pause())
                         <h3 class="mb-2 text-sm font-semibold text-gray-900">Cas</h3>
                         <div class="divide-y divide-gray-50 rounded-lg border border-gray-100">
                             <div v-for="c in review.call.cases" :key="c.key" class="grid grid-cols-[13rem_1fr] gap-3 px-4 py-3 text-sm">
-                                <span><span class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">{{ caseLabel[c.key] }}</span></span>
+                                <span><span class="inline-flex rounded-full px-2 py-1 text-xs font-medium" :class="casePill(c.key)">{{ caseLabel[c.key] }}</span></span>
                                 <div class="space-y-1">
                                     <p :class="c.key === 'audio' ? qualityClass(c.mos) || 'text-gray-900' : 'text-gray-900'">{{ detailOf(c, review.call) }}</p>
                                     <template v-if="c.key === 'audio'">
@@ -438,7 +440,7 @@ onUnmounted(() => audio?.pause())
                                 <template #record="{ row }"><CallPlayButtons :row="row" :is-playing="isPlaying" @play="play" /></template>
                                 <template #cases="{ row }">
                                     <div class="flex flex-wrap gap-1">
-                                        <span v-for="c in row.cases" :key="c.key" class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-medium whitespace-nowrap text-gray-700" :title="detailOf(c, row)">{{ caseLabel[c.key] }}</span>
+                                        <span v-for="c in row.cases" :key="c.key" class="inline-flex rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap" :class="casePill(c.key)" :title="detailOf(c, row)">{{ caseLabel[c.key] }}</span>
                                         <span v-if="!row.cases.length" class="text-sm text-gray-400">—</span>
                                     </div>
                                 </template>
