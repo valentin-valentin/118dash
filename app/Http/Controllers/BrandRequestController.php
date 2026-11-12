@@ -8,8 +8,10 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -69,7 +71,9 @@ class BrandRequestController extends Controller
 
         $pending = $this->requests()->where('status', 'pending')->orderBy('created_at')->get();
         $brands = $this->brandIndex();
-        $items = $pending->groupBy('name_key')->map(function (Collection $group, $key) use ($brands) {
+        $searches = $this->numberSearches($pending->pluck('name_key')->unique()->all());
+        $items = $pending->groupBy('name_key')->map(function (Collection $group, $key) use ($brands, $searches) {
+            $search = $searches[(string) $key] ?? null;
             $names = $this->rankNames($group->countBy('name'));
             $suggestion = $this->suggestions($this->nameList($names)->first(), $brands)->first();
             $heard = $this->heard($group);
@@ -86,10 +90,17 @@ class BrandRequestController extends Controller
                 'heard' => $heard['main'],
                 // Marque existante dont le nom (ou un autre nom) est exactement un nom compris dans l'appel
                 'exists' => $this->heardMatches($heard['all'], $brands)->first(),
+                // Numéro cherché par ChatGPT (voxnode118) : null = pas encore cherché
+                'search' => $search ? [
+                    'status' => $search['status'],
+                    'found' => $search['found'],
+                    'number' => $search['suggestions'][0]['number'] ?? null,
+                    'count' => count($search['suggestions'] ?? []),
+                ] : null,
             ];
-        })->sortBy(fn ($i) => [-$i['calls'], $i['last_at'], (string) $i['key']])->values(); // plus d'appels d'abord, puis la plus ancienne
+        })->sortBy(fn ($i) => $this->listOrder($i['search']['status'] ?? null, $i['calls'], $i['last_at'], (string) $i['key']))->values();
 
-        return response()->json(['items' => $items]);
+        return response()->json(['items' => $items, 'searchesAvailable' => $this->hasNumberSearches()]);
     }
 
     /** Une marque tapée : ses appels à traiter, les marques proches et la demande suivante. */
@@ -125,9 +136,11 @@ class BrandRequestController extends Controller
 
         // Demande suivante : celle qui suit celle-ci dans la liste « À traiter » (même ordre), pas la première de la liste
         // (celles qu'on a laissées de côté plus haut restent pour plus tard) ; après la dernière, on repart du début
-        $order = $this->requests()->where('status', 'pending')
-            ->groupBy('name_key')->orderByRaw('COUNT(*) DESC, MAX(created_at) ASC, name_key ASC')->pluck('name_key')
-            ->map(fn ($k) => (string) $k)->values();
+        $order = $this->requests()->where('status', 'pending')->groupBy('name_key')
+            ->selectRaw('name_key, COUNT(*) AS n, MAX(created_at) AS last_at')->get();
+        $done = $this->numberSearches($order->pluck('name_key')->all());
+        $order = $order->sortBy(fn ($r) => $this->listOrder($done[(string) $r->name_key]['status'] ?? null, (int) $r->n, $this->iso($r->last_at), (string) $r->name_key))
+            ->pluck('name_key')->map(fn ($k) => (string) $k)->values();
         $position = $order->search((string) $key);
         $others = $order->reject(fn ($k) => $k === (string) $key)->values();
         $next = $position === false ? $others->first() : ($order->slice($position + 1)->first() ?? $others->first());
@@ -155,6 +168,9 @@ class BrandRequestController extends Controller
             'matches' => $matches,
             'heard' => $heard,
             'aliasOptions' => $aliasOptions,
+            // Numéro cherché par ChatGPT : null si la table n'existe pas encore (avant la migration voxnode118),
+            // status 'pending' si pas encore cherché, sinon done | failed avec found, summary, suggestions
+            'numberSearch' => $this->hasNumberSearches() ? ($this->numberSearches([$key])[(string) $key] ?? ['status' => 'pending']) : null,
             'handled' => $this->requests()->where('name_key', $key)->where('status', '!=', 'pending')->count(),
             'next' => $next,
             'brands' => $brands->map(fn ($b) => ['value' => $b['id'], 'label' => $b['name']])->values(),
@@ -438,6 +454,39 @@ class BrandRequestController extends Controller
         $styled = fn ($name) => (int) (preg_match('/[A-ZÀ-Ý]/u', $name) === 1) + (int) str_contains($name, ' ');
 
         return $counts->sortBy(fn ($count, $name) => [-$count, -$styled($name)]);
+    }
+
+    /**
+     * Ordre de la liste « À traiter » (et donc de « passer à la suivante ») : les demandes dont ChatGPT a déjà cherché
+     * le numéro d'abord, puis le plus d'appels, puis la plus ancienne.
+     */
+    private function listOrder(?string $searchStatus, int $calls, ?string $lastAt, string $key): array
+    {
+        return [$searchStatus === 'done' ? 0 : 1, -$calls, $lastAt, $key];
+    }
+
+    /** Table brand_number_searches (voxnode118) : absente avant sa migration ; vérifiée une fois par heure. */
+    private function hasNumberSearches(): bool
+    {
+        return Cache::remember('brand_number_searches:exists', 3600, fn () => Schema::hasTable('brand_number_searches'));
+    }
+
+    /** Recherches de numéro par clé de nom : [name_key => [status, found, summary, suggestions, searched_name]]. */
+    private function numberSearches(array $keys): array
+    {
+        if (!$keys || !$this->hasNumberSearches()) {
+            return [];
+        }
+
+        return DB::table('brand_number_searches')->whereIn('name_key', array_map('strval', $keys))
+            ->get(['name_key', 'searched_name', 'status', 'found', 'summary', 'suggestions'])
+            ->mapWithKeys(fn ($r) => [(string) $r->name_key => [
+                'status' => $r->status,
+                'found' => (bool) $r->found,
+                'summary' => $r->summary,
+                'searched_name' => $r->searched_name,
+                'suggestions' => $r->suggestions === null ? null : (json_decode($r->suggestions, true) ?: []),
+            ]])->all();
     }
 
     /** Noms classés par rankNames, en texte : un nom fait de chiffres (« 3949 ») est une clé entière de la collection. */

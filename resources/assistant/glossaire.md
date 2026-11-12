@@ -198,6 +198,10 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - **Échec de fin** : `warning` / `end_work_failed` ou `end_break_failed`.
 - Classement par agent : rechargements, puis plantages, appels manqués, échecs de fin. Appels décrochés = `calls.agent_id` avec `phone_answered_at` dans la période (pas `called_at`, rempli seulement à l'import et jamais pour le testeur), bornés par `id > MAX(id) − 15 000 × jours`, appels de test compris (ceux des comptes de test).
 
+### Marques demandées (`BrandRequestController`, `/brands/requests`)
+- Demandes `brand_requests` en attente, regroupées par `name_key`. Ordre de la liste « À traiter » (et de « passer à la suivante ») : d'abord celles dont ChatGPT a déjà cherché le numéro (`brand_number_searches.status = 'done'`), puis le plus d'appels, puis la dernière demande la plus ancienne.
+- **Numéro trouvé** (`brand_number_searches`, voxnode118, une ligne par `name_key`) : `found` = au moins un numéro +33 gardé ; `suggestions` = jusqu'à 5 numéros, le meilleur d'abord (le premier pré-remplit le numéro de transfert) ; pas de ligne = pas encore cherché ; `status = 'failed'` = recherche impossible.
+
 ### Partenaires (`PartnerStatsController`, URL `/partners/{ids}/{hash}`)
 - Sources limitées à la liste de l'URL. Appel retenu : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`. Ici **sans** les numéros supprimés (jointure sans `withTrashed` : `phonenumbers.deleted_at IS NULL`).
 - **Toujours `total_duration >= 10`.**

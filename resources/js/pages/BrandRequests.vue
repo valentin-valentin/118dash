@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { formatPhone } from '@/lib/calls'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/layouts/AppLayout.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -18,13 +19,17 @@ import { xsrfToken } from '@/lib/csrf'
 const tab = ref(new URLSearchParams(window.location.search).get('tab') === 'handled' ? 'handled' : 'pending')
 const rows = ref([])
 const loading = ref(true)
+// Numéros cherchés par ChatGPT (table voxnode118) : colonne affichée seulement quand la table existe
+const searchesAvailable = ref(false)
 const error = ref(null)
 async function load() {
     loading.value = true
     try {
         const res = await fetch(`/data/brand-requests?tab=${tab.value}`, { headers: { Accept: 'application/json' } })
         if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`)
-        rows.value = (await res.json()).items
+        const json = await res.json()
+        rows.value = json.items
+        searchesAvailable.value = !!json.searchesAvailable
         error.value = null
     } catch (e) {
         error.value = e.message
@@ -40,14 +45,16 @@ watch(tab, (t) => {
 
 const date = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-')
 
-const pendingColumns = [
+// Demandes dont ChatGPT a déjà cherché le numéro en premier (ordre du serveur) ; la colonne dit ce qu'il a trouvé
+const pendingColumns = computed(() => [
     { key: 'name', label: 'Nom tapé' },
     { key: 'calls', label: 'Appels' },
     { key: 'origin', label: 'Numéro appelé' },
     { key: 'last_at', label: 'Dernière demande' },
     { key: 'suggestion', label: 'Marque existante proche' },
+    ...(searchesAvailable.value ? [{ key: 'search', label: 'Numéro trouvé' }] : []),
     { key: 'actions', label: '' },
-]
+])
 const handledColumns = [
     { key: 'name', label: 'Nom tapé' },
     { key: 'at', label: 'Appel' },
@@ -114,6 +121,13 @@ async function reopen(row) {
                         <!-- Le nom compris dans l'appel est exactement une marque existante : à associer en un clic depuis la demande -->
                         <Link v-if="row.exists" :href="`/brands/requests/${row.key}`" class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200">Existe : {{ row.exists.name }}</Link>
                         <span v-else-if="row.suggestion" class="text-sm text-gray-700">{{ row.suggestion.name }} <span class="text-gray-400">· {{ row.suggestion.reason }}</span></span>
+                        <span v-else class="text-sm text-gray-400">-</span>
+                    </template>
+                    <template #search="{ row }">
+                        <span v-if="row.search?.status === 'done' && row.search.found" class="text-sm whitespace-nowrap tabular-nums text-gray-900">
+                            {{ formatPhone(row.search.number) }}<span v-if="row.search.count > 1" class="ml-1 text-gray-400">+ {{ row.search.count - 1 }}</span>
+                        </span>
+                        <span v-else-if="row.search?.status === 'done'" class="text-sm whitespace-nowrap text-gray-500">Pas trouvé</span>
                         <span v-else class="text-sm text-gray-400">-</span>
                     </template>
                     <template #actions="{ row }">

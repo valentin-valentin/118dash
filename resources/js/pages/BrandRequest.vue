@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ExternalLink, LoaderCircle, Pause, Phone, Play, X } from 'lucide-vue-next'
-import { formatDuration, toInternational } from '@/lib/calls'
+import { formatDuration, formatPhone, toInternational } from '@/lib/calls'
 import { call as softphoneCall } from '@/composables/useSoftphone'
 import { refreshBrandRequests } from '@/composables/useBrandRequests'
 import { xsrfToken } from '@/lib/csrf'
@@ -43,6 +43,8 @@ async function load() {
         linkAliasesText.value = data.value.aliasOptions.map((o) => o.name).join('\n')
         // Nom de la marque : celui compris dans l'appel s'il existe, sinon le nom tapé
         if (!form.name) form.name = data.value.heard.main ?? titleCase(data.value.name ?? '')
+        // Numéro de transfert : le premier trouvé par ChatGPT (celui qui correspond le mieux à ce que le client a dit)
+        if (!form.phone && data.value.numberSearch?.found) form.phone = data.value.numberSearch.suggestions?.[0]?.number ?? ''
         // Autres noms de la marque créée : tous les noms proposés, sauf le nom de la marque lui-même
         aliasesText.value = data.value.aliasOptions.filter((o) => nameKey(o.name) !== nameKey(form.name)).map((o) => o.name).join('\n')
     } catch (e) {
@@ -443,6 +445,41 @@ async function ignore(goNext) {
                                     <datalist id="br-types">
                                         <option v-for="t in types" :key="t" :value="t" />
                                     </datalist>
+                                </div>
+                                <!-- Numéros trouvés par ChatGPT (voxnode118), sous le champ qu'ils remplissent ; le premier est déjà dans le champ -->
+                                <div v-if="data.numberSearch" class="space-y-2 md:col-span-2">
+                                    <p class="text-sm font-medium text-gray-900">
+                                        Trouvé par ChatGPT
+                                        <span v-if="data.numberSearch.searched_name" class="ml-1 font-normal text-gray-500">recherche « {{ data.numberSearch.searched_name }} »</span>
+                                    </p>
+                                    <p v-if="data.numberSearch.status === 'pending'" class="text-sm text-gray-500">Recherche en cours</p>
+                                    <p v-else-if="data.numberSearch.status === 'failed'" class="text-sm text-gray-500">Recherche impossible</p>
+                                    <template v-else-if="!data.numberSearch.found">
+                                        <p class="text-sm text-gray-900">ChatGPT n'a pas trouvé de numéro +33</p>
+                                        <p v-if="data.numberSearch.summary" class="text-sm text-gray-500">{{ data.numberSearch.summary }}</p>
+                                    </template>
+                                    <div v-else class="divide-y divide-gray-50 rounded-lg border border-gray-100">
+                                        <div v-for="n in data.numberSearch.suggestions" :key="n.number" class="flex items-start gap-4 px-4 py-3 text-sm">
+                                            <div class="min-w-0 flex-1 space-y-1">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="font-medium tabular-nums text-gray-900">{{ formatPhone(n.number) }}</span>
+                                                    <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="n.official_source ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'">
+                                                        {{ n.official_source ? 'Site officiel' : 'Autre source' }}
+                                                    </span>
+                                                    <span v-if="n.premium" class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Surtaxé</span>
+                                                    <span class="text-gray-500">Confiance {{ n.confidence }}</span>
+                                                </div>
+                                                <p class="text-gray-900">{{ n.service }}</p>
+                                                <p class="text-gray-500">
+                                                    {{ n.justification }}
+                                                    <a v-if="n.source_url" :href="n.source_url" target="_blank" rel="noopener" class="ml-1 inline-flex items-center gap-1 underline hover:text-gray-900">Source <ExternalLink class="h-3.5 w-3.5" /></a>
+                                                </p>
+                                            </div>
+                                            <Button type="button" size="sm" variant="outline" :disabled="form.phone === n.number" @click="form.phone = n.number">
+                                                {{ form.phone === n.number ? 'Dans le champ' : 'Mettre dans le champ' }}
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="space-y-2">
                                     <Label for="br-country">Pays</Label>
