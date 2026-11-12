@@ -60,8 +60,8 @@ const countStyle = (kind, value) => (value ? { color: KIND[kind].color[0], fontW
 
 const period = ref('today')
 const center = ref('')
-// Famille : all (les deux), behaviour ou technical ; sortes cochées : une liste pour les deux familles
-const family = ref('all')
+// Famille : behaviour par défaut, all (les deux) ou technical ; sortes cochées : une liste pour les deux familles
+const family = ref('behaviour')
 const ALL_KINDS = [...KINDS.behaviour, ...KINDS.technical].map((k) => k.key)
 const active = ref([...ALL_KINDS])
 const page = ref(1)
@@ -96,11 +96,11 @@ onMounted(load)
 function toggleKind(key) {
     active.value = active.value.includes(key) ? active.value.filter((k) => k !== key) : [...active.value, key]
 }
-const hasFilters = computed(() => period.value !== 'today' || !!center.value || family.value !== 'all' || active.value.length !== ALL_KINDS.length)
+const hasFilters = computed(() => period.value !== 'today' || !!center.value || family.value !== 'behaviour' || active.value.length !== ALL_KINDS.length)
 function reset() {
     period.value = 'today'
     center.value = ''
-    family.value = 'all'
+    family.value = 'behaviour'
     active.value = [...ALL_KINDS]
 }
 const familyTotal = (f) => (f === 'all' ? familyTotal('behaviour') + familyTotal('technical') : KINDS[f].reduce((sum, k) => sum + (data.value?.counts?.[k.key] ?? 0), 0))
