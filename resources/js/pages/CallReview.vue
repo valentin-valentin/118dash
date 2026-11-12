@@ -29,13 +29,15 @@ const PERIODS = [
     { key: 'week', label: '7 jours' },
     { key: 'month', label: '30 jours' },
 ]
+// label : pastilles ; filter : case à cocher (plus court, pour que les six tiennent sur une ligne) ;
 // column : colonne du tableau « Par agent »
 const CASES = [
-    { key: 'reported', label: "Signalé par l'agent", column: 'Signalés' },
-    { key: 'hangup', label: "Raccroché par l'agent", column: 'Raccrochés' },
-    { key: 'blacklist', label: 'Liste noire', column: 'Liste noire' },
-    { key: 'against', label: 'Transfert contre la suggestion', column: 'Contre la suggestion' },
-    { key: 'audio', label: 'Audio mauvais', column: 'Audio mauvais' },
+    { key: 'reported', label: "Signalé par l'agent", filter: 'Signalé', column: 'Signalés' },
+    { key: 'hangup', label: "Raccroché par l'agent", filter: 'Raccroché', column: 'Raccrochés' },
+    { key: 'blacklist', label: 'Liste noire', filter: 'Liste noire', column: 'Liste noire' },
+    { key: 'against', label: 'Contre la suggestion', filter: 'Contre la suggestion', column: 'Contre la suggestion' },
+    { key: 'recall', label: 'Rappel vers la marque', filter: 'Rappel vers la marque', column: 'Rappels vers la marque' },
+    { key: 'audio', label: 'Audio mauvais', filter: 'Audio mauvais', column: 'Audio mauvais' },
 ]
 const caseLabel = Object.fromEntries(CASES.map((c) => [c.key, c.label]))
 // Signalé par l'agent : mis en avant en rouge partout (pastille, nombres) ; les autres cas en gris
@@ -92,6 +94,7 @@ const calledLabel = (n) => CALLED[n] ?? 'Support'
 const when = (iso) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(' ', ' ')
 function detailOf(c, row) {
     if (c.key === 'against') return `Backup proposé → transféré vers ${row.brand || '—'}${c.toInternal ? ' (renvoyé au service interne)' : ''}`
+    if (c.key === 'recall') return `Transféré vers ${row.brand || '—'}`
     if (c.key === 'audio') return formatQuality(c.mos)
     return c.detail || '—'
 }
@@ -249,7 +252,7 @@ onUnmounted(() => audio?.pause())
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
                         <label v-for="c in caseFilters" :key="c.key" class="flex cursor-pointer items-center gap-2 text-sm">
                             <Checkbox :model-value="active.includes(c.key)" @update:model-value="toggleCase(c.key)" />
-                            <span class="text-gray-700">{{ c.label }}</span>
+                            <span class="text-gray-700">{{ c.filter }}</span>
                             <span class="font-semibold tabular-nums" :class="c.key === 'reported' && data?.counts?.reported ? 'text-red-600' : 'text-gray-900'">{{ data?.counts?.[c.key] ?? '' }}</span>
                         </label>
                     </div>

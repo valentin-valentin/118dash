@@ -20,11 +20,16 @@ use Inertia\Response;
  *   blacklist appelant sur liste noire
  *   against   transfert contre le choix suggéré (colonne calls.transfer_against_advice, voxnode118) : Backup suggéré,
  *             l'agent a choisi la marque
+ *   recall    rappel transféré vers la marque (calls.transfer_recall_to_brand, voxnode118) : le client avait déjà appelé
+ *             pour cette marque dans les 48 h, Backup était proposé d'abord, l'agent a transféré vers la marque
  *   audio     audio mauvais : note MOS < 3,6 (même seuil que l'API du Superviseur)
  */
 class CallReviewController extends Controller
 {
-    private const CASES = ['reported', 'hangup', 'blacklist', 'against', 'audio'];
+    private const CASES = ['reported', 'hangup', 'blacklist', 'against', 'recall', 'audio'];
+
+    // Cas portés par une colonne que voxnode118 ajoute : absents tant que sa migration n'est pas passée
+    private const OPTIONAL_COLUMNS = ['against' => 'transfer_against_advice', 'recall' => 'transfer_recall_to_brand'];
 
     private const AUDIO_BAD = 3.6;
 
@@ -40,10 +45,8 @@ class CallReviewController extends Controller
         [$from, $to] = $this->period($request->input('period', 'today'));
         $agent = $request->input('agent') ?: null;
         $cases = array_values(array_intersect(self::CASES, explode(',', (string) $request->input('cases', implode(',', self::CASES)))));
-        $against = $this->hasAgainstColumn();
-        if (!$against) {
-            $cases = array_values(array_diff($cases, ['against']));
-        }
+        $available = $this->availableCases();
+        $cases = array_values(array_intersect($cases, $available));
 
         $period = fn () => Call::excludeTests(DB::table('calls'))
             ->where('calls.called_at', '>=', $from)->where('calls.called_at', '<', $to);
@@ -52,21 +55,20 @@ class CallReviewController extends Controller
         // Nombre de chaque cas sur la période (et l'agent choisi), quels que soient les cas cochés
         $counts = $base()->selectRaw(implode(', ', array_map(
             fn ($c) => "SUM(CASE WHEN {$this->condition($c)} THEN 1 ELSE 0 END) AS `{$c}`",
-            array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against)),
+            $available,
         )))->first();
 
         $rows = $cases
             ? $base()->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), $cases))
                 ->leftJoin('blacklist', 'blacklist.id', '=', 'calls.blacklist_id')
                 ->orderByDesc('calls.called_at')
-                ->paginate(self::PER_PAGE, $this->columns($against), 'page', max(1, (int) $request->input('page', 1)))
+                ->paginate(self::PER_PAGE, $this->columns($available), 'page', max(1, (int) $request->input('page', 1)))
             : null;
 
         $backup = $this->backupNumber();
 
         // Par agent (tous les agents de la période, quel que soit l'agent choisi) : nombre de chaque cas, appels à vérifier
         // (au moins un des cas cochés : les lignes qu'il aurait dans la liste) et appels décrochés pour situer
-        $available = array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against));
         $anyChecked = $cases ? '('.implode(' OR ', array_map(fn ($c) => $this->condition($c), $cases)).')' : '0';
         $byAgent = $period()->whereNotNull('calls.agent_name')
             ->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), $available))
@@ -86,11 +88,11 @@ class CallReviewController extends Controller
 
         return response()->json([
             'ranking' => $ranking,
-            'counts' => collect(self::CASES)->mapWithKeys(fn ($c) => [$c => $c === 'against' && !$against ? null : (int) ($counts->{$c} ?? 0)]),
+            'counts' => collect(self::CASES)->mapWithKeys(fn ($c) => [$c => in_array($c, $available, true) ? (int) ($counts->{$c} ?? 0) : null]),
             // Agents proposés dans le filtre : tous ceux de la période, quel que soit l'agent choisi
-            'agents' => $period()->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), array_values(array_filter(self::CASES, fn ($c) => $c !== 'against' || $against))))
+            'agents' => $period()->where(fn (Builder $q) => array_map(fn ($c) => $q->orWhereRaw($this->condition($c)), $available))
                 ->whereNotNull('calls.agent_name')->distinct()->orderBy('calls.agent_name')->pluck('calls.agent_name'),
-            'items' => collect($rows?->items() ?? [])->map(fn ($r) => $this->row($r, $against, $backup)),
+            'items' => collect($rows?->items() ?? [])->map(fn ($r) => $this->row($r, $available, $backup)),
             'page' => $rows?->currentPage() ?? 1,
             'lastPage' => $rows?->lastPage() ?? 1,
             'total' => $rows?->total() ?? 0,
@@ -113,17 +115,17 @@ class CallReviewController extends Controller
      */
     public function detail(int $id): JsonResponse
     {
-        $against = $this->hasAgainstColumn();
+        $available = $this->availableCases();
         $backup = $this->backupNumber();
         $select = fn () => Call::excludeTests(DB::table('calls'))->leftJoin('blacklist', 'blacklist.id', '=', 'calls.blacklist_id');
 
-        $call = $select()->where('calls.id', $id)->first([...$this->columns($against), 'calls.total_duration', 'calls.who_hangup']);
+        $call = $select()->where('calls.id', $id)->first([...$this->columns($available), 'calls.total_duration', 'calls.who_hangup']);
         abort_unless($call, 404);
-        $row = $this->row($call, $against, $backup);
+        $row = $this->row($call, $available, $backup);
 
         $history = $call->caller
-            ? $select()->where('calls.caller', $call->caller)->where('calls.id', '!=', $id)->orderByDesc('calls.called_at')->limit(20)->get($this->columns($against))
-                ->map(fn ($r) => $this->row($r, $against, $backup))
+            ? $select()->where('calls.caller', $call->caller)->where('calls.id', '!=', $id)->orderByDesc('calls.called_at')->limit(20)->get($this->columns($available))
+                ->map(fn ($r) => $this->row($r, $available, $backup))
             : collect();
 
         // Audio mauvais : les autres appels de l'agent le même jour (jour de Paris), pour voir si c'est son réseau
@@ -164,19 +166,19 @@ class CallReviewController extends Controller
         ] : null;
     }
 
-    private function columns(bool $against): array
+    private function columns(array $available): array
     {
         return [
             'calls.id', 'calls.called_at', 'calls.agent_name', 'calls.called', 'calls.caller', 'calls.brand_name', 'calls.brand_phonenumber',
             'calls.duration_agent', 'calls.duration_transfer', 'calls.record_agent', 'calls.record_transfer', 'calls.audio_quality',
             'calls.phone_reported_by_agent', 'calls.phone_reported_by_agent_reason', 'calls.phone_agent_hangup', 'calls.phone_agent_hangup_reason',
             'calls.blacklist_id', 'blacklist.note as blacklist_note',
-            ...($against ? ['calls.transfer_against_advice'] : []),
+            ...collect(self::OPTIONAL_COLUMNS)->only($available)->map(fn ($column) => "calls.{$column}")->values()->all(),
         ];
     }
 
     /** Un appel et ses cas, pour le tableau et la fenêtre. */
-    private function row(object $r, bool $against, ?string $backup): array
+    private function row(object $r, array $available, ?string $backup): array
     {
         return [
             'id' => $r->id,
@@ -192,11 +194,13 @@ class CallReviewController extends Controller
                 $r->phone_reported_by_agent ? ['key' => 'reported', 'detail' => $r->phone_reported_by_agent_reason] : null,
                 $r->phone_agent_hangup ? ['key' => 'hangup', 'detail' => $r->phone_agent_hangup_reason] : null,
                 $r->blacklist_id ? ['key' => 'blacklist', 'detail' => $r->blacklist_note] : null,
-                $against && $r->transfer_against_advice
+                in_array('against', $available, true) && $r->transfer_against_advice
                     // Toujours « Backup proposé, l'agent a choisi la marque » (seul cas marqué par voxnode118) ; renvoyé au service
                     // interne quand la marque n'était pas joignable par notre serveur (l'import met alors le numéro de BACKUP)
                     ? ['key' => 'against', 'toInternal' => $backup !== null && str_ends_with((string) $r->brand_phonenumber, $backup)]
                     : null,
+                // Rappel (déjà appelé pour cette marque sous 48 h) transféré vers la marque au lieu de Backup
+                in_array('recall', $available, true) && $r->transfer_recall_to_brand ? ['key' => 'recall'] : null,
                 $r->audio_quality !== null && $r->audio_quality < self::AUDIO_BAD ? ['key' => 'audio', 'mos' => (float) $r->audio_quality] : null,
             ])),
         ];
@@ -209,6 +213,7 @@ class CallReviewController extends Controller
             'hangup' => 'calls.phone_agent_hangup = 1',
             'blacklist' => 'calls.blacklist_id IS NOT NULL',
             'against' => 'calls.transfer_against_advice = 1',
+            'recall' => 'calls.transfer_recall_to_brand = 1',
             'audio' => 'calls.audio_quality < '.self::AUDIO_BAD,
         };
     }
@@ -227,10 +232,11 @@ class CallReviewController extends Controller
         return [$from->utc(), $to->utc()];
     }
 
-    /** Colonne ajoutée par voxnode118 : absente tant que sa migration n'est pas passée. */
-    private function hasAgainstColumn(): bool
+    /** Cas proposés : tous, sauf ceux dont la colonne (ajoutée par voxnode118) n'existe pas encore ; vérifié une fois par heure. */
+    private function availableCases(): array
     {
-        return Cache::remember('calls:has-transfer-against-advice', 3600, fn () => Schema::hasColumn('calls', 'transfer_against_advice'));
+        return array_values(array_filter(self::CASES, fn ($c) => !isset(self::OPTIONAL_COLUMNS[$c])
+            || Cache::remember('calls:has-'.self::OPTIONAL_COLUMNS[$c], 3600, fn () => Schema::hasColumn('calls', self::OPTIONAL_COLUMNS[$c]))));
     }
 
     /** Numéro de la marque BACKUP, sans indicatif, pour reconnaître un transfert vers elle (fin du numéro). */
