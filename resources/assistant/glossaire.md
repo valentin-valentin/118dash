@@ -197,9 +197,13 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 - Jours avant la première ligne de `presence_events` (ou sans la table) : `agent_logs`, rangé dans les mêmes sortes (rechargement volontaire → rechargé ; plantage → page ; `call_timeout` null → manqué, `server` → non vérifiable ; échec de fin → page). Un jour n'a qu'une source.
 - Jours de Paris ; comptes `test` + chiffres dans le centre « Test ». Appels décrochés = `calls.agent_id` avec `phone_answered_at` dans la période ; pauses = `agent_attendances` `break` (une période non fermée s'arrête à la fin de son jour) ; travail = `agent_attendances` `work` ; en appel = somme de `COALESCE(phone_duration_agent, duration_agent)` des décrochés.
 
+### Marques (`BrandController`, `/brands`)
+- **Transferts 30 j** : appels des 30 derniers jours (`called_at`) avec `brand_name` = la marque et `duration_transfer > 0`, tests exclus (Backup compris). En dessous, **durée vers la marque** : moyenne et médiane de `duration_transfer` des seuls transferts arrivés à la vraie marque (`brand_phonenumber` non vide et `RIGHT(brand_phonenumber, 9) <> '184131572'`).
+
 ### Marques demandées (`BrandRequestController`, `/brands/requests`)
 - Demandes `brand_requests` en attente, regroupées par `name_key`. Ordre de la liste « À traiter » (et de « passer à la suivante ») : d'abord celles dont ChatGPT a déjà cherché le numéro (`brand_number_searches.status = 'done'`), puis le plus d'appels, puis la dernière demande la plus ancienne.
 - **Numéro trouvé** (`brand_number_searches`, voxnode118, une ligne par `name_key`) : `found` = au moins un numéro +33 gardé ; `suggestions` = jusqu'à 5 numéros, le meilleur d'abord (le premier pré-remplit le numéro de transfert) ; pas de ligne = pas encore cherché ; `status = 'failed'` = recherche impossible.
+- **Traiter les demandes** (`/brands/triage`, `/data/brand-requests/triage`) : toutes les demandes à traiter dans un tableau, même ordre. Action proposée par ligne : associer à la marque dont un nom compris dans l'appel est exactement le nom ou un autre nom, sinon à celle qui a exactement le nom tapé ; sinon créer la marque (nom compris dans l'appel, sinon le nom tapé ; premier numéro trouvé par ChatGPT) ; « Marquer comme traitée » quand la marque n'est jamais nommée dans l'appel et que ChatGPT n'a pas trouvé de numéro. Autres noms ajoutés : tous les noms proposés (comme sur la page d'une demande). Type par défaut `service`.
 
 ### Partenaires (`PartnerStatsController`, URL `/partners/{ids}/{hash}`)
 - Sources limitées à la liste de l'URL. Appel retenu : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`. Ici **sans** les numéros supprimés (jointure sans `withTrashed` : `phonenumbers.deleted_at IS NULL`).

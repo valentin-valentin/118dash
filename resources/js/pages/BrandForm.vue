@@ -17,6 +17,8 @@ import { Textarea } from '@/components/ui/textarea'
 const props = defineProps({
     brand: { type: Object, default: null },
     types: { type: Array, default: () => [] },
+    // brands.never_backup existe (migration voxnode118) : case affichée et enregistrée
+    neverBackupAvailable: { type: Boolean, default: false },
 })
 
 const isEdit = computed(() => !!props.brand)
@@ -39,6 +41,7 @@ const form = useForm({
     can_transfer: b.can_transfer ?? false,
     can_offer_callback: b.can_offer_callback ?? false,
     transfer_announcement: b.transfer_announcement ?? true,
+    never_backup: b.never_backup ?? false,
 })
 
 const SWITCHES = [
@@ -67,7 +70,7 @@ const changes = computed(() => {
 
 function submit() {
     // Les colonnes display_time et display_118500 ne servent plus : elles ne sont ni affichées ni envoyées
-    const payload = (data) => ({ ...data, type: data.type || null, country: data.country || null, phonenumber: data.phonenumber.trim() || null, note: data.note || null, aliases: data.aliases?.trim() || null, scenario: data.scenario || null, image: data.image || null, icon: data.icon || null })
+    const payload = ({ never_backup, ...data }) => ({ ...data, ...(props.neverBackupAvailable ? { never_backup } : {}), type: data.type || null, country: data.country || null, phonenumber: data.phonenumber.trim() || null, note: data.note || null, aliases: data.aliases?.trim() || null, scenario: data.scenario || null, image: data.image || null, icon: data.icon || null })
     if (isEdit.value) {
         if (changes.value.length && !confirming.value) {
             confirming.value = true
@@ -142,6 +145,14 @@ function submit() {
                                 <Switch :id="s.key" v-model:checked="form[s.key]" />
                                 <Label :for="s.key">{{ s.label }}</Label>
                             </div>
+                        </div>
+                        <!-- Réglage rare, avec ce qu'il change pour l'agent -->
+                        <div v-if="neverBackupAvailable" class="space-y-1 md:col-span-2">
+                            <div class="flex items-center gap-2">
+                                <Switch id="never_backup" v-model:checked="form.never_backup" />
+                                <Label for="never_backup">Jamais vers Backup</Label>
+                            </div>
+                            <p class="text-sm text-gray-500">Le softphone transfère toujours cette marque à son propre numéro, jamais à Backup (pas de bouton ni de suggestion Backup).</p>
                         </div>
                     </CardContent>
                 </Card>

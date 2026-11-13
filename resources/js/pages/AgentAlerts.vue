@@ -473,7 +473,11 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                             <template #kind="{ row }">
                                 <span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold whitespace-nowrap" :style="chipStyle(row.kind)">{{ labelOf(row) }}</span>
                             </template>
-                            <template #detail="{ row }"><span class="text-sm text-gray-600">{{ detailOf(row) }}</span></template>
+                            <!-- Appel concerné, quand le serveur l'a retrouvé : sa fiche, dans un autre onglet pour garder la liste et ses filtres -->
+                            <template #detail="{ row }">
+                                <span class="text-sm text-gray-600">{{ detailOf(row) }}</span>
+                                <a v-if="row.callId" :href="`/calls/${row.callId}`" target="_blank" class="ml-2 text-sm whitespace-nowrap text-gray-500 underline hover:text-gray-900">Voir l'appel</a>
+                            </template>
                         </DataTable>
 
                         <div v-if="data?.total" class="flex items-center justify-between border-t border-gray-50 px-4 py-3">
@@ -558,7 +562,10 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                                 </template>
                                 <template v-else>
                                     <span><span class="rounded-full px-2.5 py-1 text-xs font-semibold" :style="chipStyle(a.kind)">{{ labelOf(a) }}</span></span>
-                                    <span class="text-gray-600">{{ detailOf(a) }}</span>
+                                    <span class="text-gray-600">
+                                        {{ detailOf(a) }}
+                                        <a v-if="a.callId" :href="`/calls/${a.callId}`" target="_blank" class="ml-2 whitespace-nowrap text-gray-500 underline hover:text-gray-900">Voir l'appel</a>
+                                    </span>
                                 </template>
                             </div>
                         </div>

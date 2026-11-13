@@ -9,7 +9,9 @@ use App\Models\Call;
 use App\Models\Brand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,7 +28,7 @@ class BrandController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('BrandForm', ['brand' => null, 'types' => $this->types()]);
+        return Inertia::render('BrandForm', ['brand' => null, 'types' => $this->types(), 'neverBackupAvailable' => $this->hasNeverBackup()]);
     }
 
     public function store(Request $request)
@@ -38,7 +40,7 @@ class BrandController extends Controller
 
     public function edit(Brand $brand): Response
     {
-        return Inertia::render('BrandForm', ['brand' => $brand, 'types' => $this->types()]);
+        return Inertia::render('BrandForm', ['brand' => $brand, 'types' => $this->types(), 'neverBackupAvailable' => $this->hasNeverBackup()]);
     }
 
     public function update(Request $request, Brand $brand)
@@ -46,6 +48,15 @@ class BrandController extends Controller
         $brand->update($this->validated($request));
 
         return redirect()->route('brands.index')->with('success', 'Marque modifiée.');
+    }
+
+    /**
+     * brands.never_backup (voxnode118) : la marque est toujours transférée à son propre numéro, jamais à Backup.
+     * Colonne absente avant la migration de voxnode118 : ni case ni écriture ; vérifié une fois par minute.
+     */
+    private function hasNeverBackup(): bool
+    {
+        return Cache::remember('brands:has-never-backup', 60, fn () => Schema::hasColumn('brands', 'never_backup'));
     }
 
     private function validated(Request $request): array
@@ -66,6 +77,7 @@ class BrandController extends Controller
             'can_transfer' => 'boolean',
             'can_offer_callback' => 'boolean',
             'transfer_announcement' => 'boolean',
+            ...($this->hasNeverBackup() ? ['never_backup' => 'boolean'] : []),
         ], [
             'phonenumber.regex' => 'Numéro au format international, par exemple +33123456789.',
         ]);
@@ -131,8 +143,33 @@ class BrandController extends Controller
             ->selectRaw('brand_name, COUNT(*) AS n')
             ->pluck('n', 'brand_name');
 
+        // Durée des transferts arrivés à la vraie marque sur 30 jours (moyenne et médiane, en secondes) : sans ceux partis
+        // au service interne (Backup, 01 84 13 15 72), où un transfert vers la marque qui n'aboutit pas est renvoyé
+        $durations = Call::excludeTests(DB::table('calls'))
+            ->where('called_at', '>=', now()->subDays(30))
+            ->whereIn('brand_name', $names)
+            ->where('duration_transfer', '>', 0)
+            ->where('brand_phonenumber', '!=', '')
+            ->whereRaw("RIGHT(brand_phonenumber, 9) <> '184131572'")
+            ->get(['brand_name', 'duration_transfer'])
+            ->groupBy('brand_name')
+            ->map(function ($rows) {
+                $values = $rows->pluck('duration_transfer')->map(fn ($v) => (int) $v)->sort()->values();
+                $n = $values->count();
+
+                return [
+                    'avg' => (int) round($values->avg()),
+                    'median' => (int) round($n % 2 ? $values[intdiv($n, 2)] : ($values[$n / 2 - 1] + $values[$n / 2]) / 2),
+                ];
+            });
+
         return response()->json([
-            'items' => collect($paginator->items())->map(fn ($b) => [...$b->toArray(), 'transfers_30d' => (int) ($transfers[$b->name] ?? 0)]),
+            'items' => collect($paginator->items())->map(fn ($b) => [
+                ...$b->toArray(),
+                'transfers_30d' => (int) ($transfers[$b->name] ?? 0),
+                'transfer_avg_30d' => $durations[$b->name]['avg'] ?? null,
+                'transfer_median_30d' => $durations[$b->name]['median'] ?? null,
+            ]),
             'total' => $paginator->total(),
             'current_page' => $paginator->currentPage(),
             'last_page' => $paginator->lastPage(),

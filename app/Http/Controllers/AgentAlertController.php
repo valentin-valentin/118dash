@@ -169,7 +169,7 @@ class AgentAlertController extends Controller
     /** Alertes de [$from, $to), tous agents : relues au plus une fois par minute et par période. */
     private function alerts(Carbon $from, Carbon $to): array
     {
-        $read = Cache::remember("agent_alerts:v2:{$from->timestamp}:{$to->timestamp}", 60, function () use ($from, $to) {
+        $read = Cache::remember("agent_alerts:v3:{$from->timestamp}:{$to->timestamp}", 60, function () use ($from, $to) {
             $r = $this->read($from, $to);
 
             return ['alerts' => $r['alerts']->all(), 'incidents' => $r['incidents']];
@@ -233,7 +233,64 @@ class AgentAlertController extends Controller
                 ]))));
         }
 
-        return ['alerts' => $alerts->concat($this->longStates($from, $to, $agentId)), 'incidents' => $this->incidents($collective)];
+        return ['alerts' => $this->withCalls($alerts, $events)->concat($this->longStates($from, $to, $agentId)), 'incidents' => $this->incidents($collective)];
+    }
+
+    /**
+     * Appel concerné par chaque alerte (callId, lien vers la fiche de l'appel), en trois requêtes pour toute la liste :
+     *   1. detail.call_id → calls.id ;
+     *   2. sinon detail.uid ou detail.call → calls.voxnode_id = uid ou 'pbx-' || uid (notre serveur préfixe, Voxnode non),
+     *      le plus récent ;
+     *   3. sinon, pour page_left_in_call et reload_blocked pendant un appel (événements d'avant l'identifiant) : l'appel de
+     *      l'agent décroché avant l'alerte et pas fini plus de 5 s avant, le plus récent, dans les 2 h.
+     * Rien de trouvé : pas de lien (jamais deviné).
+     */
+    private function withCalls(Collection $alerts, Collection $events): Collection
+    {
+        $details = $events->mapWithKeys(fn ($e) => [$e->id => json_decode((string) $e->detail, true) ?: []]);
+        $ref = fn ($a, $field) => isset($details[$a['id']][$field]) && is_scalar($details[$a['id']][$field]) ? (string) $details[$a['id']][$field] : null;
+
+        $ids = $alerts->map(fn ($a) => $ref($a, 'call_id'))->filter(fn ($v) => ctype_digit((string) $v))->unique()->values();
+        $known = $ids->isEmpty() ? collect() : DB::table('calls')->whereIn('id', $ids)->pluck('id')->map(fn ($id) => (string) $id)->flip();
+
+        $uids = $alerts->map(fn ($a) => $ref($a, 'uid') ?? $ref($a, 'call'))->filter()->unique()->values();
+        $byUid = [];
+        if ($uids->isNotEmpty()) {
+            DB::table('calls')->whereIn('voxnode_id', $uids->concat($uids->map(fn ($u) => 'pbx-'.$u)))->orderBy('id')
+                ->get(['id', 'voxnode_id'])->each(function ($c) use (&$byUid) {
+                    $byUid[preg_replace('/^pbx-/', '', $c->voxnode_id)] = $c->id;
+                });
+        }
+
+        $inCall = fn ($a) => $a['detail']['event'] === 'page_left_in_call' || ($a['detail']['event'] === 'reload_blocked' && ($a['detail']['during'] ?? null) === 'call');
+        $guess = $alerts->filter(fn ($a) => $inCall($a) && !$ref($a, 'call_id') && !$ref($a, 'uid') && !$ref($a, 'call'));
+        $guessIds = $guess->pluck('id')->flip();
+        $answered = collect();
+        if ($guess->isNotEmpty()) {
+            $first = Date::parse($guess->min('at'))->subHours(2);
+            $days = max(1, (int) ceil($first->diffInHours(now(), true) / 24));
+            $answered = DB::table('calls')->where('id', '>', (int) DB::table('calls')->max('id') - 15000 * $days)
+                ->whereIn('agent_id', $guess->pluck('agentId')->unique()->values())
+                ->where('phone_answered_at', '>=', $first)->where('phone_answered_at', '<=', Date::parse($guess->max('at')))
+                ->orderByDesc('phone_answered_at')->get(['id', 'agent_id', 'phone_answered_at', 'phone_ended_at']);
+        }
+
+        return $alerts->map(function ($a) use ($ref, $known, $byUid, $guessIds, $answered) {
+            $callId = $ref($a, 'call_id');
+            $uid = $ref($a, 'uid') ?? $ref($a, 'call');
+            if ($callId !== null && $known->has($callId)) {
+                $a['callId'] = (int) $callId;
+            } elseif ($uid !== null && isset($byUid[$uid])) {
+                $a['callId'] = $byUid[$uid];
+            } elseif ($guessIds->has($a['id'])) {
+                $at = strtotime($a['at']);
+                $call = $answered->first(fn ($c) => $c->agent_id === $a['agentId'] && strtotime($c->phone_answered_at.' UTC') <= $at
+                    && strtotime($c->phone_answered_at.' UTC') >= $at - 7200 && ($c->phone_ended_at === null || strtotime($c->phone_ended_at.' UTC') >= $at - 5));
+                $a['callId'] = $call?->id;
+            }
+
+            return $a;
+        });
     }
 
     private function presenceKind(string $event, string $family): string
@@ -438,6 +495,8 @@ class AgentAlertController extends Controller
             'kind' => $kind,
             'detail' => $detail,
             'at' => $this->iso($at),
+            // Appel concerné (fiche de l'appel), quand on peut le retrouver : voir withCalls
+            'callId' => null,
         ];
     }
 

@@ -115,24 +115,8 @@ class BrandRequestController extends Controller
                 'calls.record_agent', 'calls.duration_agent', 'calls.agent_name', 'agents.voxnode_username',
             ]);
 
-        $names = $this->rankNames($rows->countBy('name'));
         $brands = $this->brandIndex();
-        $heard = $this->heard($rows);
-        // Suggestions sur les noms tapés et sur les noms compris dans l'appel ; une marque n'apparaît qu'une fois,
-        // avec sa meilleure raison et le nom d'où elle vient
-        $typed = $this->nameList($names)->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'nom tapé']));
-        $understood = collect($heard['all'])->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'compris dans l\'appel']));
-        $suggestions = $typed->concat($understood)->sortBy('rank')->unique('id')->take(5)->values();
-        $matches = $this->heardMatches($heard['all'], $brands)->values();
-
-        // Noms proposés en autres noms : tapés (cochés), nom principal compris (coché), autres formes comprises (non cochées).
-        // Un nom qui est déjà le nom ou un autre nom d'une marque n'est pas proposé.
-        $taken = $brands->flatMap(fn ($b) => array_column($b['names'], 'key'))->flip();
-        $aliasOptions = collect([
-            ...$this->nameList($names)->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => !$heard['main'] || $this->looksLike($n, $heard['main'])]),
-            ...($heard['main'] ? [['name' => $heard['main'], 'source' => 'compris dans l\'appel', 'checked' => true]] : []),
-            ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
-        ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
+        ['names' => $names, 'heard' => $heard, 'suggestions' => $suggestions, 'matches' => $matches, 'aliasOptions' => $aliasOptions] = $this->proposals($rows, $brands, $this->takenKeys($brands));
 
         // Demande suivante : celle qui suit celle-ci dans la liste « À traiter » (même ordre), pas la première de la liste
         // (celles qu'on a laissées de côté plus haut restent pour plus tard) ; après la dernière, on repart du début
@@ -175,6 +159,75 @@ class BrandRequestController extends Controller
             'next' => $next,
             'brands' => $brands->map(fn ($b) => ['value' => $b['id'], 'label' => $b['name']])->values(),
         ]);
+    }
+
+    /** Toutes les demandes à traiter dans un seul tableau (troisième page, à l'essai à côté de la liste et de la page d'une demande). */
+    public function triagePage(): Response
+    {
+        return Inertia::render('BrandRequestsTriage', [
+            'types' => Brand::query()->whereNotNull('type')->distinct()->orderBy('type')->pluck('type'),
+        ]);
+    }
+
+    /**
+     * Une ligne par demande à traiter, avec ce qu'il faut pour décider sur la ligne : noms tapés et compris, marques
+     * proches, numéros trouvés par ChatGPT (et les marques qui ont déjà le premier), noms proposés en autres noms, et
+     * l'appel à écouter. Même ordre que la liste « À traiter ».
+     */
+    public function triage(): JsonResponse
+    {
+        $rows = $this->requests()->where('status', 'pending')
+            ->leftJoin('calls', 'calls.id', '=', 'brand_requests.call_id')
+            ->leftJoin('agents', 'agents.id', '=', 'brand_requests.agent_id')
+            ->orderByDesc('brand_requests.created_at')
+            ->get([
+                'brand_requests.id', 'brand_requests.name_key', 'brand_requests.name', 'brand_requests.called', 'brand_requests.caller', 'brand_requests.created_at', 'brand_requests.audio_at', 'brand_requests.heard_names',
+                'calls.record_agent', 'calls.duration_agent', 'calls.agent_name', 'agents.voxnode_username',
+            ]);
+        $brands = $this->brandIndex();
+        $taken = $this->takenKeys($brands);
+        $available = $this->hasNumberSearches();
+        $searches = $this->numberSearches($rows->pluck('name_key')->unique()->all());
+
+        $items = $rows->groupBy('name_key')->map(function (Collection $group, $key) use ($brands, $taken, $available, $searches) {
+            $p = $this->proposals($group, $brands, $taken);
+            // Appel à écouter : le plus récent où le client nomme la marque, sinon le plus récent enregistré
+            $listen = $group->first(fn ($r) => $r->record_agent && $r->audio_at !== null) ?? $group->first(fn ($r) => $r->record_agent);
+
+            return [
+                'key' => (string) $key,
+                'name' => $this->nameList($p['names'])->first(),
+                'variants' => $this->nameList($p['names'])->slice(1)->values(),
+                'ids' => $group->pluck('id')->values(),
+                'calls' => $group->count(),
+                'support' => $group->filter(fn ($r) => !preg_match('/^118/', (string) $r->called))->count(),
+                'last_at' => $this->iso($group->max('created_at')),
+                'heard' => $p['heard'],
+                'matches' => $p['matches'],
+                'suggestions' => $p['suggestions'],
+                'aliasOptions' => $p['aliasOptions'],
+                // null si la table n'existe pas encore ; status 'pending' si pas encore cherché
+                'search' => $available ? ($searches[(string) $key] ?? ['status' => 'pending']) : null,
+                'listen' => $listen ? [
+                    'id' => $listen->id,
+                    'name' => $listen->name,
+                    'agent' => $listen->voxnode_username ?? $listen->agent_name,
+                    'at' => $this->iso($listen->created_at),
+                    'caller' => $listen->caller,
+                    'record' => $listen->record_agent,
+                    'duration' => $listen->duration_agent ? (int) $listen->duration_agent : null,
+                    'audio_at' => $listen->audio_at !== null ? (float) $listen->audio_at : null,
+                ] : null,
+            ];
+        })->sortBy(fn ($i) => $this->listOrder($i['search']['status'] ?? null, $i['calls'], $i['last_at'], $i['key']))->values();
+
+        // Marques qui ont déjà le premier numéro trouvé par ChatGPT (les appels sont reliés aux marques par leur numéro)
+        $first = fn ($i) => $i['search']['suggestions'][0]['number'] ?? null;
+        $numbers = $items->map($first)->filter()->unique()->values();
+        $owners = $numbers->isEmpty() ? collect() : Brand::whereIn('phonenumber', $numbers)->get(['id', 'name', 'phonenumber'])->groupBy('phonenumber');
+        $items = $items->map(fn ($i) => $i + ['sameNumber' => $owners->get($first($i) ?? '', collect())->map(fn ($b) => ['id' => $b->id, 'name' => $b->name])->values()]);
+
+        return response()->json(['items' => $items, 'searchesAvailable' => $available]);
     }
 
     /** Marques ayant déjà ce numéro (calls.brand_phonenumber relie les appels par numéro). */
@@ -281,6 +334,39 @@ class BrandRequestController extends Controller
         Log::info('[Marques demandées] rouverte', ['id' => $id, 'user' => auth()->user()?->email]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Ce qu'on propose pour les appels d'une demande (lignes avec name et heard_names) : noms tapés classés, nom compris,
+     * marques proches, marques dont le nom compris est exactement le nom, noms proposés en autres noms.
+     */
+    private function proposals(Collection $rows, Collection $brands, Collection $taken): array
+    {
+        $names = $this->rankNames($rows->countBy('name'));
+        $heard = $this->heard($rows);
+        // Suggestions sur les noms tapés et sur les noms compris dans l'appel ; une marque n'apparaît qu'une fois,
+        // avec sa meilleure raison et le nom d'où elle vient
+        $typed = $this->nameList($names)->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'nom tapé']));
+        $understood = collect($heard['all'])->flatMap(fn ($n) => $this->suggestions($n, $brands)->map(fn ($x) => $x + ['source' => 'compris dans l\'appel']));
+        $suggestions = $typed->concat($understood)->sortBy('rank')->unique('id')->take(5)->values();
+        $matches = $this->heardMatches($heard['all'], $brands)->values();
+
+        // Noms proposés en autres noms : tapés (cochés), nom principal compris (coché), autres formes comprises (non cochées).
+        // Un nom qui est déjà le nom ou un autre nom d'une marque n'est pas proposé.
+        $aliasOptions = collect([
+            ...$this->nameList($names)->map(fn ($n) => ['name' => $n, 'source' => 'nom tapé', 'checked' => !$heard['main'] || $this->looksLike($n, $heard['main'])]),
+            ...($heard['main'] ? [['name' => $heard['main'], 'source' => 'compris dans l\'appel', 'checked' => true]] : []),
+            ...collect($heard['others'])->map(fn ($n) => ['name' => $n, 'source' => 'compris dans l\'appel', 'checked' => false]),
+        ])->unique(fn ($o) => BrandName::key($o['name']))->reject(fn ($o) => BrandName::key($o['name']) === '' || $taken->has(BrandName::key($o['name'])))->values();
+
+
+        return ['names' => $names, 'heard' => $heard, 'suggestions' => $suggestions, 'matches' => $matches, 'aliasOptions' => $aliasOptions];
+    }
+
+    /** Clés de tous les noms et autres noms des marques activées : un nom déjà pris n'est pas proposé en autre nom. */
+    private function takenKeys(Collection $brands): Collection
+    {
+        return $brands->flatMap(fn ($b) => array_column($b['names'], 'key'))->flip();
     }
 
     // ─── Outils ───────────────────────────────────────────────────────────────

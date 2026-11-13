@@ -11,7 +11,7 @@ import FilterSelect from '@/components/FilterSelect.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import { Button } from '@/components/ui/button'
-import { formatPhone } from '@/lib/calls'
+import { formatDuration, formatPhone } from '@/lib/calls'
 import { Input } from '@/components/ui/input'
 import { useApi } from '@/composables/useApi'
 import { useFilters } from '@/composables/useFilters'
@@ -59,6 +59,7 @@ const columns = [
     { key: 'phonenumber', label: 'Numéro de transfert' },
     { key: 'can_transfer', label: 'Transfert', sortable: true },
     { key: 'transfer_announcement', label: 'Message avant transfert' },
+    // Nombre de transferts, et en dessous la durée de ceux arrivés à la vraie marque (sans ceux renvoyés au service interne)
     { key: 'transfers_30d', label: 'Transferts 30 j' },
     { key: 'enabled', label: 'Statut', sortable: true },
     { key: 'actions', label: '' },
@@ -149,7 +150,12 @@ onMounted(() => {
                     </template>
                     <template #can_transfer="{ value }"><span class="text-sm" :class="value ? 'text-gray-900' : 'text-gray-400'">{{ value ? 'Oui' : 'Non' }}</span></template>
                     <template #transfer_announcement="{ value }"><span class="text-sm" :class="value ? 'text-gray-900' : 'text-gray-400'">{{ value ? 'Oui' : 'Non' }}</span></template>
-                    <template #transfers_30d="{ value }"><span class="text-sm tabular-nums text-gray-700">{{ value ? value.toLocaleString('fr-FR') : '-' }}</span></template>
+                    <template #transfers_30d="{ value, row }">
+                        <div class="text-sm tabular-nums text-gray-700">{{ value ? value.toLocaleString('fr-FR') : '-' }}</div>
+                        <div v-if="row.transfer_avg_30d != null" class="text-xs whitespace-nowrap tabular-nums text-gray-500">
+                            vers la marque : moy. {{ formatDuration(row.transfer_avg_30d) }} · méd. {{ formatDuration(row.transfer_median_30d) }}
+                        </div>
+                    </template>
                     <template #enabled="{ value }">
                         <span class="inline-flex rounded-full px-2 py-1 text-xs font-medium" :class="value ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'">
                             {{ value ? 'Active' : 'Inactive' }}

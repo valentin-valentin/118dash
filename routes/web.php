@@ -114,6 +114,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/brands', [BrandController::class, 'store'])->name('brands.store');
     Route::get('/brands/transfer-check', [BrandCheckController::class, 'index'])->name('brands.transfer-check');
     Route::get('/brands/requests', [BrandRequestController::class, 'index'])->name('brands.requests');
+    Route::get('/brands/triage', [BrandRequestController::class, 'triagePage'])->name('brands.triage');
     Route::get('/brands/requests/{key}', [BrandRequestController::class, 'show'])->where('key', '[a-z0-9]+')->name('brands.requests.show');
     Route::get('/brands/{brand}/edit', [BrandController::class, 'edit'])->name('brands.edit');
     Route::put('/brands/{brand}', [BrandController::class, 'update'])->name('brands.update');
@@ -231,6 +232,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/brands/stats', [BrandController::class, 'stats']);
         Route::get('/brand-requests', [BrandRequestController::class, 'data']);
         Route::get('/brand-requests/count', [BrandRequestController::class, 'count']);
+        Route::get('/brand-requests/triage', [BrandRequestController::class, 'triage']);
         Route::get('/brand-requests/phone-check', [BrandRequestController::class, 'phoneCheck']);
         Route::post('/brand-requests/link', [BrandRequestController::class, 'link']);
         Route::post('/brand-requests/create', [BrandRequestController::class, 'create']);

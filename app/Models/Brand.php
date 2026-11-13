@@ -26,6 +26,8 @@ class Brand extends Model
         'icon',
         'display_time',
         'transfer_announcement',
+        // Colonne ajoutée par voxnode118 : écrite seulement quand elle existe (BrandController)
+        'never_backup',
     ];
 
     protected $casts = [
@@ -35,6 +37,7 @@ class Brand extends Model
         'display_118500' => 'boolean',
         'display_time' => 'boolean',
         'transfer_announcement' => 'boolean',
+        'never_backup' => 'boolean',
         'transfer_checked_at' => 'datetime',
     ];
 
