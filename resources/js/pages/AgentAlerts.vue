@@ -31,27 +31,27 @@ const PERIODS = [
 // pour que toutes les colonnes tiennent ; la couleur fait le lien avec la case)
 const KINDS = {
     behaviour: [
-        { key: 'missed', label: 'Appel manqué', column: 'Manqués', color: ['#c2410c', '#ffedd5', '#f97316'] },
-        { key: 'reload', label: 'Rechargé pendant une sonnerie ou un appel', column: 'Rechargés', color: ['#b91c1c', '#fee2e2', '#dc2626'] },
-        { key: 'closed', label: 'Page fermée ou autre page ouverte', column: 'Page fermée', color: ['#7e22ce', '#f3e8ff', '#9333ea'] },
-        { key: 'phone', label: 'Téléphone laissé éteint (> 2 min hors pause)', column: 'Téléphone', color: ['#854d0e', '#fef9c3', '#eab308'] },
-        { key: 'pin', label: 'PIN pas retapé (> 2 min)', column: 'PIN', color: ['#be185d', '#fce7f3', '#ec4899'] },
-        { key: 'hangup', label: "Raccroché par l'agent", column: 'Raccrochés', color: ['#9f1239', '#ffe4e6', '#e11d48'] },
-        { key: 'transfer', label: 'Transfert dans les 10 s', column: 'Transferts', color: ['#a21caf', '#fae8ff', '#d946ef'] },
-        { key: 'hold', label: 'Client laissé en attente 20 min', column: 'Attente', color: ['#92400e', '#fef3c7', '#d97706'] },
+        { key: 'missed', label: 'Appel manqué', column: 'Manqués', color: ['#c2410c', '#ffedd5', '#f97316'], help: "Le téléphone a sonné jusqu'au bout (15 s) sans que l'agent décroche. Jamais compté si le client a raccroché pendant la sonnerie ou si la sonnerie n'est pas arrivée à la page. L'agent doit retaper son PIN." },
+        { key: 'reload', label: 'Rechargement pendant une sonnerie ou un appel (tenté ou effectué)', column: 'Rechargés', color: ['#b91c1c', '#fee2e2', '#dc2626'], help: "Tentative bloquée : F5 / Ctrl+R pendant une sonnerie ou un appel, la page ne s'est pas rechargée. Rechargement effectué : bouton du navigateur confirmé, la sonnerie est perdue (PIN demandé) ou le client est coupé." },
+        { key: 'closed', label: 'Page fermée ou autre page ouverte', column: 'Page fermée', color: ['#7e22ce', '#f3e8ff', '#9333ea'], help: "Onglet fermé pendant le travail (pas après la fermeture du service), page fermée ou déconnexion sur l'écran PIN, ou deuxième onglet ouvert alors que le premier était encore actif." },
+        { key: 'phone', label: 'Téléphone laissé éteint (> 2 min hors pause)', column: 'Téléphone', color: ['#854d0e', '#fef9c3', '#eab308'], help: "Page ouverte mais téléphone éteint plus de 2 min pendant les heures d'ouverture, en dehors d'une pause." },
+        { key: 'pin', label: 'PIN pas retapé (> 2 min)', column: 'PIN', color: ['#be185d', '#fce7f3', '#ec4899'], help: "Resté plus de 2 min sur l'écran PIN après un appel manqué, pendant les heures d'ouverture : il ne reçoit pas d'appels pendant ce temps." },
+        { key: 'hangup', label: "Raccroché par l'agent", column: 'Raccrochés', color: ['#9f1239', '#ffe4e6', '#e11d48'], help: "L'agent a raccroché lui-même un appel, avec la raison qu'il a donnée." },
+        { key: 'transfer', label: 'Transfert dans les 10 s', column: 'Transferts', color: ['#a21caf', '#fae8ff', '#d946ef'], help: 'Appel transféré moins de 10 s après le décroché.' },
+        { key: 'hold', label: 'Client laissé en attente 20 min', column: 'Attente', color: ['#92400e', '#fef3c7', '#d97706'], help: "Appel mis en attente 20 min : la page l'a raccroché d'elle-même." },
         // Événement comportement que la page ne connaît pas encore : jamais perdu, son nom en détail
-        { key: 'other', label: 'Autre', column: 'Autre', color: ['#4b5563', '#f3f4f6', '#9ca3af'] },
+        { key: 'other', label: 'Autre', column: 'Autre', color: ['#4b5563', '#f3f4f6', '#9ca3af'], help: 'Autre fait de comportement enregistré, nom technique en détail.' },
     ],
     technical: [
-        { key: 'lost', label: 'Sonnerie perdue ou en retard', column: 'Sonneries', color: ['#0369a1', '#e0f2fe', '#0ea5e9'] },
-        { key: 'breaker', label: 'Sorti des appels (disjoncteur)', column: 'Disjoncteur', color: ['#1e40af', '#dbeafe', '#2563eb'] },
-        { key: 'ghost', label: 'Appel fantôme libéré', column: 'Fantômes', color: ['#0f766e', '#ccfbf1', '#14b8a6'] },
-        { key: 'restart', label: 'Téléphone relancé', column: 'Relancés', color: ['#0e7490', '#cffafe', '#06b6d4'] },
-        { key: 'net', label: 'Coupure réseau', column: 'Réseau', color: ['#334155', '#e2e8f0', '#64748b'] },
-        { key: 'page', label: 'Page figée ou erreur', column: 'Page', color: ['#4338ca', '#e0e7ff', '#6366f1'] },
-        { key: 'mic', label: 'Micro ou sonnerie bloqués', column: 'Micro / son', color: ['#3f6212', '#ecfccb', '#65a30d'] },
-        { key: 'unpause', label: 'Levée de pause échouée', column: 'Pause', color: ['#155e75', '#cffafe', '#0891b2'] },
-        { key: 'unverified', label: 'Sonnerie Voxnode non vérifiable', column: 'Non vérifiables', color: ['#4b5563', '#f3f4f6', '#9ca3af'] },
+        { key: 'lost', label: 'Sonnerie perdue ou en retard', column: 'Sonneries', color: ['#0369a1', '#e0f2fe', '#0ea5e9'], help: "Notre serveur a fait sonner l'agent mais sa page n'a rien reçu, l'a reçue en retard, n'en a pas vu la fin ou l'a refusée en se croyant en appel. Pas de PIN, l'agent est remis dans la file." },
+        { key: 'breaker', label: 'Sorti des appels (disjoncteur)', column: 'Disjoncteur', color: ['#1e40af', '#dbeafe', '#2563eb'], help: "3 sonneries perdues en 10 min : l'agent est mis en pause dans la file et doit recharger sa page (« Problème technique »). Évite que des clients tombent sur un poste qui ne reçoit pas." },
+        { key: 'ghost', label: 'Appel fantôme libéré', column: 'Fantômes', color: ['#0f766e', '#ccfbf1', '#14b8a6'], help: "Un appel terminé pour le serveur restait ouvert sur la page : il a été libéré pour que l'agent puisse reprendre des appels." },
+        { key: 'restart', label: 'Téléphone relancé', column: 'Relancés', color: ['#0e7490', '#cffafe', '#06b6d4'], help: "Notre serveur ne joignait plus le téléphone de l'agent : la page l'a relancé automatiquement." },
+        { key: 'net', label: 'Coupure réseau', column: 'Réseau', color: ['#334155', '#e2e8f0', '#64748b'], help: "Plus aucun signe de la page pendant au moins 45 s alors que l'agent travaillait (réseau, ordinateur en veille ou fermé), ou téléphone tombé. Le temps de coupure n'est pas compté." },
+        { key: 'page', label: 'Page figée ou erreur', column: 'Page', color: ['#4338ca', '#e0e7ff', '#6366f1'], help: 'Page bloquée, figée, en erreur, ou navigateur planté (pendant une sonnerie, un appel ou au rechargement).' },
+        { key: 'mic', label: 'Micro ou sonnerie bloqués', column: 'Micro / son', color: ['#3f6212', '#ecfccb', '#65a30d'], help: 'Le navigateur a refusé le micro, a bloqué la sonnerie, ou le décroché a échoué.' },
+        { key: 'unpause', label: 'Levée de pause échouée', column: 'Pause', color: ['#155e75', '#cffafe', '#0891b2'], help: "Notre serveur n'a pas réussi à remettre l'agent dans la file." },
+        { key: 'unverified', label: 'Sonnerie Voxnode non vérifiable', column: 'Non vérifiables', color: ['#4b5563', '#f3f4f6', '#9ca3af'], help: "Sur Voxnode, la page a vu la sonnerie mais pas sa fin : impossible de savoir ce qui s'est passé, jamais reproché." },
     ],
 }
 const KIND = Object.fromEntries([...KINDS.behaviour, ...KINDS.technical].map((k) => [k.key, k]))
@@ -141,8 +141,8 @@ const EVENT_LABELS = {
     page_closed_on_pin: 'Page fermée sur l’écran PIN',
     logout_on_pin: 'Déconnecté sur l’écran PIN',
     page_left_in_call: 'Page quittée en plein appel',
-    missed_reload_during_ring: 'Rechargé pendant une sonnerie',
-    reload_blocked: 'Rechargement bloqué',
+    missed_reload_during_ring: 'Page rechargée pendant une sonnerie',
+    reload_blocked: 'Tentative de F5 (bloquée)',
     ring_not_received: 'Sonnerie non reçue',
     ring_late: 'Sonnerie en retard',
     phone_down: 'Téléphone déconnecté',
@@ -160,9 +160,14 @@ function detailOf(a) {
         case 'missed_call':
             return `Sonnerie de ${d.ring_s ?? '?'} s non décrochée${d.from === 'queue' ? ', constaté par le journal de notre serveur' : ''}`
         case 'missed_reload_during_ring':
-            return `${d.how === 'key' ? 'Touche F5 / Ctrl+R' : 'Bouton recharger ou page quittée'}${ring(d)} (PIN demandé)`
-        case 'reload_blocked':
-            return `Touche ${d.value ? keyName(d.value) : '?'}, rechargement bloqué`
+            return `${d.how === 'key' ? 'Touche F5 / Ctrl+R' : 'Bouton recharger ou page quittée'}${ring(d)} · sonnerie perdue, PIN demandé`
+        case 'reload_blocked': {
+            // detail {key, during: ring | call, after_s} ; avant : {value} (la touche seule)
+            const key = d.key ?? d.value
+            const touch = `Touche ${key ? keyName(key) : '?'}`
+            if (!d.during) return `${touch} · la page ne s’est pas rechargée`
+            return `${touch} pendant ${d.during === 'call' ? 'un appel' : 'une sonnerie'}${d.after_s != null ? `, après ${duration(d.after_s)}` : ''} · la page ne s’est pas rechargée, l’appel a continué`
+        }
         case 'page_closed_while_working':
             return 'Onglet fermé pendant le travail'
         case 'page_taken_over':
@@ -170,7 +175,7 @@ function detailOf(a) {
         case 'page_closed_on_pin':
             return 'Page fermée pendant l’écran PIN (le PIN revient à son retour)'
         case 'page_left_in_call':
-            return d.crashed ? 'Plantage du navigateur pendant un appel' : 'Rechargée ou fermée pendant un appel : le client a été coupé'
+            return d.crashed ? 'Plantage du navigateur pendant un appel' : 'Rechargée ou fermée pendant un appel · le client a été coupé'
         case 'logout_on_pin':
             return 'Déconnexion pendant l’écran PIN (le PIN revient à la reconnexion)'
         case 'old_page_still_open':
@@ -374,24 +379,29 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                             <span class="text-sm font-semibold tabular-nums">{{ data ? familyTotal(f) : '' }}</span>
                         </button>
                     </div>
-                    <!-- Sortes : une case de même taille chacune (grille de 3), groupées par famille avec sa description -->
+                    <!-- Sortes : une case de même taille chacune (grille de 3, lignes de même hauteur), groupées par famille avec sa
+                         description ; sous chaque libellé, ce qui déclenche l'alerte -->
                     <span class="self-start pt-1 text-xs text-gray-500">Alertes</span>
                     <div class="space-y-3">
                         <div v-for="f in shownFamilies" :key="f">
                             <p class="mb-1.5 text-xs text-gray-500">
                                 <span class="font-medium text-gray-700">{{ FAMILIES[f] }}</span> · {{ FAMILY_HELP[f] }}
                             </p>
-                            <div class="grid grid-cols-3 gap-2">
+                            <div class="grid auto-rows-fr grid-cols-3 gap-2">
                                 <label
                                     v-for="k in kindsOf(f)"
                                     :key="k.key"
-                                    class="flex h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors"
+                                    class="flex cursor-pointer flex-col gap-1 rounded-md border px-3 py-2.5 text-sm transition-colors"
                                     :class="active.includes(k.key) ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50'"
                                 >
-                                    <Checkbox :model-value="active.includes(k.key)" @update:model-value="toggleKind(k.key)" />
-                                    <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: k.color[2] }" />
-                                    <span class="min-w-0 flex-1 leading-tight" :class="active.includes(k.key) ? 'text-gray-700' : 'text-gray-400'">{{ k.label }}</span>
-                                    <span class="shrink-0 font-semibold tabular-nums" :style="data?.counts?.[k.key] && active.includes(k.key) ? { color: k.color[0] } : { color: '#9ca3af' }">{{ data?.counts?.[k.key] ?? '' }}</span>
+                                    <span class="flex items-center gap-2">
+                                        <Checkbox :model-value="active.includes(k.key)" @update:model-value="toggleKind(k.key)" />
+                                        <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ background: k.color[2] }" />
+                                        <span class="min-w-0 flex-1 leading-tight" :class="active.includes(k.key) ? 'text-gray-700' : 'text-gray-400'">{{ k.label }}</span>
+                                        <span class="shrink-0 font-semibold tabular-nums" :style="data?.counts?.[k.key] && active.includes(k.key) ? { color: k.color[0] } : { color: '#9ca3af' }">{{ data?.counts?.[k.key] ?? '' }}</span>
+                                    </span>
+                                    <!-- Aligné sous le libellé (après la case et la pastille) -->
+                                    <span class="pl-[2.375rem] text-xs leading-snug text-gray-500">{{ k.help }}</span>
                                 </label>
                             </div>
                         </div>
@@ -417,6 +427,7 @@ const choice = (on) => (on ? 'bg-gray-900 text-white' : 'border border-gray-200 
                             <template v-if="inc.noRing">{{ inc.noRing }} agents sans sonnerie{{ inc.onPbx ? ` sur ${inc.onPbx} sur notre serveur` : '' }}</template>
                             <template v-if="inc.seconds"> pendant {{ duration(inc.seconds) }}</template> : rien n'a été fermé, aucune alerte individuelle.
                         </p>
+                        <p class="mt-1 text-xs text-amber-700">Beaucoup d'agents touchés en même temps : c'est notre côté (serveur, réseau), personne n'est fermé ni reproché.</p>
                     </div>
                 </div>
 

@@ -229,7 +229,7 @@ class AgentAlertController extends Controller
             }
             $alerts->push($this->alert($e->id, $e->agent_id, $e->voxnode_username, $this->presenceKind($e->event, $e->family), $e->at,
                 ['event' => $e->event] + array_intersect_key($detail, array_flip([
-                    'ring_s', 'from', 'how', 'value', 'state', 'reason', 'after_s', 'brand', 'number', 'page_ring_s', 'ring_ms', 'misses', 'hold_s', 'by', 'crashed',
+                    'ring_s', 'from', 'how', 'value', 'state', 'reason', 'after_s', 'brand', 'number', 'page_ring_s', 'ring_ms', 'misses', 'hold_s', 'by', 'crashed', 'key', 'during',
                 ]))));
         }
 
