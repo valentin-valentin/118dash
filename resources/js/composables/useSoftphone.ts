@@ -290,6 +290,7 @@ export interface TestCallOptions {
     called: string; // numéro appelé
     skipWait: boolean; // saute l'attente forcée
     realTransfer: boolean; // transfert réel vers la marque (sinon simulé)
+    ai?: boolean; // directement à l'agent IA (test, hors quota) ; sans réponse en 5 s, la file test
 }
 
 /**
@@ -310,6 +311,7 @@ export async function callTest(options: TestCallOptions): Promise<boolean> {
     const headers = [`X-Test-Caller: ${caller}`, `X-Test-Called: ${called}`];
     if (options.skipWait) headers.push('X-Test-Skip-Wait: 1');
     if (options.realTransfer) headers.push('X-Test-Real-Transfer: 1');
+    if (options.ai) headers.push('X-Test-AI: 1');
     await dial('test', `Test ${caller || 'masqué'} → ${called}`, headers);
     return true;
 }

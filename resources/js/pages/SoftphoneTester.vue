@@ -71,6 +71,7 @@ const caller = ref('')
 const called = ref('')
 const skipWait = ref(false)
 const realTransfer = ref(false)
+const ai = ref(false)
 const callerKind = ref('new')
 function randomMobile() {
     caller.value = `+336${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`
@@ -110,7 +111,7 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { day: '2-
 const active = computed(() => ['connecting', 'calling', 'early', 'ringing', 'established'].includes(softphone.status))
 const current = ref(null) // appel de test lancé depuis cette page
 async function start() {
-    const options = { caller: caller.value, called: called.value, skipWait: skipWait.value, realTransfer: realTransfer.value }
+    const options = { caller: caller.value, called: called.value, skipWait: skipWait.value, realTransfer: realTransfer.value, ai: ai.value }
     const startedAt = Date.now()
     if (!(await callTest(options))) return
     current.value = { ...options, startedAt, linkedid: null, steps: [], ended: false }
@@ -251,6 +252,7 @@ function saveHistory(c) {
         called: c.called,
         skipWait: c.skipWait,
         realTransfer: c.realTransfer,
+        ai: c.ai,
         result: c.result,
         steps: c.steps.filter((s) => s.key !== 'end').map((s) => ({ label: s.label, ms: (s.end ?? c.endedAt) - s.start })),
         total: c.endedAt - c.startedAt,
@@ -343,6 +345,10 @@ function clearHistory() {
                         <div class="space-y-2 text-sm text-gray-700">
                             <label class="flex items-center gap-2"><Checkbox :model-value="skipWait" @update:model-value="skipWait = !!$event" />Sauter l'attente forcée</label>
                             <label class="flex items-center gap-2"><Checkbox :model-value="realTransfer" @update:model-value="realTransfer = !!$event" />Transfert réel vers la marque <span class="text-gray-500">(appelle vraiment la marque, facturé)</span></label>
+                            <div>
+                                <label class="flex items-center gap-2"><Checkbox :model-value="ai" @update:model-value="ai = !!$event" />Vers l'agent IA</label>
+                                <p class="pl-6 text-gray-500">L'appel va directement à l'agent IA (test, hors quota). S'il ne décroche pas en 5 s, il sonne sur les comptes de test. Conseillé : sauter l'attente forcée.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -369,6 +375,7 @@ function clearHistory() {
                         <span class="font-mono">{{ current.caller || 'masqué' }}</span> → <span class="font-mono">{{ current.called }}</span>
                         <template v-if="current.skipWait"> · sans attente forcée</template>
                         <template v-if="current.realTransfer"> · transfert réel</template>
+                        <template v-if="current.ai"> · vers l'agent IA</template>
                     </span>
                     <span v-if="active && softphone.startedAt" class="ml-auto text-sm tabular-nums text-gray-500">{{ dur(now - softphone.startedAt) }}</span>
                 </header>
@@ -411,7 +418,7 @@ function clearHistory() {
                         <template #caller="{ value }"><span class="font-mono text-sm whitespace-nowrap text-gray-700">{{ value || 'masqué' }}</span></template>
                         <template #called="{ row }">
                             <span class="font-mono text-sm whitespace-nowrap text-gray-700">{{ row.called }}</span>
-                            <span v-if="row.skipWait || row.realTransfer" class="block text-xs text-gray-500">{{ [row.skipWait && 'sans attente forcée', row.realTransfer && 'transfert réel'].filter(Boolean).join(' · ') }}</span>
+                            <span v-if="row.skipWait || row.realTransfer || row.ai" class="block text-xs text-gray-500">{{ [row.skipWait && 'sans attente forcée', row.realTransfer && 'transfert réel', row.ai && "vers l'agent IA"].filter(Boolean).join(' · ') }}</span>
                         </template>
                         <template #steps="{ row }">
                             <span class="text-sm text-gray-700">
