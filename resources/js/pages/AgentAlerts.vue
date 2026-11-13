@@ -150,9 +150,11 @@ const EVENT_LABELS = {
     ringtone_blocked: 'Sonnerie bloquée',
 }
 const labelOf = (a) =>
-    a.detail?.event === 'page_left_in_call' && a.detail.crashed
+    a.detail?.event === 'page_left_in_call' && (a.detail.how === 'crash' || (!a.detail.how && a.detail.crashed))
         ? 'Plantage pendant un appel'
-        : (EVENT_LABELS[a.detail?.event] ?? KIND[a.kind].label.replace(/ \(.*\)$/, ''))
+        : a.detail?.event === 'page_left_in_call' && a.detail.how === 'discarded'
+          ? 'Onglet mis en veille pendant un appel'
+          : (EVENT_LABELS[a.detail?.event] ?? KIND[a.kind].label.replace(/ \(.*\)$/, ''))
 function detailOf(a) {
     const d = a.detail ?? {}
     const span = (what) => (d.until ? `${what} de ${time(a.at)} à ${time(d.until)} (${duration(d.seconds)})` : `${what} depuis ${time(a.at)} (${duration(d.seconds)})`)
@@ -175,7 +177,17 @@ function detailOf(a) {
         case 'page_closed_on_pin':
             return 'Page fermée pendant l’écran PIN (le PIN revient à son retour)'
         case 'page_left_in_call':
-            return d.crashed ? 'Plantage du navigateur pendant un appel' : 'Rechargée ou fermée pendant un appel · le client a été coupé'
+            // how (voxnode118) : comment la page a été quittée ; avant : seulement crashed
+            return (
+                {
+                    confirmed: 'Rechargée ou fermée en confirmant « Quitter le site ? » pendant un appel · le client a été coupé',
+                    reload: 'Rechargée pendant un appel · le client a été coupé',
+                    frozen: 'Rechargée pendant un appel, la page était figée juste avant (une touche F5 passe sur une page figée) · le client a été coupé',
+                    closed: 'Onglet fermé puis rouvert pendant un appel · le client a été coupé',
+                    discarded: 'Onglet mis en veille par Chrome pendant un appel (mémoire) · pas le fait de l’agent',
+                    crash: 'Plantage du navigateur pendant un appel',
+                }[d.how] ?? (d.crashed ? 'Plantage du navigateur pendant un appel' : 'Rechargée ou fermée pendant un appel · le client a été coupé')
+            )
         case 'logout_on_pin':
             return 'Déconnexion pendant l’écran PIN (le PIN revient à la reconnexion)'
         case 'old_page_still_open':
