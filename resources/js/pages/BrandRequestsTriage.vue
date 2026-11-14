@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDuration, formatPhone, toInternational } from '@/lib/calls'
 import { call as softphoneCall } from '@/composables/useSoftphone'
 import { refreshBrandRequests } from '@/composables/useBrandRequests'
@@ -98,10 +99,11 @@ function brandsOf(row) {
     if (st?.extra && !list.some((b) => b.id === st.extra.id)) list.push(st.extra)
     return list
 }
-// Deux marques au même nom (doublons dans la base) : le numéro les distingue
+// Deux fiches au même nom (doublons dans la base) : la deuxième est « autre fiche » ; la colonne Marque donne son numéro
 function brandLabel(row, b) {
-    const twin = brandsOf(row).some((o) => o.id !== b.id && o.name === b.name)
-    return twin ? `${b.name} · ${b.phonenumber ? formatPhone(b.phonenumber) : 'sans numéro'}` : b.name
+    const list = brandsOf(row)
+    const first = list.find((o) => o.name === b.name)
+    return first && first.id !== b.id ? `${b.name} (autre fiche)` : b.name
 }
 const linkedBrand = (row) => {
     const action = state[row.key]?.action ?? ''
@@ -110,8 +112,6 @@ const linkedBrand = (row) => {
 const phoneOf = (row) => toInternational(state[row.key].phone)
 const phoneValid = (row) => !phoneOf(row) || /^\+(33|32|49)\d{8,11}$/.test(phoneOf(row))
 const premium = (row) => /^\+3389/.test(phoneOf(row))
-// Numéro trouvé par ChatGPT qui est dans le champ (pour dire d'où il vient)
-const chatgptNumber = (row) => row.search?.suggestions?.find((n) => n.number === phoneOf(row)) ?? null
 function canApply(row) {
     const st = state[row.key]
     if (st.action === 'create') return !!st.name.trim() && phoneValid(row)
@@ -221,14 +221,13 @@ async function applyChecked() {
     bulkBusy.value = false
 }
 
-// Cellules alignées en haut : la cellule Marque est haute (champs, autres noms), le reste de la ligne se lit en face de son début
+// Cellules alignées en haut : les lignes sont hautes (numéros ChatGPT, autres noms), tout se lit en face de leur début
 const columns = [
     { key: 'check', label: '', headerClass: 'w-8', class: 'w-8 align-top pt-3' },
-    { key: 'request', label: 'Demande', class: 'align-top' },
-    { key: 'listen', label: 'Écoute', class: 'align-top pt-2.5' },
-    { key: 'action', label: 'Action', class: 'align-top pt-2' },
-    { key: 'brand', label: 'Marque', class: 'align-top' },
-    { key: 'apply', label: '', class: 'align-top pt-2' },
+    { key: 'request', label: 'Demande', class: 'align-top py-2' },
+    { key: 'action', label: 'Action', class: 'align-top py-2' },
+    { key: 'brand', label: 'Marque', class: 'align-top py-2' },
+    { key: 'aliases', label: 'Autres noms', class: 'align-top py-2' },
 ]
 const rowClass = (row) => (row.key === lastOpenedKey.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
 
@@ -410,7 +409,7 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                         <h2 class="text-sm font-semibold text-gray-900">
                             À traiter <span class="ml-1 font-normal tabular-nums text-gray-400">{{ loading ? '' : open.length }}</span>
                         </h2>
-                        <p class="text-sm text-gray-500">Action proposée : la marque qui a exactement le nom compris dans l'appel ou le nom tapé, sinon une création avec le numéro trouvé par ChatGPT. Le nom de la demande ouvre ses appels, leur transcription et les numéros trouvés par ChatGPT.</p>
+                        <p class="text-sm text-gray-500">Action proposée : la marque qui a exactement le nom compris dans l'appel ou le nom tapé, sinon une création avec le numéro trouvé par ChatGPT. Le nom de la demande ouvre ses appels et leur transcription.</p>
                     </div>
                     <!-- Action principale : traiter d'un coup les lignes dont la proposition est bonne -->
                     <Button size="sm" class="shrink-0" :disabled="!checked.length || bulkBusy" @click="applyChecked">
@@ -425,56 +424,56 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                             <Checkbox :model-value="allChecked" :disabled="!open.length" aria-label="Tout cocher" @update:model-value="checkAll" />
                         </template>
                         <template #check="{ row }">
-                            <div>
-                                <Checkbox v-if="!state[row.key].done" v-model="state[row.key].checked" :aria-label="`Cocher ${row.name}`" />
-                            </div>
+                            <Checkbox v-if="!state[row.key].done" v-model="state[row.key].checked" :aria-label="`Cocher ${row.name}`" />
                         </template>
 
+                        <!-- Demande : le nom (seul à ouvrir la fenêtre), ce qui a été compris, et l'écoute de l'appel où le client nomme la marque -->
                         <template #request="{ row }">
-                            <div class="min-w-48 py-1">
-                                <!-- Seul le nom ouvre la fenêtre : la ligne a des champs, un clic à côté ne doit rien ouvrir -->
+                            <div class="min-w-44">
                                 <button type="button" class="text-left font-medium text-gray-900 hover:underline" @click="openRow(row)">{{ row.name }}</button>
                                 <span v-if="row.variants.length" class="ml-2 text-xs text-gray-500">{{ row.variants.join(', ') }}</span>
-                                <!-- Seulement le nom principal compris : les autres formes sont dans la fenêtre -->
                                 <p v-if="row.heard.state === 'names'" class="text-xs text-gray-600">Compris : {{ row.heard.main }}</p>
                                 <p v-else-if="row.heard.state === 'never'" class="text-xs text-gray-500">Jamais nommée dans l'appel</p>
                                 <p class="text-xs text-gray-400 tabular-nums">{{ row.calls }} appel{{ row.calls > 1 ? 's' : '' }} · {{ date(row.last_at) }}</p>
+                                <button
+                                    v-if="row.listen"
+                                    type="button"
+                                    class="mt-1 -ml-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm whitespace-nowrap"
+                                    :class="isPlaying(row.listen) ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
+                                    :title="row.listen.audio_at != null ? 'Écouter à partir du moment où le client nomme la marque' : 'Écouter la conversation'"
+                                    @click="play(row.listen)"
+                                >
+                                    <Pause v-if="isPlaying(row.listen)" class="size-3.5" />
+                                    <Play v-else class="size-3.5" />
+                                    {{ row.listen.duration ? mmss(row.listen.duration) : 'Écouter' }}
+                                </button>
                             </div>
                         </template>
 
-                        <template #listen="{ row }">
-                            <button
-                                v-if="row.listen"
-                                type="button"
-                                class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm whitespace-nowrap"
-                                :class="isPlaying(row.listen) ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
-                                :title="row.listen.audio_at != null ? 'Écouter à partir du moment où le client nomme la marque' : 'Écouter la conversation'"
-                                @click="play(row.listen)"
-                            >
-                                <Pause v-if="isPlaying(row.listen)" class="size-3.5" />
-                                <Play v-else class="size-3.5" />
-                                {{ mmss(row.listen.duration) }}
-                            </button>
-                            <span v-else class="text-sm text-gray-400">—</span>
-                        </template>
-
+                        <!-- Action : le choix et, juste dessous, le bouton qui le fait ; traitée : le résultat et Rouvrir -->
                         <template #action="{ row }">
-                            <div>
-                                <template v-if="state[row.key].done">
-                                    <span v-if="state[row.key].done.status === 'created'" class="inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Marque créée</span>
-                                    <span v-else-if="state[row.key].done.status === 'linked'" class="inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Associée</span>
-                                    <span v-else class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Traitée sans marque</span>
-                                </template>
-                                <select v-else v-model="state[row.key].action" class="flex h-9 w-72 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" :disabled="state[row.key].busy">
+                            <div v-if="state[row.key].done" class="flex w-72 items-center gap-3">
+                                <span v-if="state[row.key].done.status === 'created'" class="inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Marque créée</span>
+                                <span v-else-if="state[row.key].done.status === 'linked'" class="inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Associée</span>
+                                <span v-else class="inline-flex rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Traitée sans marque</span>
+                                <Button size="sm" variant="ghost" :disabled="state[row.key].busy" @click="reopen(row)">Rouvrir</Button>
+                            </div>
+                            <div v-else class="w-72 space-y-2">
+                                <select v-model="state[row.key].action" class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm" :disabled="state[row.key].busy" :title="actionLabel(row)">
                                     <option v-for="b in brandsOf(row)" :key="b.id" :value="`link:${b.id}`">Associer à {{ brandLabel(row, b) }}</option>
                                     <option value="create">Créer la marque</option>
                                     <option value="ignore">Marquer comme traitée</option>
                                 </select>
+                                <Button size="sm" variant="outline" class="w-full" :disabled="state[row.key].busy || !canApply(row)" @click="apply(row)">
+                                    <LoaderCircle v-if="state[row.key].busy" class="mr-2 h-4 w-4 animate-spin" />
+                                    {{ buttonLabel(row) }}
+                                </Button>
+                                <p v-if="state[row.key].error" class="text-xs text-red-600" data-ui-ok>{{ state[row.key].error }}</p>
                             </div>
                         </template>
 
                         <template #brand="{ row }">
-                            <div class="w-80 py-1">
+                            <div class="w-80">
                                 <!-- Traitée : la marque, ouverte dans un autre onglet pour ne pas perdre le tableau -->
                                 <template v-if="state[row.key].done">
                                     <a v-if="state[row.key].done.id" :href="`/brands/${state[row.key].done.id}/edit`" target="_blank" class="text-sm font-medium text-gray-900 hover:underline">{{ state[row.key].done.name }}</a>
@@ -484,16 +483,8 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                     <a :href="`/brands/${linkedBrand(row).id}/edit`" target="_blank" class="text-sm font-medium text-gray-900 hover:underline">{{ linkedBrand(row).name }}</a>
                                     <span class="ml-2 text-sm tabular-nums text-gray-600">{{ linkedBrand(row).phonenumber ? formatPhone(linkedBrand(row).phonenumber) : 'sans numéro' }}</span>
                                     <p class="text-xs text-gray-500">{{ linkedBrand(row).reason }}<template v-if="linkedBrand(row).via"> (autre nom « {{ linkedBrand(row).via }} »)</template></p>
-                                    <Label :for="`tr-link-${row.key}`" class="mt-2 block text-xs font-normal text-gray-500">Autres noms ajoutés à la marque</Label>
-                                    <Textarea
-                                        :id="`tr-link-${row.key}`"
-                                        v-model="state[row.key].linkAliasesText"
-                                        :rows="textRows(state[row.key].linkAliasesText)"
-                                        class="mt-1 min-h-0 px-3 py-1.5"
-                                        placeholder="Un nom par ligne"
-                                    />
                                 </template>
-                                <div v-else-if="state[row.key].action === 'create'" class="space-y-1">
+                                <div v-else-if="state[row.key].action === 'create'" class="space-y-1.5">
                                     <div class="flex gap-2">
                                         <Input v-model="state[row.key].name" class="h-8 w-36" placeholder="Nom" :aria-label="`Nom de la marque ${row.name}`" />
                                         <Input
@@ -504,13 +495,13 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                             @paste="formatPhoneField(row)"
                                             @blur="formatPhoneField(row)"
                                         />
-                                        <!-- Appeler le numéro du champ (celui trouvé par ChatGPT au départ) avec le softphone, pour le vérifier -->
+                                        <!-- Appeler le numéro du champ avec le softphone, pour le vérifier -->
                                         <Button
                                             type="button"
                                             size="icon-sm"
                                             variant="outline"
                                             :disabled="!phoneOf(row) || !phoneValid(row)"
-                                            :title="phoneOf(row) ? `Appeler le ${formatPhone(phoneOf(row))}` : 'Appeler le numéro'"
+                                            :title="phoneOf(row) && phoneValid(row) ? `Appeler le ${formatPhone(phoneOf(row))}` : 'Appeler le numéro'"
                                             aria-label="Appeler le numéro"
                                             @click="softphoneCall(phoneOf(row))"
                                         >
@@ -518,42 +509,70 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                         </Button>
                                     </div>
                                     <p v-if="!phoneValid(row)" class="text-xs text-red-600">Numéro français, belge ou allemand attendu</p>
-                                    <p v-else-if="chatgptNumber(row)" class="flex items-center gap-1.5 text-xs text-gray-500">
-                                        ChatGPT
-                                        <span class="inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium" :class="chatgptNumber(row).official_source ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'">{{ chatgptNumber(row).official_source ? 'Site officiel' : 'Autre source' }}</span>
-                                        <span v-if="row.search.suggestions.length > 1">· {{ row.search.suggestions.length - 1 }} autre{{ row.search.suggestions.length > 2 ? 's' : '' }}</span>
-                                    </p>
-                                    <p v-else-if="row.search?.status === 'done' && !row.search.found && !phoneOf(row)" class="text-xs text-gray-500">ChatGPT n'a pas trouvé de numéro</p>
-                                    <p v-else-if="row.search?.status === 'pending' && !phoneOf(row)" class="text-xs text-gray-500">Numéro pas encore cherché par ChatGPT</p>
-                                    <p v-else-if="!phoneOf(row)" class="text-xs text-gray-500">Sans numéro : pas de transfert</p>
                                     <p v-if="premium(row)" class="text-xs text-amber-700">Numéro surtaxé (08 9)</p>
                                     <p v-if="state[row.key].sameNumber.length" class="text-xs text-red-600">
                                         Déjà le numéro de
                                         <template v-for="(b, i) in state[row.key].sameNumber" :key="b.id">{{ i ? ', ' : '' }}<a :href="`/brands/${b.id}/edit`" target="_blank" class="underline">{{ b.name }}</a></template>
                                     </p>
-                                    <!-- Autres noms : le même champ que dans la fenêtre (un nom par ligne), prérempli avec les noms proposés -->
-                                    <Label :for="`tr-aliases-${row.key}`" class="block pt-1 text-xs font-normal text-gray-500">Autres noms</Label>
-                                    <Textarea
-                                        :id="`tr-aliases-${row.key}`"
-                                        v-model="state[row.key].aliasesText"
-                                        :rows="textRows(state[row.key].aliasesText)"
-                                        class="min-h-0 px-3 py-1.5"
-                                        placeholder="Un nom par ligne"
-                                    />
+                                    <!-- Tous les numéros trouvés par ChatGPT : un clic met le numéro dans le champ, ☎ l'appelle,
+                                         l'infobulle donne ce que ChatGPT en dit (service, confiance, justification) -->
+                                    <div v-if="row.search?.status === 'done' && row.search.found" class="divide-y divide-gray-50 rounded-md border border-gray-100">
+                                        <div v-for="n in row.search.suggestions" :key="n.number" class="flex items-center gap-1 py-0.5 pr-0.5 pl-2 text-xs">
+                                            <Tooltip>
+                                                <TooltipTrigger as-child>
+                                                    <button type="button" class="flex min-w-0 flex-1 items-center gap-1.5 text-left" @click="setPhone(row, n.number)">
+                                                        <span class="tabular-nums whitespace-nowrap" :class="phoneOf(row) === n.number ? 'font-semibold text-gray-900' : 'text-gray-700 hover:underline'">{{ formatPhone(n.number) }}</span>
+                                                        <span class="inline-flex shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium" :class="n.official_source ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'">{{ n.official_source ? 'Site officiel' : 'Autre source' }}</span>
+                                                        <span v-if="n.premium" class="inline-flex shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">Surtaxé</span>
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent class="max-w-sm">
+                                                    <p class="font-medium">{{ formatPhone(n.number) }} · {{ n.service || '—' }}</p>
+                                                    <p>Confiance {{ n.confidence }} · {{ n.official_source ? 'site officiel' : 'autre source' }}{{ n.premium ? ' · surtaxé' : '' }}</p>
+                                                    <p v-if="n.justification">{{ n.justification }}</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <a v-if="n.source_url" :href="n.source_url" target="_blank" rel="noopener" class="flex size-7 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Source">
+                                                <ExternalLink class="h-3.5 w-3.5" />
+                                            </a>
+                                            <Button type="button" size="icon-sm" variant="ghost" class="size-7 shrink-0" :title="`Appeler le ${formatPhone(n.number)}`" aria-label="Appeler ce numéro" @click="softphoneCall(n.number)">
+                                                <Phone class="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <Tooltip v-else-if="row.search?.status === 'done'" :disabled="!row.search.summary">
+                                        <TooltipTrigger as-child>
+                                            <p class="w-fit text-xs text-gray-500" :class="row.search.summary && 'cursor-help'">ChatGPT n'a pas trouvé de numéro</p>
+                                        </TooltipTrigger>
+                                        <TooltipContent class="max-w-sm">{{ row.search.summary }}</TooltipContent>
+                                    </Tooltip>
+                                    <p v-else-if="row.search?.status === 'failed'" class="text-xs text-gray-500">Recherche ChatGPT impossible</p>
+                                    <p v-else-if="row.search" class="text-xs text-gray-500">Numéro pas encore cherché par ChatGPT</p>
+                                    <p v-if="!phoneOf(row) && phoneValid(row)" class="text-xs text-gray-500">Sans numéro : pas de transfert</p>
                                 </div>
                                 <span v-else class="text-sm text-gray-500">Ni création ni association</span>
                             </div>
                         </template>
 
-                        <template #apply="{ row }">
-                            <div class="flex flex-col items-end gap-1">
-                                <Button v-if="state[row.key].done" size="sm" variant="ghost" :disabled="state[row.key].busy" @click="reopen(row)">Rouvrir</Button>
-                                <Button v-else size="sm" variant="outline" class="w-44" :disabled="state[row.key].busy || !canApply(row)" @click="apply(row)">
-                                    <LoaderCircle v-if="state[row.key].busy" class="mr-2 h-4 w-4 animate-spin" />
-                                    {{ buttonLabel(row) }}
-                                </Button>
-                                <p v-if="state[row.key].error" class="max-w-56 text-right text-xs text-red-600" data-ui-ok>{{ state[row.key].error }}</p>
-                            </div>
+                        <!-- Autres noms : le même champ que la fiche marque (un par ligne), prérempli avec les noms proposés -->
+                        <template #aliases="{ row }">
+                            <Textarea
+                                v-if="!state[row.key].done && linkedBrand(row)"
+                                v-model="state[row.key].linkAliasesText"
+                                :rows="textRows(state[row.key].linkAliasesText)"
+                                class="min-h-0 w-full min-w-48 px-3 py-1.5"
+                                placeholder="Un nom par ligne"
+                                :aria-label="`Autres noms ajoutés à ${linkedBrand(row).name}`"
+                            />
+                            <Textarea
+                                v-else-if="!state[row.key].done && state[row.key].action === 'create'"
+                                v-model="state[row.key].aliasesText"
+                                :rows="textRows(state[row.key].aliasesText)"
+                                class="min-h-0 w-full min-w-48 px-3 py-1.5"
+                                placeholder="Un nom par ligne"
+                                :aria-label="`Autres noms de ${state[row.key].name}`"
+                            />
+                            <span v-else class="text-sm text-gray-400">—</span>
                         </template>
                     </DataTable>
                 </div>
