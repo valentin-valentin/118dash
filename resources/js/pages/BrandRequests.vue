@@ -81,7 +81,12 @@ async function reopen(row) {
 
     <AppLayout>
         <div class="space-y-6 p-6">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées' }]" />
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/triage' }, { title: 'Demande par demande' }]">
+                <!-- Navigation : le tableau où l'on traite toutes les demandes sur une page (version principale) -->
+                <template #actions>
+                    <Button variant="outline" as-child><Link href="/brands/triage">Traiter dans un tableau</Link></Button>
+                </template>
+            </PageHeader>
 
             <div class="flex flex-wrap items-center gap-1.5">
                 <button

@@ -273,7 +273,7 @@ async function ignore(goNext) {
 
     <AppLayout width="form">
         <div class="space-y-6 p-6" :class="player.call && 'pb-28'">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/triage' }, { title: 'Demande par demande', href: '/brands/requests' }, { title: data?.name ?? '…' }]">
                 <!-- Navigation : ouvre la demande suivante de la liste sans rien enregistrer sur celle-ci -->
                 <template v-if="hasNext" #actions>
                     <Button variant="outline" as-child>

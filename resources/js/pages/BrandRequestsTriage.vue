@@ -391,12 +391,14 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
 </script>
 
 <template>
-    <Head title="Traiter les demandes" />
+    <Head title="Marques demandées" />
 
     <AppLayout>
         <div class="space-y-6 p-6" :class="player.call && 'pb-28'">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées', href: '/brands/requests' }, { title: 'Traiter les demandes' }]">
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Marques', href: '/brands' }, { title: 'Marques demandées' }]">
+                <!-- Navigation : la version d'avant (liste, puis une page par demande) reste disponible -->
                 <template #actions>
+                    <Button variant="outline" as-child><Link href="/brands/requests">Traiter demande par demande</Link></Button>
                     <Button variant="outline" as-child><Link href="/brands/requests?tab=handled">Voir les demandes traitées</Link></Button>
                 </template>
             </PageHeader>

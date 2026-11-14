@@ -21,7 +21,7 @@ const plural = (n, one, many) => `${n.toLocaleString('fr-FR')} ${n > 1 ? many : 
             <p class="font-medium">{{ plural(count.brands, 'marque demandée', 'marques demandées') }} par les agents ({{ plural(count.calls, 'appel', 'appels') }})</p>
             <p class="mt-0.5 text-amber-700">
                 Marques que les agents n'ont pas trouvées dans le softphone.
-                <Link href="/brands/requests" class="font-medium underline">Traiter les demandes</Link>
+                <Link href="/brands/triage" class="font-medium underline">Traiter les demandes</Link>
             </p>
         </div>
     </div>
