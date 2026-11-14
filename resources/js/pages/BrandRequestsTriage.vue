@@ -24,7 +24,7 @@ import { xsrfToken } from '@/lib/csrf'
  *   sinon à celle qui a exactement le nom tapé ; sinon créer la marque (nom compris dans l'appel, premier numéro
  *   trouvé par ChatGPT) ; marquer comme traitée quand la marque n'est jamais nommée dans l'appel et que ChatGPT n'a
  *   rien trouvé. Autres noms ajoutés : tous les noms proposés (comme sur la page d'une demande).
- *   Clic sur la ligne : fenêtre avec les appels, la transcription, les marques proches, les numéros de ChatGPT et
+ *   Clic sur le nom de la demande : fenêtre avec les appels, la transcription, les marques proches, les numéros de ChatGPT et
  *   tous les champs ; elle enchaîne sur la demande suivante.
  *   Lecteur en bas : seulement pour écouter, utilisable fenêtre ouverte.
  */
@@ -39,6 +39,8 @@ const state = reactive({})
 const nameKey = (n) => String(n).normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase()
 const titleCase = (s) => String(s).replace(/\S+/g, (w) => (w.length > 1 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1)))
 const lines = (text) => text.split('\n').map((n) => n.trim()).filter(Boolean)
+// Hauteur d'une zone « Autres noms » : une ligne par nom, au moins une
+const textRows = (text) => Math.max(1, text.split('\n').length)
 const firstNumber = (row) => (row.search?.status === 'done' && row.search.found ? row.search.suggestions?.[0] ?? null : null)
 
 function proposedAction(row) {
@@ -219,13 +221,14 @@ async function applyChecked() {
     bulkBusy.value = false
 }
 
+// Cellules alignées en haut : la cellule Marque est haute (champs, autres noms), le reste de la ligne se lit en face de son début
 const columns = [
-    { key: 'check', label: '', headerClass: 'w-8', class: 'w-8' },
-    { key: 'request', label: 'Demande' },
-    { key: 'listen', label: 'Écoute' },
-    { key: 'action', label: 'Action' },
-    { key: 'brand', label: 'Marque' },
-    { key: 'apply', label: '' },
+    { key: 'check', label: '', headerClass: 'w-8', class: 'w-8 align-top pt-3' },
+    { key: 'request', label: 'Demande', class: 'align-top' },
+    { key: 'listen', label: 'Écoute', class: 'align-top pt-2.5' },
+    { key: 'action', label: 'Action', class: 'align-top pt-2' },
+    { key: 'brand', label: 'Marque', class: 'align-top' },
+    { key: 'apply', label: '', class: 'align-top pt-2' },
 ]
 const rowClass = (row) => (row.key === lastOpenedKey.value ? 'bg-gray-50 shadow-[inset_2px_0_0_var(--color-gray-900)]' : '')
 
@@ -407,7 +410,7 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                         <h2 class="text-sm font-semibold text-gray-900">
                             À traiter <span class="ml-1 font-normal tabular-nums text-gray-400">{{ loading ? '' : open.length }}</span>
                         </h2>
-                        <p class="text-sm text-gray-500">Action proposée : la marque qui a exactement le nom compris dans l'appel ou le nom tapé, sinon une création avec le numéro trouvé par ChatGPT. Un clic sur la ligne ouvre les appels et leur transcription.</p>
+                        <p class="text-sm text-gray-500">Action proposée : la marque qui a exactement le nom compris dans l'appel ou le nom tapé, sinon une création avec le numéro trouvé par ChatGPT. Le nom de la demande ouvre ses appels, leur transcription et les numéros trouvés par ChatGPT.</p>
                     </div>
                     <!-- Action principale : traiter d'un coup les lignes dont la proposition est bonne -->
                     <Button size="sm" class="shrink-0" :disabled="!checked.length || bulkBusy" @click="applyChecked">
@@ -417,19 +420,20 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                 </div>
 
                 <div class="rounded-lg border border-gray-100 bg-white">
-                    <DataTable :columns="columns" :rows="rows" :loading="loading" empty-message="Aucune marque à traiter" :row-class="rowClass" :row-click="openRow">
+                    <DataTable :columns="columns" :rows="rows" :loading="loading" empty-message="Aucune marque à traiter" :row-class="rowClass">
                         <template #header-check>
                             <Checkbox :model-value="allChecked" :disabled="!open.length" aria-label="Tout cocher" @update:model-value="checkAll" />
                         </template>
                         <template #check="{ row }">
-                            <div @click.stop>
+                            <div>
                                 <Checkbox v-if="!state[row.key].done" v-model="state[row.key].checked" :aria-label="`Cocher ${row.name}`" />
                             </div>
                         </template>
 
                         <template #request="{ row }">
                             <div class="min-w-48 py-1">
-                                <span class="font-medium text-gray-900">{{ row.name }}</span>
+                                <!-- Seul le nom ouvre la fenêtre : la ligne a des champs, un clic à côté ne doit rien ouvrir -->
+                                <button type="button" class="text-left font-medium text-gray-900 hover:underline" @click="openRow(row)">{{ row.name }}</button>
                                 <span v-if="row.variants.length" class="ml-2 text-xs text-gray-500">{{ row.variants.join(', ') }}</span>
                                 <!-- Seulement le nom principal compris : les autres formes sont dans la fenêtre -->
                                 <p v-if="row.heard.state === 'names'" class="text-xs text-gray-600">Compris : {{ row.heard.main }}</p>
@@ -445,7 +449,7 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                 class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm whitespace-nowrap"
                                 :class="isPlaying(row.listen) ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'"
                                 :title="row.listen.audio_at != null ? 'Écouter à partir du moment où le client nomme la marque' : 'Écouter la conversation'"
-                                @click.stop="play(row.listen)"
+                                @click="play(row.listen)"
                             >
                                 <Pause v-if="isPlaying(row.listen)" class="size-3.5" />
                                 <Play v-else class="size-3.5" />
@@ -455,7 +459,7 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                         </template>
 
                         <template #action="{ row }">
-                            <div @click.stop>
+                            <div>
                                 <template v-if="state[row.key].done">
                                     <span v-if="state[row.key].done.status === 'created'" class="inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Marque créée</span>
                                     <span v-else-if="state[row.key].done.status === 'linked'" class="inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Associée</span>
@@ -470,7 +474,7 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                         </template>
 
                         <template #brand="{ row }">
-                            <div class="w-80 py-1" @click.stop>
+                            <div class="w-80 py-1">
                                 <!-- Traitée : la marque, ouverte dans un autre onglet pour ne pas perdre le tableau -->
                                 <template v-if="state[row.key].done">
                                     <a v-if="state[row.key].done.id" :href="`/brands/${state[row.key].done.id}/edit`" target="_blank" class="text-sm font-medium text-gray-900 hover:underline">{{ state[row.key].done.name }}</a>
@@ -480,10 +484,14 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                     <a :href="`/brands/${linkedBrand(row).id}/edit`" target="_blank" class="text-sm font-medium text-gray-900 hover:underline">{{ linkedBrand(row).name }}</a>
                                     <span class="ml-2 text-sm tabular-nums text-gray-600">{{ linkedBrand(row).phonenumber ? formatPhone(linkedBrand(row).phonenumber) : 'sans numéro' }}</span>
                                     <p class="text-xs text-gray-500">{{ linkedBrand(row).reason }}<template v-if="linkedBrand(row).via"> (autre nom « {{ linkedBrand(row).via }} »)</template></p>
-                                    <p v-if="lines(state[row.key].linkAliasesText).length" class="text-xs text-gray-500" data-ui-ok>
-                                        <!-- Liste d'autres noms : peut passer à la ligne -->
-                                        Autres noms ajoutés : {{ lines(state[row.key].linkAliasesText).join(', ') }}
-                                    </p>
+                                    <Label :for="`tr-link-${row.key}`" class="mt-2 block text-xs font-normal text-gray-500">Autres noms ajoutés à la marque</Label>
+                                    <Textarea
+                                        :id="`tr-link-${row.key}`"
+                                        v-model="state[row.key].linkAliasesText"
+                                        :rows="textRows(state[row.key].linkAliasesText)"
+                                        class="mt-1 min-h-0 px-3 py-1.5"
+                                        placeholder="Un nom par ligne"
+                                    />
                                 </template>
                                 <div v-else-if="state[row.key].action === 'create'" class="space-y-1">
                                     <div class="flex gap-2">
@@ -523,15 +531,22 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                         Déjà le numéro de
                                         <template v-for="(b, i) in state[row.key].sameNumber" :key="b.id">{{ i ? ', ' : '' }}<a :href="`/brands/${b.id}/edit`" target="_blank" class="underline">{{ b.name }}</a></template>
                                     </p>
-                                    <!-- Autres noms de la marque créée (modifiables dans la fenêtre) ; liste qui peut passer à la ligne -->
-                                    <p v-if="lines(state[row.key].aliasesText).length" class="text-xs text-gray-500" data-ui-ok>Autres noms : {{ lines(state[row.key].aliasesText).join(', ') }}</p>
+                                    <!-- Autres noms : le même champ que dans la fenêtre (un nom par ligne), prérempli avec les noms proposés -->
+                                    <Label :for="`tr-aliases-${row.key}`" class="block pt-1 text-xs font-normal text-gray-500">Autres noms</Label>
+                                    <Textarea
+                                        :id="`tr-aliases-${row.key}`"
+                                        v-model="state[row.key].aliasesText"
+                                        :rows="textRows(state[row.key].aliasesText)"
+                                        class="min-h-0 px-3 py-1.5"
+                                        placeholder="Un nom par ligne"
+                                    />
                                 </div>
                                 <span v-else class="text-sm text-gray-500">Ni création ni association</span>
                             </div>
                         </template>
 
                         <template #apply="{ row }">
-                            <div class="flex flex-col items-end gap-1" @click.stop>
+                            <div class="flex flex-col items-end gap-1">
                                 <Button v-if="state[row.key].done" size="sm" variant="ghost" :disabled="state[row.key].busy" @click="reopen(row)">Rouvrir</Button>
                                 <Button v-else size="sm" variant="outline" class="w-44" :disabled="state[row.key].busy || !canApply(row)" @click="apply(row)">
                                     <LoaderCircle v-if="state[row.key].busy" class="mr-2 h-4 w-4 animate-spin" />
