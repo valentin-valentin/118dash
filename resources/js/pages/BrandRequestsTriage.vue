@@ -487,15 +487,27 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                 </template>
                                 <div v-else-if="state[row.key].action === 'create'" class="space-y-1">
                                     <div class="flex gap-2">
-                                        <Input v-model="state[row.key].name" class="h-8 w-40" placeholder="Nom" :aria-label="`Nom de la marque ${row.name}`" />
+                                        <Input v-model="state[row.key].name" class="h-8 w-36" placeholder="Nom" :aria-label="`Nom de la marque ${row.name}`" />
                                         <Input
                                             v-model="state[row.key].phone"
-                                            class="h-8 w-40 tabular-nums"
+                                            class="h-8 w-32 tabular-nums"
                                             placeholder="Numéro"
                                             :aria-label="`Numéro de ${row.name}`"
                                             @paste="formatPhoneField(row)"
                                             @blur="formatPhoneField(row)"
                                         />
+                                        <!-- Appeler le numéro du champ (celui trouvé par ChatGPT au départ) avec le softphone, pour le vérifier -->
+                                        <Button
+                                            type="button"
+                                            size="icon-sm"
+                                            variant="outline"
+                                            :disabled="!phoneOf(row) || !phoneValid(row)"
+                                            :title="phoneOf(row) ? `Appeler le ${formatPhone(phoneOf(row))}` : 'Appeler le numéro'"
+                                            aria-label="Appeler le numéro"
+                                            @click="softphoneCall(phoneOf(row))"
+                                        >
+                                            <Phone class="h-4 w-4" />
+                                        </Button>
                                     </div>
                                     <p v-if="!phoneValid(row)" class="text-xs text-red-600">Numéro français, belge ou allemand attendu</p>
                                     <p v-else-if="chatgptNumber(row)" class="flex items-center gap-1.5 text-xs text-gray-500">
@@ -511,6 +523,8 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                         Déjà le numéro de
                                         <template v-for="(b, i) in state[row.key].sameNumber" :key="b.id">{{ i ? ', ' : '' }}<a :href="`/brands/${b.id}/edit`" target="_blank" class="underline">{{ b.name }}</a></template>
                                     </p>
+                                    <!-- Autres noms de la marque créée (modifiables dans la fenêtre) ; liste qui peut passer à la ligne -->
+                                    <p v-if="lines(state[row.key].aliasesText).length" class="text-xs text-gray-500" data-ui-ok>Autres noms : {{ lines(state[row.key].aliasesText).join(', ') }}</p>
                                 </div>
                                 <span v-else class="text-sm text-gray-500">Ni création ni association</span>
                             </div>
@@ -761,6 +775,7 @@ const googleUrl = computed(() => `https://www.google.com/search?q=${encodeURICom
                                             <Button type="button" size="sm" variant="outline" :disabled="phoneOf(current) === n.number" @click="setPhone(current, n.number)">
                                                 {{ phoneOf(current) === n.number ? 'Dans le champ' : 'Mettre dans le champ' }}
                                             </Button>
+                                            <Button type="button" size="sm" variant="outline" @click="softphoneCall(n.number)"><Phone class="mr-2 h-4 w-4" />Appeler</Button>
                                         </div>
                                     </div>
                                 </div>
