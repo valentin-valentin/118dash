@@ -89,6 +89,8 @@ const { filters, reset } = useFilters(
         with_quality: false,
         // Colonne « Perdus » (appels raccrochés avant qu'un agent décroche)
         with_loss: false,
+        // Colonne « Durée affichée » (durées montrées aux marques partenaires par l'API stats)
+        with_displayed: false,
     },
     (f) => {
         daily.load(f)
@@ -111,7 +113,8 @@ const hasFilters = computed(() =>
     filters.min_duration ||
     filters.with_rejected ||
     filters.with_quality ||
-    filters.with_loss
+    filters.with_loss ||
+    filters.with_displayed
 )
 
 // ─── Colonnes tableau avec comparaisons ───────────────────────────────────────
@@ -121,6 +124,7 @@ const columns = computed(() => [
     ...(filters.with_rejected ? [{ key: 'rejected_calls', label: 'Rejetés', sortable: true, headerClass: 'text-right' }] : []),
     { key: 'total_duration', label: 'Durée totale', sortable: true, headerClass: 'text-right' },
     { key: 'avg_duration', label: 'Durée moy.', sortable: true, headerClass: 'text-right' },
+    ...(filters.with_displayed ? [{ key: 'displayed_total', label: 'Durée affichée', sortable: true, headerClass: 'text-right' }] : []),
     { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
     { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
     { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
@@ -567,9 +571,10 @@ onMounted(() => {
                 @reset="reset"
             >
                 <div class="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
-                    <!-- 1. Mois -->
+                    <!-- 1. Mois : deux colonnes, pour que « Septembre 2026 » tienne en entier -->
                     <FilterSelect
                         v-model="filters.month"
+                        class="lg:col-span-2"
                         :options="monthOptions"
                         placeholder="Mois"
                         :searchable="false"
@@ -695,13 +700,27 @@ onMounted(() => {
                             Attente/pertes
                         </label>
                     </div>
+
+                    <!-- Durées affichées aux marques partenaires : colonne du tableau (totale, moyenne) -->
+                    <div class="flex items-center gap-2 px-3 py-2 bg-white rounded-md border border-gray-200">
+                        <input
+                            type="checkbox"
+                            id="with-displayed"
+                            v-model="filters.with_displayed"
+                            class="h-4 w-4 rounded border-gray-300"
+                        />
+                        <label for="with-displayed" class="text-sm text-gray-700 cursor-pointer select-none">
+                            Durées affichées
+                        </label>
+                    </div>
                 </div>
             </FilterBar>
 
             <!-- Tableau jour par jour -->
             <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <!-- Valeurs et comparaisons sur une ligne : le tableau garde sa hauteur quand on ajoute des colonnes -->
+                    <table class="w-full text-sm whitespace-nowrap">
                         <thead>
                             <tr class="border-b border-gray-200">
                                 <th
@@ -766,6 +785,11 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
+                                <!-- Durée affichée : totale, puis moyenne et nombre d'appels qui en ont une -->
+                                <td v-if="filters.with_displayed" class="px-3 py-2 text-right text-sm">
+                                    <div class="text-gray-900 font-semibold">{{ daily.data.totals.displayed_total != null ? formatDurationTotal(daily.data.totals.displayed_total) : '—' }}</div>
+                                    <div v-if="daily.data.totals.displayed_calls" class="text-xs text-gray-500">moy. {{ formatDuration(daily.data.totals.displayed_avg) }} · {{ formatNumber(daily.data.totals.displayed_calls) }} appels</div>
+                                </td>
                                 <td class="px-3 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatCurrency(daily.data.totals.ca) }} €</div>
                                     <div v-if="daily.data.totals.prev_ca !== null" class="text-xs text-gray-500">
@@ -826,8 +850,8 @@ onMounted(() => {
                                     @click="!isSunday(row.date) && selectDay(row.date)"
                                 >
                                     <td class="px-3 py-1.5 text-sm">
-                                        <div :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
-                                        <div :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ row.comparison_label }}</div>
+                                        <div class="whitespace-nowrap" :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
+                                        <div class="whitespace-nowrap" :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ row.comparison_label }}</div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.calls) }}</div>
@@ -861,6 +885,10 @@ onMounted(() => {
                                                 ({{ row.avg_duration_var >= 0 ? '+' : '' }}{{ row.avg_duration_var }}%)
                                             </span>
                                         </div>
+                                    </td>
+                                    <td v-if="filters.with_displayed" class="px-3 py-1.5 text-right text-sm">
+                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ row.displayed_total != null ? formatDurationTotal(row.displayed_total) : '—' }}</div>
+                                        <div v-if="row.displayed_calls && !isSunday(row.date)" class="text-xs text-gray-500">moy. {{ formatDuration(row.displayed_avg) }} · {{ formatNumber(row.displayed_calls) }} appels</div>
                                     </td>
                                     <td class="px-3 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatCurrency(row.ca) }} €</div>

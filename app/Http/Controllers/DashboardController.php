@@ -6,7 +6,9 @@ use App\Helpers\CarrierHelper;
 use App\Models\Call;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -401,6 +403,12 @@ class DashboardController extends Controller
     /**
      * Parse multi-select filter value
      */
+    /** Colonne calls.total_duration_displayed (migration voxnode118) : vérifiée une fois par heure. */
+    private function hasDisplayedDuration(): bool
+    {
+        return Cache::remember('calls:has-total-duration-displayed', 3600, fn () => Schema::hasColumn('calls', 'total_duration_displayed'));
+    }
+
     private function parseMultiSelect($value): array
     {
         if (is_array($value)) {
@@ -764,7 +772,11 @@ class DashboardController extends Controller
         }
 
         // Récupérer les données pour chaque jour
-        $daily = $allDays->map(function($dateStr) use ($applyFilters, $today, $now) {
+        // Durée affichée aux marques partenaires (calls.total_duration_displayed, écrite par l'API stats de voxnode118) :
+        // seulement si la colonne existe
+        $displayed = $this->hasDisplayedDuration();
+
+        $daily = $allDays->map(function($dateStr) use ($applyFilters, $today, $now, $displayed) {
             // Parser la date en timezone Europe/Paris puis convertir en UTC pour la requête
             $date = \Carbon\Carbon::parse($dateStr, 'Europe/Paris');
 
@@ -792,7 +804,10 @@ class DashboardController extends Controller
                     COALESCE(SUM(audio_quality), 0) as quality_sum,
                     COALESCE(SUM(audio_quality < 3.1), 0) as quality_degraded,
                     COALESCE(SUM(COALESCE(duration_agent, 0) = 0), 0) as lost_calls
-                ')
+                ' . ($displayed ? ',
+                    COALESCE(SUM(total_duration_displayed), 0) as displayed_total,
+                    COUNT(total_duration_displayed) as displayed_calls
+                ' : ''))
                 ->first();
 
             return (object)[
@@ -808,6 +823,8 @@ class DashboardController extends Controller
                 'quality_degraded' => $data ? (int) $data->quality_degraded : 0,
                 // Perdus : le client a raccroché avant qu'un agent décroche
                 'lost_calls' => $data ? (int) $data->lost_calls : 0,
+                'displayed_total' => $displayed && $data ? (int) $data->displayed_total : 0,
+                'displayed_calls' => $displayed && $data ? (int) $data->displayed_calls : 0,
             ];
         });
 
@@ -905,6 +922,10 @@ class DashboardController extends Controller
                 'quality_mos' => $row->quality_calls ? round($row->quality_sum / $row->quality_calls, 2) : null,
                 'quality_degraded' => $row->quality_degraded,
                 'lost_calls' => $row->lost_calls,
+                // Durée affichée : totale, et moyenne sur les appels qui en ont une (null : aucun)
+                'displayed_total' => $row->displayed_calls ? $row->displayed_total : null,
+                'displayed_avg' => $row->displayed_calls ? round($row->displayed_total / $row->displayed_calls) : null,
+                'displayed_calls' => $row->displayed_calls,
                 'prev_calls' => $prevCalls,
                 'prev_ca' => $prevCa,
                 'prev_reverse' => $prevReverse,
@@ -1002,6 +1023,10 @@ class DashboardController extends Controller
         $totals['quality_mos'] = $qualityCalls ? round($daily->sum('quality_sum') / $qualityCalls, 2) : null;
         $totals['quality_degraded'] = $daily->sum('quality_degraded');
         $totals['lost_calls'] = $daily->sum('lost_calls');
+        $displayedCalls = $daily->sum('displayed_calls');
+        $totals['displayed_calls'] = $displayedCalls;
+        $totals['displayed_total'] = $displayedCalls ? $daily->sum('displayed_total') : null;
+        $totals['displayed_avg'] = $displayedCalls ? round($daily->sum('displayed_total') / $displayedCalls) : null;
 
         return response()->json([
             'items' => $daily,
