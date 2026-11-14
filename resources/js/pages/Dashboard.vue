@@ -89,7 +89,7 @@ const { filters, reset } = useFilters(
         with_quality: false,
         // Colonne « Perdus » (appels raccrochés avant qu'un agent décroche)
         with_loss: false,
-        // Colonne « Durée affichée » (durées montrées aux marques partenaires par l'API stats)
+        // Colonnes « Affichée totale » et « Affichée moy. » (durées montrées aux marques partenaires par l'API stats)
         with_displayed: false,
     },
     (f) => {
@@ -124,7 +124,12 @@ const columns = computed(() => [
     ...(filters.with_rejected ? [{ key: 'rejected_calls', label: 'Rejetés', sortable: true, headerClass: 'text-right' }] : []),
     { key: 'total_duration', label: 'Durée totale', sortable: true, headerClass: 'text-right' },
     { key: 'avg_duration', label: 'Durée moy.', sortable: true, headerClass: 'text-right' },
-    ...(filters.with_displayed ? [{ key: 'displayed_total', label: 'Durée affichée', sortable: true, headerClass: 'text-right' }] : []),
+    ...(filters.with_displayed
+        ? [
+              { key: 'displayed_total', label: 'Affichée totale', sortable: true, headerClass: 'text-right' },
+              { key: 'displayed_avg', label: 'Affichée moy.', sortable: true, headerClass: 'text-right' },
+          ]
+        : []),
     { key: 'ca', label: 'CA (€)', sortable: true, headerClass: 'text-right' },
     { key: 'reverse', label: 'Reverse (€)', sortable: true, headerClass: 'text-right' },
     { key: 'benefice', label: 'Bénéfice (€)', sortable: true, headerClass: 'text-right' },
@@ -701,7 +706,7 @@ onMounted(() => {
                         </label>
                     </div>
 
-                    <!-- Durées affichées aux marques partenaires : colonne du tableau (totale, moyenne) -->
+                    <!-- Durées affichées aux marques partenaires : deux colonnes du tableau (totale, moyenne) -->
                     <div class="flex items-center gap-2 px-3 py-2 bg-white rounded-md border border-gray-200">
                         <input
                             type="checkbox"
@@ -719,14 +724,15 @@ onMounted(() => {
             <!-- Tableau jour par jour -->
             <div class="rounded-lg border border-gray-200 bg-white overflow-hidden">
                 <div class="overflow-x-auto">
-                    <!-- Valeurs et comparaisons sur une ligne : le tableau garde sa hauteur quand on ajoute des colonnes -->
+                    <!-- Valeurs et comparaisons sur une ligne : le tableau garde sa hauteur quand on ajoute des colonnes ; cellules px-2
+                         (les tableaux DataTable ont px-1.5) pour que les colonnes optionnelles tiennent -->
                     <table class="w-full text-sm whitespace-nowrap">
                         <thead>
                             <tr class="border-b border-gray-200">
                                 <th
                                     v-for="col in columns"
                                     :key="col.key"
-                                    class="whitespace-nowrap px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400"
+                                    class="whitespace-nowrap px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-gray-400"
                                     :class="[col.headerClass || 'text-left', col.sortable && 'cursor-pointer select-none hover:text-gray-700']"
                                     @click="col.sortable && toggleSort(col.key)"
                                 >
@@ -751,8 +757,8 @@ onMounted(() => {
                         <tbody>
                             <!-- Total en haut -->
                             <tr v-if="daily.data?.totals" class="border-t border-b border-gray-200 bg-gray-50">
-                                <td class="px-3 py-2 text-left font-bold text-gray-900">Total</td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <td class="px-2 py-2 text-left font-bold text-gray-900">Total</td>
+                                <td class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.calls) }}</div>
                                     <div v-if="daily.data.totals.prev_calls !== null" class="text-xs text-gray-500">
                                         {{ formatNumber(daily.data.totals.prev_calls) }}
@@ -761,13 +767,13 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <td v-if="filters.with_rejected" class="px-3 py-2 text-right text-sm">
+                                <td v-if="filters.with_rejected" class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatNumber(daily.data.totals.rejected_calls) }}</div>
                                     <div v-if="rejectedPercent(daily.data.totals.calls, daily.data.totals.rejected_calls) !== null" class="text-xs text-gray-500">
                                         soit {{ rejectedPercent(daily.data.totals.calls, daily.data.totals.rejected_calls) }}%
                                     </div>
                                 </td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <td class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatDurationTotal(daily.data.totals.total_duration) }}</div>
                                     <div v-if="daily.data.totals.prev_total_duration !== null" class="text-xs text-gray-500">
                                         {{ formatDurationTotal(daily.data.totals.prev_total_duration) }}
@@ -776,7 +782,7 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <td class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatDuration(daily.data.totals.avg_duration) }}</div>
                                     <div v-if="daily.data.totals.prev_avg_duration !== null" class="text-xs text-gray-500">
                                         {{ formatDuration(daily.data.totals.prev_avg_duration) }}
@@ -785,12 +791,28 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <!-- Durée affichée : totale, puis moyenne et nombre d'appels qui en ont une -->
-                                <td v-if="filters.with_displayed" class="px-3 py-2 text-right text-sm">
-                                    <div class="text-gray-900 font-semibold">{{ daily.data.totals.displayed_total != null ? formatDurationTotal(daily.data.totals.displayed_total) : '—' }}</div>
-                                    <div v-if="daily.data.totals.displayed_calls" class="text-xs text-gray-500">moy. {{ formatDuration(daily.data.totals.displayed_avg) }} · {{ formatNumber(daily.data.totals.displayed_calls) }} appels</div>
-                                </td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <!-- Durée affichée : mêmes cellules que Durée totale et Durée moy. -->
+                                <template v-if="filters.with_displayed">
+                                    <td class="px-2 py-2 text-right text-sm">
+                                        <div class="text-gray-900 font-semibold">{{ formatDurationTotal(daily.data.totals.displayed_total) }}</div>
+                                        <div v-if="daily.data.totals.prev_displayed_total !== null" class="text-xs text-gray-500">
+                                            {{ formatDurationTotal(daily.data.totals.prev_displayed_total) }}
+                                            <span v-if="daily.data.totals.displayed_total_var !== null" :class="daily.data.totals.displayed_total_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ daily.data.totals.displayed_total_var >= 0 ? '+' : '' }}{{ daily.data.totals.displayed_total_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-2 py-2 text-right text-sm">
+                                        <div class="text-gray-900 font-semibold">{{ formatDuration(daily.data.totals.displayed_avg) }}</div>
+                                        <div v-if="daily.data.totals.prev_displayed_avg !== null" class="text-xs text-gray-500">
+                                            {{ formatDuration(daily.data.totals.prev_displayed_avg) }}
+                                            <span v-if="daily.data.totals.displayed_avg_var !== null" :class="daily.data.totals.displayed_avg_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                ({{ daily.data.totals.displayed_avg_var >= 0 ? '+' : '' }}{{ daily.data.totals.displayed_avg_var }}%)
+                                            </span>
+                                        </div>
+                                    </td>
+                                </template>
+                                <td class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatCurrency(daily.data.totals.ca) }} €</div>
                                     <div v-if="daily.data.totals.prev_ca !== null" class="text-xs text-gray-500">
                                         {{ formatCurrency(daily.data.totals.prev_ca) }} €
@@ -799,7 +821,7 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <td class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-semibold">{{ formatCurrency(daily.data.totals.reverse) }} €</div>
                                     <div v-if="daily.data.totals.prev_reverse !== null" class="text-xs text-gray-500">
                                         {{ formatCurrency(daily.data.totals.prev_reverse) }} €
@@ -808,7 +830,7 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <td class="px-3 py-2 text-right text-sm">
+                                <td class="px-2 py-2 text-right text-sm">
                                     <div class="text-gray-900 font-bold">{{ formatCurrency(daily.data.totals.benefice) }} €</div>
                                     <div v-if="daily.data.totals.prev_benefice !== null" class="text-xs text-gray-500">
                                         {{ formatCurrency(daily.data.totals.prev_benefice) }} €
@@ -817,11 +839,11 @@ onMounted(() => {
                                         </span>
                                     </div>
                                 </td>
-                                <td v-if="filters.with_loss" class="px-3 py-2 text-right text-sm">
+                                <td v-if="filters.with_loss" class="px-2 py-2 text-right text-sm">
                                     <div class="font-semibold text-gray-900">{{ lostRate(daily.data.totals) }}</div>
                                     <div class="text-xs text-gray-500">{{ formatNumber(daily.data.totals.lost_calls) }} appels</div>
                                 </td>
-                                <td v-if="filters.with_quality" class="px-3 py-2 text-right text-sm">
+                                <td v-if="filters.with_quality" class="px-2 py-2 text-right text-sm">
                                     <div class="font-semibold" :class="qualityClass(daily.data.totals.quality_mos) || 'text-gray-900'">{{ formatQuality(daily.data.totals.quality_mos) }}</div>
                                     <div v-if="daily.data.totals.quality_calls" class="text-xs text-gray-500">{{ measuredText(daily.data.totals.quality_calls, daily.data.totals.quality_degraded) }}</div>
                                 </td>
@@ -830,7 +852,7 @@ onMounted(() => {
                             <!-- Skeleton loading -->
                             <template v-if="daily.loading">
                                 <tr v-for="n in 8" :key="n" class="border-b border-gray-50">
-                                    <td v-for="col in columns" :key="col.key" class="px-3 py-2">
+                                    <td v-for="col in columns" :key="col.key" class="px-2 py-2">
                                         <div class="h-4 animate-pulse rounded bg-gray-50" style="width: 65%" />
                                     </td>
                                 </tr>
@@ -849,11 +871,11 @@ onMounted(() => {
                                     ]"
                                     @click="!isSunday(row.date) && selectDay(row.date)"
                                 >
-                                    <td class="px-3 py-1.5 text-sm">
+                                    <td class="px-2 py-1.5 text-sm">
                                         <div class="whitespace-nowrap" :class="isSunday(row.date) ? 'font-medium text-gray-400' : 'font-medium text-gray-900'">{{ row.date_label }}</div>
                                         <div class="whitespace-nowrap" :class="isSunday(row.date) ? 'text-xs text-gray-400' : 'text-xs text-gray-500'">{{ row.comparison_label }}</div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <td class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.calls) }}</div>
                                         <div v-if="row.prev_calls !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatNumber(row.prev_calls) }}
@@ -862,13 +884,13 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td v-if="filters.with_rejected" class="px-3 py-1.5 text-right text-sm">
+                                    <td v-if="filters.with_rejected" class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatNumber(row.rejected_calls) }}</div>
                                         <div v-if="!isSunday(row.date) && rejectedPercent(row.calls, row.rejected_calls) !== null" class="text-xs text-gray-500">
                                             soit {{ rejectedPercent(row.calls, row.rejected_calls) }}%
                                         </div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <td class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDurationTotal(row.total_duration) }}</div>
                                         <div v-if="row.prev_total_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatDurationTotal(row.prev_total_duration) }}
@@ -877,7 +899,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <td class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDuration(row.avg_duration) }}</div>
                                         <div v-if="row.prev_avg_duration !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatDuration(row.prev_avg_duration) }}
@@ -886,11 +908,27 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td v-if="filters.with_displayed" class="px-3 py-1.5 text-right text-sm">
-                                        <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ row.displayed_total != null ? formatDurationTotal(row.displayed_total) : '—' }}</div>
-                                        <div v-if="row.displayed_calls && !isSunday(row.date)" class="text-xs text-gray-500">moy. {{ formatDuration(row.displayed_avg) }} · {{ formatNumber(row.displayed_calls) }} appels</div>
-                                    </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <template v-if="filters.with_displayed">
+                                        <td class="px-2 py-1.5 text-right text-sm">
+                                            <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDurationTotal(row.displayed_total) }}</div>
+                                            <div v-if="row.prev_displayed_total !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                                {{ formatDurationTotal(row.prev_displayed_total) }}
+                                                <span :class="row.displayed_total_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                    ({{ row.displayed_total_var >= 0 ? '+' : '' }}{{ row.displayed_total_var }}%)
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="px-2 py-1.5 text-right text-sm">
+                                            <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatDuration(row.displayed_avg) }}</div>
+                                            <div v-if="row.prev_displayed_avg !== null && !isSunday(row.date)" class="text-xs text-gray-500">
+                                                {{ formatDuration(row.prev_displayed_avg) }}
+                                                <span :class="row.displayed_avg_var >= 0 ? 'text-green-600' : 'text-red-600'">
+                                                    ({{ row.displayed_avg_var >= 0 ? '+' : '' }}{{ row.displayed_avg_var }}%)
+                                                </span>
+                                            </div>
+                                        </td>
+                                    </template>
+                                    <td class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatCurrency(row.ca) }} €</div>
                                         <div v-if="row.prev_ca !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_ca) }} €
@@ -899,7 +937,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <td class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ formatCurrency(row.reverse) }} €</div>
                                         <div v-if="row.prev_reverse !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_reverse) }} €
@@ -908,7 +946,7 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td class="px-3 py-1.5 text-right text-sm">
+                                    <td class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'font-bold text-gray-400' : 'font-bold text-gray-900'">{{ formatCurrency(row.benefice) }} €</div>
                                         <div v-if="row.prev_benefice !== null && !isSunday(row.date)" class="text-xs text-gray-500">
                                             {{ formatCurrency(row.prev_benefice) }} €
@@ -917,11 +955,11 @@ onMounted(() => {
                                             </span>
                                         </div>
                                     </td>
-                                    <td v-if="filters.with_loss" class="px-3 py-1.5 text-right text-sm">
+                                    <td v-if="filters.with_loss" class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : 'text-gray-900'">{{ lostRate(row) }}</div>
                                         <div v-if="row.calls && !isSunday(row.date)" class="text-xs text-gray-500">{{ formatNumber(row.lost_calls) }} appels</div>
                                     </td>
-                                    <td v-if="filters.with_quality" class="px-3 py-1.5 text-right text-sm">
+                                    <td v-if="filters.with_quality" class="px-2 py-1.5 text-right text-sm">
                                         <div :class="isSunday(row.date) ? 'text-gray-400' : qualityClass(row.quality_mos) || 'text-gray-900'">{{ formatQuality(row.quality_mos) }}</div>
                                         <div v-if="row.quality_calls && !isSunday(row.date)" class="text-xs text-gray-500">{{ measuredText(row.quality_calls, row.quality_degraded) }}</div>
                                     </td>
@@ -931,7 +969,7 @@ onMounted(() => {
                             <!-- Vide -->
                             <template v-else>
                                 <tr>
-                                    <td :colspan="columns.length" class="px-3 py-8 text-center text-sm text-gray-300">
+                                    <td :colspan="columns.length" class="px-2 py-8 text-center text-sm text-gray-300">
                                         Aucune donnée
                                     </td>
                                 </tr>

@@ -403,6 +403,27 @@ class DashboardController extends Controller
     /**
      * Parse multi-select filter value
      */
+    /**
+     * Durée affichée d'un jour (ou du mois) et sa comparaison, mêmes calculs que total_duration / avg_duration :
+     * totale, moyenne sur les appels qui en ont une, valeurs de la période comparée et écarts en %.
+     */
+    private function displayedFields(int $total, int $calls, ?object $prev): array
+    {
+        $avg = $calls ? round($total / $calls) : 0;
+        $prevTotal = $prev && isset($prev->displayed_total) ? (int) $prev->displayed_total : null;
+        $prevAvg = $prev && isset($prev->displayed_calls) ? ((int) $prev->displayed_calls ? round($prev->displayed_total / $prev->displayed_calls) : 0) : null;
+
+        return [
+            'displayed_total' => $total,
+            'displayed_avg' => $avg,
+            'displayed_calls' => $calls,
+            'prev_displayed_total' => $prevTotal,
+            'prev_displayed_avg' => $prevAvg,
+            'displayed_total_var' => $prevTotal ? round(($total - $prevTotal) / $prevTotal * 100, 1) : null,
+            'displayed_avg_var' => $prevAvg ? round(($avg - $prevAvg) / $prevAvg * 100, 1) : null,
+        ];
+    }
+
     /** Colonne calls.total_duration_displayed (migration voxnode118) : vérifiée une fois par heure. */
     private function hasDisplayedDuration(): bool
     {
@@ -860,7 +881,10 @@ class DashboardController extends Controller
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(SUM(total_duration), 0) as total_duration,
                 COALESCE(AVG(total_duration), 0) as avg_duration
-            ')->first();
+            ' . ($displayed ? ',
+                    COALESCE(SUM(total_duration_displayed), 0) as displayed_total,
+                    COUNT(total_duration_displayed) as displayed_calls
+                ' : ''))->first();
 
             $previousWeekData[$dayData->date] = $prevData;
         }
@@ -922,10 +946,8 @@ class DashboardController extends Controller
                 'quality_mos' => $row->quality_calls ? round($row->quality_sum / $row->quality_calls, 2) : null,
                 'quality_degraded' => $row->quality_degraded,
                 'lost_calls' => $row->lost_calls,
-                // Durée affichée : totale, et moyenne sur les appels qui en ont une (null : aucun)
-                'displayed_total' => $row->displayed_calls ? $row->displayed_total : null,
-                'displayed_avg' => $row->displayed_calls ? round($row->displayed_total / $row->displayed_calls) : null,
-                'displayed_calls' => $row->displayed_calls,
+                // Durée affichée : totale, et moyenne sur les appels qui en ont une ; comparées à J-7 comme les durées
+                ...$this->displayedFields($row->displayed_total, $row->displayed_calls, $prev),
                 'prev_calls' => $prevCalls,
                 'prev_ca' => $prevCa,
                 'prev_reverse' => $prevReverse,
@@ -974,7 +996,10 @@ class DashboardController extends Controller
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(SUM(total_duration), 0) as total_duration,
                 COALESCE(AVG(total_duration), 0) as avg_duration
-            ')
+            ' . ($displayed ? ',
+                    COALESCE(SUM(total_duration_displayed), 0) as displayed_total,
+                    COUNT(total_duration_displayed) as displayed_calls
+                ' : ''))
             ->first();
 
         $prevTotalCalls = $prevMonthData ? (int) $prevMonthData->calls : 0;
@@ -1023,10 +1048,8 @@ class DashboardController extends Controller
         $totals['quality_mos'] = $qualityCalls ? round($daily->sum('quality_sum') / $qualityCalls, 2) : null;
         $totals['quality_degraded'] = $daily->sum('quality_degraded');
         $totals['lost_calls'] = $daily->sum('lost_calls');
-        $displayedCalls = $daily->sum('displayed_calls');
-        $totals['displayed_calls'] = $displayedCalls;
-        $totals['displayed_total'] = $displayedCalls ? $daily->sum('displayed_total') : null;
-        $totals['displayed_avg'] = $displayedCalls ? round($daily->sum('displayed_total') / $displayedCalls) : null;
+        // Durée affichée du mois, comparée au mois précédent à jour égal
+        $totals += $this->displayedFields($daily->sum('displayed_total'), $daily->sum('displayed_calls'), $prevMonthData);
 
         return response()->json([
             'items' => $daily,
