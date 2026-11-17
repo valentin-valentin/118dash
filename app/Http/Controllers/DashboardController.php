@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
+    // « % 30mn » : appels d'au moins 29 min 45 s de durée totale
+    private const LONG_CALL = 1785;
+
     /**
      * Hero KPIs avec comparaisons multiples (hier + même jour semaine dernière)
      */
@@ -403,6 +406,21 @@ class DashboardController extends Controller
     /**
      * Parse multi-select filter value
      */
+    /** Part des appels d'au moins LONG_CALL secondes, et celle de la période comparée ; écart en points. */
+    private function longFields(int $long, int $calls, ?object $prev): array
+    {
+        $pct = $calls ? round($long / $calls * 100, 1) : null;
+        $prevCalls = $prev ? (int) $prev->calls : 0;
+        $prevPct = $prevCalls ? round((int) $prev->long_calls / $prevCalls * 100, 1) : null;
+
+        return [
+            'long_calls' => $long,
+            'long_pct' => $pct,
+            'prev_long_pct' => $prevPct,
+            'long_pct_diff' => $pct !== null && $prevPct !== null ? round($pct - $prevPct, 1) : null,
+        ];
+    }
+
     /**
      * Durée affichée d'un jour (ou du mois) et sa comparaison, mêmes calculs que total_duration / avg_duration :
      * totale, moyenne sur les appels qui en ont une, valeurs de la période comparée et écarts en %.
@@ -824,7 +842,8 @@ class DashboardController extends Controller
                     COUNT(audio_quality) as quality_calls,
                     COALESCE(SUM(audio_quality), 0) as quality_sum,
                     COALESCE(SUM(audio_quality < 3.1), 0) as quality_degraded,
-                    COALESCE(SUM(COALESCE(duration_agent, 0) = 0), 0) as lost_calls
+                    COALESCE(SUM(COALESCE(duration_agent, 0) = 0), 0) as lost_calls,
+                    COALESCE(SUM(total_duration >= ' . self::LONG_CALL . '), 0) as long_calls
                 ' . ($displayed ? ',
                     COALESCE(SUM(total_duration_displayed), 0) as displayed_total,
                     COUNT(total_duration_displayed) as displayed_calls
@@ -844,6 +863,7 @@ class DashboardController extends Controller
                 'quality_degraded' => $data ? (int) $data->quality_degraded : 0,
                 // Perdus : le client a raccroché avant qu'un agent décroche
                 'lost_calls' => $data ? (int) $data->lost_calls : 0,
+                'long_calls' => $data ? (int) $data->long_calls : 0,
                 'displayed_total' => $displayed && $data ? (int) $data->displayed_total : 0,
                 'displayed_calls' => $displayed && $data ? (int) $data->displayed_calls : 0,
             ];
@@ -880,7 +900,8 @@ class DashboardController extends Controller
                 COALESCE(SUM(payout_source), 0) as reverse,
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(SUM(total_duration), 0) as total_duration,
-                COALESCE(AVG(total_duration), 0) as avg_duration
+                COALESCE(AVG(total_duration), 0) as avg_duration,
+                COALESCE(SUM(total_duration >= ' . self::LONG_CALL . '), 0) as long_calls
             ' . ($displayed ? ',
                     COALESCE(SUM(total_duration_displayed), 0) as displayed_total,
                     COUNT(total_duration_displayed) as displayed_calls
@@ -927,13 +948,13 @@ class DashboardController extends Controller
 
             // Formater les dates avec jour de la semaine en français
             $dayName = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'][$currentDate->dayOfWeek];
-            $comparisonDayName = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][$comparisonDate->dayOfWeek];
 
             return [
                 'date' => $row->date,
                 'date_label' => $dayName . ' ' . $currentDate->format('d/m'),
                 'comparison_date' => $comparisonDate->format('Y-m-d'),
-                'comparison_label' => 'vs. ' . $comparisonDayName . ' ' . $comparisonDate->format('d/m'),
+                // J-7 tombe le même jour de la semaine que la ligne : la date suffit
+                'comparison_label' => 'vs. ' . $comparisonDate->format('d/m'),
                 'calls' => $calls,
                 'ca' => $ca,
                 'reverse' => $reverse,
@@ -948,6 +969,8 @@ class DashboardController extends Controller
                 'lost_calls' => $row->lost_calls,
                 // Durée affichée : totale, et moyenne sur les appels qui en ont une ; comparées à J-7 comme les durées
                 ...$this->displayedFields($row->displayed_total, $row->displayed_calls, $prev),
+                // % 30mn : part des appels d'au moins 29 min 45 s ; écart avec J-7 en points
+                ...$this->longFields($row->long_calls, $calls, $prev),
                 'prev_calls' => $prevCalls,
                 'prev_ca' => $prevCa,
                 'prev_reverse' => $prevReverse,
@@ -995,7 +1018,8 @@ class DashboardController extends Controller
                 COALESCE(SUM(payout_source), 0) as reverse,
                 COALESCE(SUM(COALESCE(payout, 0) - COALESCE(payout_source, 0)), 0) as benefice,
                 COALESCE(SUM(total_duration), 0) as total_duration,
-                COALESCE(AVG(total_duration), 0) as avg_duration
+                COALESCE(AVG(total_duration), 0) as avg_duration,
+                COALESCE(SUM(total_duration >= ' . self::LONG_CALL . '), 0) as long_calls
             ' . ($displayed ? ',
                     COALESCE(SUM(total_duration_displayed), 0) as displayed_total,
                     COUNT(total_duration_displayed) as displayed_calls
@@ -1050,6 +1074,7 @@ class DashboardController extends Controller
         $totals['lost_calls'] = $daily->sum('lost_calls');
         // Durée affichée du mois, comparée au mois précédent à jour égal
         $totals += $this->displayedFields($daily->sum('displayed_total'), $daily->sum('displayed_calls'), $prevMonthData);
+        $totals += $this->longFields($daily->sum('long_calls'), $totalCalls, $prevMonthData);
 
         return response()->json([
             'items' => $daily,

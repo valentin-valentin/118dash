@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useFilters } from '@/composables/useFilters'
 import { useFilterOptions } from '@/composables/useFilterOptions'
 import { formatQuality, qualityClass } from '@/lib/quality'
@@ -35,7 +34,8 @@ import {
  *   2. Résumé de la sélection : volumes, durées, argent
  *   3. Liste : ▶ dans la colonne Durée écoute la partie agent ou la partie transfert (lecteur en bas de page) ;
  *      un clic sur la ligne ouvre la fiche
- *   4. Fiche de l'appel (panneau) : enregistrements, déroulé, appelant et ses autres appels, argent, qualité…
+ *   4. Fiche de l'appel (fenêtre) : enregistrements, déroulé, appelant et ses autres appels, argent, qualité…
+ *   Recherche par ID (panel ou Voxnode) : sur toutes les dates, sans les autres filtres
  * Dates et heures en heure de Paris.
  */
 const props = defineProps({
@@ -59,6 +59,7 @@ const OUTCOMES = [
     { value: 'to_backup', label: 'Transférés vers Backup' },
 ]
 const DEFAULTS = {
+    call_id: '',
     caller: '',
     called: '',
     period: 'today',
@@ -86,7 +87,7 @@ const DEFAULTS = {
     per_page: 50,
     page: 1,
 }
-const FILTER_KEYS = ['caller', 'called', 'outcome', 'center', 'platform', 'has_recording', 'source_id', 'company_id', 'provider_id', 'brand_name', 'agent_name', 'carrier', 'duration_min', 'duration_max', 'audio_quality', 'blacklist_id', 'phone_agent_hangup', 'phone_reported_by_agent', 'phone_cant_provide_service']
+const FILTER_KEYS = ['call_id', 'caller', 'called', 'outcome', 'center', 'platform', 'has_recording', 'source_id', 'company_id', 'provider_id', 'brand_name', 'agent_name', 'carrier', 'duration_min', 'duration_max', 'audio_quality', 'blacklist_id', 'phone_agent_hangup', 'phone_reported_by_agent', 'phone_cant_provide_service']
 const isSet = (v) => (Array.isArray(v) ? v.length > 0 : v !== '' && v !== null && v !== undefined)
 
 const { filters, reset } = useFilters(DEFAULTS)
@@ -218,12 +219,16 @@ const summaryFigures = computed(() => {
     ]
 })
 
-// ─── Fiche d'un appel (panneau) ────────────────────────────────────────────────
+// ─── Fiche d'un appel (fenêtre) ────────────────────────────────────────────────
 const openId = ref(null)
-const sheetOpen = computed({
+const ficheOpen = computed({
     get: () => openId.value !== null,
     set: (open) => !open && (openId.value = null),
 })
+// Clic dans le lecteur pendant que la fenêtre est ouverte : la fenêtre reste ouverte
+function keepOpenForPlayer(e) {
+    if (e.target?.closest?.('[data-player]')) e.preventDefault()
+}
 
 // ─── Lecteur : un seul enregistrement à la fois, en bas de la page ──────────────
 const audio = typeof Audio !== 'undefined' ? new Audio() : null
@@ -380,6 +385,7 @@ const COLUMNS = [
                     >
                         {{ p.label }}
                     </button>
+                    <span v-if="filters.call_id" class="ml-1.5 text-xs text-gray-500">Recherche par ID : sur toutes les dates, sans les autres filtres</span>
                     <template v-if="filters.period === 'custom'">
                         <Input v-model="filters.from" type="date" class="ml-1.5 h-8 w-40" />
                         <span class="text-xs text-gray-400">→</span>
@@ -388,6 +394,7 @@ const COLUMNS = [
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    <Input v-model="filters.call_id" type="text" placeholder="ID de l'appel..." class="h-8 tabular-nums" />
                     <Input v-model="filters.caller" type="text" placeholder="N° appelant..." class="h-8" />
                     <Input v-model="filters.called" type="text" placeholder="N° appelé..." class="h-8" />
                     <FilterSelect v-model="filters.source_id" :options="filterOptions.sources" placeholder="Toutes les sources" searchable multiple />
@@ -588,7 +595,13 @@ const COLUMNS = [
         </div>
 
         <!-- Lecteur -->
-        <div v-if="player.call" class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64">
+        <!-- Fenêtre ouverte : le lecteur passe devant son fond sombre et reste cliquable -->
+        <div
+            v-if="player.call"
+            data-player
+            class="fixed inset-x-0 bottom-0 border-t border-gray-200 bg-white/95 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur md:left-64"
+            :class="ficheOpen ? 'pointer-events-auto z-[60]' : 'z-40'"
+        >
             <div class="flex items-center gap-3 py-2.5 pr-20 pl-4">
                 <button type="button" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-gray-800" :title="player.playing ? 'Pause' : 'Lecture'" @click="play(player.call, player.part)">
                     <LoaderCircle v-if="player.loading" class="size-4 animate-spin" />
@@ -625,18 +638,17 @@ const COLUMNS = [
             </div>
         </div>
 
-        <!-- Fiche d'un appel -->
-        <Sheet v-model:open="sheetOpen">
-            <SheetContent class="w-full overflow-y-auto sm:max-w-xl">
-                <SheetHeader class="sr-only">
-                    <SheetTitle>Fiche de l'appel</SheetTitle>
-                    <SheetDescription>Enregistrements et détail de l'appel</SheetDescription>
-                </SheetHeader>
-                <div class="px-6 pt-6 pb-10">
-                    <CallDetailPanel v-if="openId" :call-id="openId" :centers="centers" in-panel @open="(id) => (openId = id)" />
-                </div>
-            </SheetContent>
-        </Sheet>
+        <!-- Fiche d'un appel : fenêtre avec son fond sombre ; hauteur limitée pour ne pas passer sous le lecteur.
+             Un autre appel de l'appelant s'ouvre dans la même fenêtre. -->
+        <Dialog v-model:open="ficheOpen">
+            <DialogContent class="max-h-[calc(100vh-10rem)] overflow-y-auto sm:max-w-4xl" @interact-outside="keepOpenForPlayer">
+                <DialogHeader class="sr-only">
+                    <DialogTitle>Fiche de l'appel</DialogTitle>
+                    <DialogDescription>Enregistrements et détail de l'appel</DialogDescription>
+                </DialogHeader>
+                <CallDetailPanel v-if="openId" :key="openId" :call-id="openId" :centers="centers" in-panel @open="(id) => (openId = id)" />
+            </DialogContent>
+        </Dialog>
 
         <!-- Export CSV -->
         <Dialog v-model:open="exportOpen">

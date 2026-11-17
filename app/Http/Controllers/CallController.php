@@ -171,6 +171,16 @@ class CallController extends Controller
         // Détecter si des filtres sont actifs
         $hasFilters = false;
 
+        // Un appel par son identifiant : id du panel, ou identifiant Voxnode (notre serveur le préfixe de 'pbx-').
+        // Les autres filtres, période comprise, ne s'appliquent pas : l'appel sort quel que soit son jour.
+        if ($request->filled('call_id')) {
+            $id = trim((string) $request->call_id);
+            $voxnode = array_values(array_unique([$id, 'pbx-'.preg_replace('/^pbx-/', '', $id), preg_replace('/^pbx-/', '', $id)]));
+            $query->where(fn ($q) => $q->whereIn('voxnode_id', $voxnode)->when(ctype_digit($id), fn ($q) => $q->orWhere('id', (int) $id)));
+
+            return true;
+        }
+
         // Filtres
         // Recherche d'un numéro, appelant ou appelé : « 06 12 34 », « 0612… » ou « +33612… »
         if ($request->filled('q')) {
