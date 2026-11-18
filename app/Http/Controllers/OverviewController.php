@@ -7,8 +7,6 @@ use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,6 +21,9 @@ class OverviewController extends Controller
 {
     // Revenu : 0,45 € par minute de durée affichée
     private const RATE_PER_MINUTE = 0.45;
+    // Durée affichée = total_duration × multiplicateur du mois de l'appel (heure de Paris) ; les mois absents : DEFAULT_MULTIPLIER
+    private const MULTIPLIERS = ['2026-11' => 0.85];
+    private const DEFAULT_MULTIPLIER = 0.75;
     private const MIN_DURATION = 10;
     private const TZ = 'Europe/Paris';
 
@@ -92,13 +93,11 @@ class OverviewController extends Controller
      * Sommes d'une période [$from, $to] (heure de Paris) :
      *   attente = appels décrochés : total_duration - duration_agent - duration_transfer (au moins 0), comme la page Attente et pertes ;
      *   perdus = aucun agent n'a décroché ;
-     *   durée affichée = calls.total_duration_displayed, ou à défaut la même règle que voxnode118
-     *   (total_duration × 0,85 sur Voxnode, × 0,75 sur notre serveur, × 1 ailleurs).
+     *   durée affichée = total_duration × multiplicateur du mois de l'appel (MULTIPLIERS, sinon DEFAULT_MULTIPLIER).
      */
     private function aggregate(Request $request, CarbonInterface $from, CarbonInterface $to): object
     {
-        $rule = "ROUND(total_duration * CASE WHEN platform = 'selfhosted' THEN 0.75 WHEN platform IS NULL OR platform = 'voxnode' THEN 0.85 ELSE 1 END)";
-        $displayed = $this->hasDisplayedDuration() ? "COALESCE(total_duration_displayed, $rule)" : $rule;
+        $displayed = 'ROUND(total_duration * '.$this->multiplierSql().')';
 
         return $this->filtered($request)
             ->whereBetween('called_at', [$from->copy()->utc(), $to->copy()->utc()])
@@ -185,9 +184,15 @@ class OverviewController extends Controller
         return $query;
     }
 
-    /** Colonne calls.total_duration_displayed (migration voxnode118) : vérifiée une fois par heure. */
-    private function hasDisplayedDuration(): bool
+    /** Multiplicateur de chaque appel selon son mois (bornes du mois de Paris en UTC, comme les autres requêtes). */
+    private function multiplierSql(): string
     {
-        return Cache::remember('calls:has-total-duration-displayed', 3600, fn () => Schema::hasColumn('calls', 'total_duration_displayed'));
+        $cases = '';
+        foreach (self::MULTIPLIERS as $month => $multiplier) {
+            $start = Carbon::createFromFormat('Y-m-d', $month.'-01', self::TZ)->startOfMonth();
+            $cases .= sprintf(" WHEN called_at >= '%s' AND called_at < '%s' THEN %s", $start->copy()->utc()->toDateTimeString(), $start->copy()->addMonthNoOverflow()->utc()->toDateTimeString(), $multiplier);
+        }
+
+        return $cases ? 'CASE'.$cases.' ELSE '.self::DEFAULT_MULTIPLIER.' END' : (string) self::DEFAULT_MULTIPLIER;
     }
 }

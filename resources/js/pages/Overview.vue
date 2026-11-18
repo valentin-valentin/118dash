@@ -18,7 +18,7 @@ import { QUALITY_SCALE, formatQuality, qualityClass } from '@/lib/quality'
 /**
  * Dashboard : appels de 10 s et plus seulement, sans les montants payout / reverse (dashboard complet : /dashboard-full).
  *   Jour par jour : appels, qualité audio, attente avant décroché, perdus, durée affichée moyenne, revenu par appel
- *   (durée affichée moyenne × 0,45 € la minute) ; comparés à J-7, le total au mois précédent à jour égal
+ *   (durée affichée moyenne × 0,45 € la minute ; durée affichée = durée × 0,85 en novembre 2026, × 0,75 les autres mois) ; comparés à J-7, le total au mois précédent à jour égal
  *   Qualité audio du mois, répartition par marque (nombre d'appels)
  * Mêmes filtres que le dashboard complet, sans les cases à cocher (colonnes toujours affichées, 10 s et plus toujours).
  */
@@ -85,8 +85,9 @@ const COLUMNS = [
     { key: 'quality_mos', label: 'Qualité audio', scale: true },
     { key: 'avg_wait', label: 'Attente', format: (v) => formatDuration(v), compare: true, worseUp: true },
     { key: 'lost_pct', label: 'Perdus' },
-    { key: 'displayed_avg', label: 'Durée moy.', format: (v) => formatDuration(Math.round(v*0.85)), compare: true },
-    { key: 'revenue', label: 'Revenu par appel', format: (v) => (v == null ? '-' : `${formatCurrency(Math.round((v*0.85) * 100) / 100)} €`), compare: true },
+    // Durée affichée moyenne : le multiplicateur du mois (× 0,85 en novembre 2026, × 0,75 sinon) est appliqué par le serveur
+    { key: 'displayed_avg', label: 'Durée moy.', format: (v) => formatDuration(v), compare: true },
+    { key: 'revenue', label: 'Revenu par appel', format: (v) => (v == null ? '-' : `${formatCurrency(v)} €`), compare: true },
 ]
 const SCALE_LINES = QUALITY_SCALE.split('\n')
 
