@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Call;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -33,7 +34,8 @@ class OverviewController extends Controller
     public function daily(Request $request): JsonResponse
     {
         [$start, $end] = $this->month($request);
-        $now = now(self::TZ);
+        // Carbon (modifiable) : now() de l'application renvoie une date immuable
+        $now = Carbon::now(self::TZ);
         $last = $end->lessThan($now) ? $end : $now;
 
         $items = [];
@@ -81,7 +83,7 @@ class OverviewController extends Controller
     {
         $start = preg_match('/^(\d{4})-(\d{2})$/', (string) $request->input('month'), $m)
             ? Carbon::createFromDate((int) $m[1], (int) $m[2], 1, self::TZ)->startOfMonth()
-            : now(self::TZ)->startOfMonth();
+            : Carbon::now(self::TZ)->startOfMonth();
 
         return [$start, $start->copy()->endOfMonth()];
     }
@@ -93,7 +95,7 @@ class OverviewController extends Controller
      *   durée affichée = calls.total_duration_displayed, ou à défaut la même règle que voxnode118
      *   (total_duration × 0,85 sur Voxnode, × 0,75 sur notre serveur, × 1 ailleurs).
      */
-    private function aggregate(Request $request, Carbon $from, Carbon $to): object
+    private function aggregate(Request $request, CarbonInterface $from, CarbonInterface $to): object
     {
         $rule = "ROUND(total_duration * CASE WHEN platform = 'selfhosted' THEN 0.75 WHEN platform IS NULL OR platform = 'voxnode' THEN 0.85 ELSE 1 END)";
         $displayed = $this->hasDisplayedDuration() ? "COALESCE(total_duration_displayed, $rule)" : $rule;
