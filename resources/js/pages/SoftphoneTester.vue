@@ -14,7 +14,7 @@ import { callTest, hangup, setMuted, setVolume, softphone } from '@/composables/
 import { xsrfToken } from '@/lib/csrf'
 
 /**
- * Testeur de softphone : le panel joue le client. Il appelle notre serveur SIP avec l'appelant et l'appelé choisis ;
+ * Softphone Tester : le panel joue le client. Il appelle notre serveur SIP avec l'appelant et l'appelé choisis ;
  * l'appel suit le vrai parcours et ne fait sonner que les comptes de test (test01, test02), connectés au softphone agent.
  *   1. Comptes de test (PIN pour se connecter au softphone agent)
  *   2. Appel : appelant, appelé, options ; micro et haut-parleur du navigateur (softphone du panel)
@@ -275,11 +275,11 @@ function clearHistory() {
 </script>
 
 <template>
-    <Head title="Testeur de softphone" />
+    <Head title="Softphone Tester" />
 
     <AppLayout width="form">
         <div class="space-y-6 p-6">
-            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Testeur de softphone' }]" />
+            <PageHeader :breadcrumbs="[{ title: 'Dashboard', href: '/' }, { title: 'Softphone Tester' }]" />
 
             <p v-if="setupError" class="rounded-md bg-red-50 p-3 text-sm text-red-700">{{ setupError }}</p>
 

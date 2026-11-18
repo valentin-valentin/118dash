@@ -58,8 +58,10 @@ onMounted(() => {
 // Ajouter les items de nav ici. Chaque item correspond à une page dans resources/js/pages/.
 const navItems = [
     { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
-    { title: 'Assistant', href: '/assistant', icon: MessagesSquare },
-    { title: 'Appels', href: '/calls', icon: Phone },
+    // Caché temporairement à la demande du propriétaire ; la page reste accessible par son adresse
+    // { title: 'Assistant', href: '/assistant', icon: MessagesSquare },
+    // Caché temporairement à la demande du propriétaire ; la page reste accessible par son adresse
+    // { title: 'Appels', href: '/calls', icon: Phone },
     { title: 'Appels rejetés', href: '/rejected-calls', icon: PhoneOff },
     { title: 'Appels à vérifier', href: '/calls-to-review', icon: Headphones, alert: () => reportedCalls.value || null },
     { title: 'Alertes agents', href: '/agent-alerts', icon: TriangleAlert },
@@ -78,7 +80,7 @@ const navItems = [
     { title: 'Assignment History', href: '/assignment-history', icon: Clock },
     { title: 'Routing Logs', href: '/routing-logs', icon: FileText, alert: () => routingErrors.value || null },
     { title: 'API Tester', href: '/api-tester', icon: FlaskConical },
-    { title: 'Testeur de softphone', href: '/softphone-tester', icon: PhoneCall },
+    { title: 'Softphone Tester', href: '/softphone-tester', icon: PhoneCall },
 ]
 </script>
 

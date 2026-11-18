@@ -10,7 +10,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Testeur de softphone : le panel joue le client et appelle notre serveur SIP (sip:test@…, en-têtes X-Test-*).
+ * Softphone Tester : le panel joue le client et appelle notre serveur SIP (sip:test@…, en-têtes X-Test-*).
  * L'appel suit le vrai parcours et ne fait sonner que les comptes de test (file « test »).
  *   - comptes de test et numéros proposés : GET /softphone-tester de voxnode118 ;
  *   - suivi : GET /calls du serveur SIP, seulement les appels du testeur (caller_name = TEST, même linkedid) ;
@@ -64,7 +64,7 @@ class SoftphoneTesterController extends Controller
         } catch (ConnectionException) {
             return response()->json(['message' => 'Serveur SIP injoignable'], 502);
         }
-        Log::info('[Testeur de softphone] raccroché côté serveur', ['linkedid' => $linkedid, 'channels' => $channels->count(), 'user' => auth()->user()?->email]);
+        Log::info('[Softphone Tester] raccroché côté serveur', ['linkedid' => $linkedid, 'channels' => $channels->count(), 'user' => auth()->user()?->email]);
 
         return response()->json(['hungUp' => $channels->count()]);
     }
