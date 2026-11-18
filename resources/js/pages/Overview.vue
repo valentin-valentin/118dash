@@ -85,8 +85,8 @@ const COLUMNS = [
     { key: 'quality_mos', label: 'Qualité audio', scale: true },
     { key: 'avg_wait', label: 'Attente', format: (v) => formatDuration(v), compare: true, worseUp: true },
     { key: 'lost_pct', label: 'Perdus' },
-    { key: 'displayed_avg', label: 'Durée moy.', format: (v) => formatDuration(v*0.7), compare: true },
-    { key: 'revenue', label: 'Revenu par appel', format: (v) => (v == null ? '-' : `${formatCurrency(v*0.7)} €`), compare: true },
+    { key: 'displayed_avg', label: 'Durée moy.', format: (v) => formatDuration(Math.round(v*0.8)), compare: true },
+    { key: 'revenue', label: 'Revenu par appel', format: (v) => (v == null ? '-' : `${formatCurrency(Math.round((v*0.8) * 100) / 100)} €`), compare: true },
 ]
 const SCALE_LINES = QUALITY_SCALE.split('\n')
 
@@ -164,10 +164,6 @@ const variationClass = (col, v) => ((v >= 0) !== !!col.worseUp ? 'text-green-600
 
             <!-- Jour par jour -->
             <section>
-                <h2 class="text-sm font-semibold text-gray-900">Jour par jour</h2>
-                <p class="mb-2 text-sm text-gray-500">
-                    Appels de 10 s et plus. Attente : avant le décroché d'un agent. Perdus : aucun agent n'a décroché. Revenu par appel : durée affichée moyenne × 0,45 € la minute.
-                </p>
                 <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm whitespace-nowrap">
