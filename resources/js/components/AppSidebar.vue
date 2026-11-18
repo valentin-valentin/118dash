@@ -64,7 +64,8 @@ const navItems = [
     { title: 'Appels à vérifier', href: '/calls-to-review', icon: Headphones, alert: () => reportedCalls.value || null },
     { title: 'Alertes agents', href: '/agent-alerts', icon: TriangleAlert },
     { title: 'Attentes et agents', href: '/pilotage', icon: CalendarRange },
-    { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
+    // Caché temporairement à la demande du propriétaire ; la page reste accessible par son adresse
+    // { title: 'Performance CC', href: '/callcenter-performance', icon: ChartColumn },
     { title: 'Providers', href: '/providers', icon: Users },
     { title: 'Companies', href: '/companies', icon: Building2 },
     { title: 'Marques', href: '/brands', icon: Store, badge: () => brandRequests.value?.brands || null },
