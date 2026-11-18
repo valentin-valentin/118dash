@@ -15,6 +15,11 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // Taille des marques et infobulle d'après le nombre d'appels seulement (sinon : bénéfice, montants et durées)
+    byCalls: {
+        type: Boolean,
+        default: false,
+    },
 })
 
 const chartKey = ref(0)
@@ -143,6 +148,15 @@ const chartOptions = computed(() => ({
                 return `${mins}:${secs.toString().padStart(2, '0')}`
             }
 
+            if (props.byCalls) {
+                return `
+                    <div class="p-3 bg-white rounded shadow-lg border border-gray-200">
+                        <div class="font-semibold text-gray-900 mb-1">${brand.name}</div>
+                        <div class="text-xs text-gray-600">Appels : <span class="font-medium">${formatInteger(brand.calls)}</span></div>
+                    </div>
+                `
+            }
+
             return `
                 <div class="p-3 bg-white rounded shadow-lg border border-gray-200">
                     <div class="font-semibold text-gray-900 mb-2">${brand.name}</div>
@@ -172,7 +186,7 @@ const series = computed(() => {
         {
             data: props.brands.map(brand => ({
                 x: brand.name,
-                y: Math.abs(brand.benefice) || 1, // ApexCharts treemap needs positive values, minimum 1 for visibility
+                y: props.byCalls ? brand.calls : Math.abs(brand.benefice) || 1, // ApexCharts treemap needs positive values, minimum 1 for visibility
             })),
         },
     ]

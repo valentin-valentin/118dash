@@ -8,6 +8,7 @@ use App\Http\Controllers\CallController;
 use App\Http\Controllers\CallcenterPerformanceController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\PartnerStatsController;
 use App\Http\Controllers\PhonenumberController;
 use App\Http\Controllers\ProviderController;
@@ -57,7 +58,9 @@ Route::redirect('/', '/dashboard');
 Route::middleware(['auth'])->group(function () {
 
     // ── Pages (Inertia) ───────────────────────────────────────────────────────
-    Route::get('/dashboard', fn () => Inertia::render('Dashboard'))->name('dashboard');
+    // Dashboard : appels de 10 s et plus, durée affichée et revenu par appel ; le dashboard d'avant, complet, sur /dashboard-full
+    Route::get('/dashboard', [OverviewController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard-full', fn () => Inertia::render('Dashboard'))->name('dashboard.full');
     Route::get('/calls', [CallController::class, 'index'])->name('calls.index');
     Route::get('/calls/export', [CallController::class, 'export'])->name('calls.export');
     Route::get('/calls/{call}', [CallController::class, 'show'])->name('calls.show');
@@ -139,6 +142,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/company-breakdown', [DashboardController::class, 'companyBreakdown']);
         Route::get('/hourly-breakdown', [DashboardController::class, 'hourlyBreakdown']);
         Route::get('/dashboard/filter-options', [DashboardController::class, 'filterOptions']);
+        Route::get('/overview/daily', [OverviewController::class, 'daily']);
+        Route::get('/overview/brands', [OverviewController::class, 'brands']);
         Route::get('/calls/stats', [CallController::class, 'stats']);
         Route::get('/calls/filter-options', [CallController::class, 'filterOptions']);
         Route::post('/calls/clear-filter-cache', [CallController::class, 'clearFilterCache']);

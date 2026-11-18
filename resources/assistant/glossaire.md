@@ -163,7 +163,13 @@ COALESCE(SUM(audio_quality < 3.1),0) quality_degraded
 
 ## 4. Pages et filtres par défaut
 
-### Dashboard (`DashboardController`)
+### Dashboard (`OverviewController`, `/dashboard`)
+- Appels de 10 s et plus seulement (`total_duration >= 10`), mêmes filtres que le dashboard complet (sans les cases à cocher), mois de Paris. Pas de payout ni de reverse.
+- **Jour par jour** : appels ; qualité audio (comme le dashboard complet) ; **attente** = moyenne de `GREATEST(0, total_duration - duration_agent - duration_transfer)` sur les appels décrochés (`duration_agent > 0`) ; **perdus** = `COALESCE(duration_agent, 0) = 0`, en % des appels ; **durée affichée moy.** = `SUM(COALESCE(total_duration_displayed, ROUND(total_duration × 0,85 Voxnode ou NULL / 0,75 notre serveur / 1 ailleurs))) / COUNT(*)` (la valeur écrite par voxnode118, sinon sa même règle) ; **revenu par appel** = durée affichée moyenne / 60 × 0,45 €. Comparaison avec J-7 (appels, attente, durée affichée, revenu) ; total comparé au mois précédent sur la même durée.
+- **Répartition par marque** : nombre d'appels de 10 s et plus par `brand_name`, marques d'au moins 5 appels.
+- Le dashboard d'avant, complet, est sur `/dashboard-full` (ci-dessous).
+
+### Dashboard complet (`DashboardController`, `/dashboard-full`)
 - Filtres communs (multi-sélection, séparés par des virgules) : `brand_name IN`, `agent_name IN`, `callcenter_id IN` (obsolète), `carrier IN`, `platform`, `provider_id`/`company_id` via `EXISTS phonenumbers (withTrashed) WHERE phonenumber = calls.called`, `source_id` : `(calls.source_id IN (…) OR (calls.source_id IS NULL AND phonenumbers.source_id IN (…)))`, `min_duration` → `total_duration >= 10` (sauf chartData et brandDistribution, qui n'ont pas ce filtre).
 - **KPI du haut** (`stats`) : périodes `today`, `this_week` (depuis lundi), `this_month`, comparées à hier ou S-1 à la même heure, à la semaine -1 et -2, au mois -1 et -2 à jour égal. **Bornes en UTC, pas en heure de Paris.** Aucun filtre.
 - **Graphique** (`chartData`) : mois courant et précédent, `GROUP BY DATE(called_at)` (date UTC), bornes UTC.
