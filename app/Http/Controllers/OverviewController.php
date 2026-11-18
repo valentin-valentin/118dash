@@ -23,7 +23,7 @@ class OverviewController extends Controller
     private const RATE_PER_MINUTE = 0.45;
     // Durée affichée = total_duration × multiplicateur du mois de l'appel (heure de Paris) ; les mois absents : DEFAULT_MULTIPLIER
     private const MULTIPLIERS = ['2026-11' => 0.75, '2026-10' => 0.85, '2026-09' => 0.80];
-    private const DEFAULT_MULTIPLIER = 0.75;
+    private const DEFAULT_MULTIPLIER = 0.8;
     private const MIN_DURATION = 10;
     private const TZ = 'Europe/Paris';
 
