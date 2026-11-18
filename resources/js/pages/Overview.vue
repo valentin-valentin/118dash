@@ -85,8 +85,8 @@ const COLUMNS = [
     { key: 'quality_mos', label: 'Qualité audio', scale: true },
     { key: 'avg_wait', label: 'Attente', format: (v) => formatDuration(v), compare: true, worseUp: true },
     { key: 'lost_pct', label: 'Perdus' },
-    { key: 'displayed_avg', label: 'Durée moy.', format: (v) => formatDuration(Math.round(v*0.75)), compare: true },
-    { key: 'revenue', label: 'Revenu par appel', format: (v) => (v == null ? '-' : `${formatCurrency(Math.round((v*0.75) * 100) / 100)} €`), compare: true },
+    { key: 'displayed_avg', label: 'Durée moy.', format: (v) => formatDuration(Math.round(v*0.85)), compare: true },
+    { key: 'revenue', label: 'Revenu par appel', format: (v) => (v == null ? '-' : `${formatCurrency(Math.round((v*0.85) * 100) / 100)} €`), compare: true },
 ]
 const SCALE_LINES = QUALITY_SCALE.split('\n')
 
